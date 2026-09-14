@@ -1,0 +1,33 @@
+{
+  "slug": "kim-van-kim-lu",
+  "name": "Kim Văn – Kim Lũ",
+  "displayName": "PICKI · KIM VĂN KIM LŨ",
+  "city": "Hà Nội",
+  "district": "Hoàng Mai",
+  "anchor": {
+    "lat": 20.9883,
+    "lng": 105.8414,
+    "note": "Approximate demand-core anchor for Zone Planner seeding (S4). Operator adjusts polygon."
+  },
+  "pilotRole": "ZONE_1",
+  "pilotTargets": {
+    "households": "300-500",
+    "foodProviders": "~10",
+    "runners": "10-15",
+    "durationWeeks": "4-8"
+  },
+  "demandCoreNotes": [
+    "Kim Văn, Kim Lũ, Linh Đàm high-rise clusters",
+    "Dense apartment household demand",
+    "Lobby / Picki Point batching friendly"
+  ],
+  "supplyRingNotes": [
+    "Ground residential around Hoàng Mai",
+    "Traditional market, food stalls, home cooks, minimart",
+    "Distributed supply ring — not second-class users"
+  ],
+  "plannerStatus": "TARGET",
+  "zoneEngineStatus": "NOT_CREATED",
+  "seededAtSprint": 1,
+  "applyWhen": "S5 Zone Engine + operator-approved boundary"
+}

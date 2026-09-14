@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Picki Provider">
+  <rect width="512" height="512" fill="#2d6a4f"/>
+  <path fill="#fff" d="M128 176h256v224H128V176zm32 32v160h192V208H160zm48 48h96v32h-96v-32zm0 64h64v32h-64v-32z"/>
+  <path fill="#95d5b2" d="M256 96 128 176h256L256 96z"/>
+</svg>

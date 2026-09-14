@@ -1,0 +1,18 @@
+---
+description: UUID, timestamptz, integer VND, snapshots, idempotency, versioning
+globs: "{apps/api/**,packages/**}"
+alwaysApply: false
+---
+
+# Picki data invariants
+
+- IDs: Picki UUID. External IDs in mapping tables only.
+- Time: `timestamptz` only.
+- Money: **integer VND**. No float currency.
+- Zone boundaries: **versioned** (`zone_boundary_versions`). Never overwrite in place.
+- Orders: snapshot item name, unit price, options, delivery fee, delivery address.
+- State machines: server-controlled; clients send commands.
+- Idempotency: `Idempotency-Key` on order create; `provider_event_id UNIQUE` on payment webhooks.
+- Concurrency: transactions, unique constraints, atomic updates — no naive read-then-write.
+- Admin sensitive actions → `audit_logs`.
+- Do not delete Zones/users with transaction history; use status + retention policies.

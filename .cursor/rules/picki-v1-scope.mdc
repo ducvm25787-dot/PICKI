@@ -1,0 +1,14 @@
+---
+description: V1 scope — Food pilot first; DO NOT BUILD list from Master Spec §146
+alwaysApply: true
+---
+
+# Picki V1 scope
+
+Implement the **current sprint only**. Sprint 0 = docs, rules, architecture baseline — **no product features**.
+
+Do not build without explicit approval (Master Spec §146): AI recommendation, AI dispatch, social network, newsfeed, public community chat, wallet, crypto, loyalty points, gamification, advanced route solver, microservices, automatic Zone publishing, full automatic city Zone generation, Grab/ShopeeFood scraping/import, native consumer app, complex automatic settlement, separate architecture per vertical.
+
+Schema may reserve tables for Booking/Request/Classified/Zone Planner; ship product incrementally per sprint table in `docs/PICKI_MVP_SCOPE.md`.
+
+Before pilot, all architecture acceptance tests in `docs/PICKI_MVP_SCOPE.md` (§153) must be YES.

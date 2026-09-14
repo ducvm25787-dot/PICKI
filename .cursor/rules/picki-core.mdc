@@ -1,0 +1,36 @@
+---
+description: Picki OFFICIAL constitution — Zone utility platform, Web/PWA-first
+alwaysApply: true
+---
+
+# PICKI PROJECT CONSTITUTION
+
+Picki is a Zone-based local-life utility platform following **Concentrated Demand – Distributed Supply**. Dense apartment/residential clusters are the primary Demand Core. Surrounding ground residential areas are both consumers and distributed supply.
+
+Food is the launch vertical, not the platform. **Picki V1 is Web/PWA-first.** Zalo Mini App is a later client.
+
+Picki owns all core business data and logic. All core entities use Picki UUIDs. External services must use adapters.
+
+A Zone is core-driven and polygon-based, not a fixed-radius circle. **Zone Planner** and **Zone Engine** are separate. Algorithm proposes. Local knowledge corrects. Human approves. Zone boundaries must be versioned.
+
+Membership and Serviceability are separate. Adjacent Zones may share service areas.
+
+GPS discovers a Zone. A customer joins a Zone using a Level-1-valid delivery address. Membership persists after leaving the physical Zone. Customers may join multiple Zones. Do not impose a hard Zone limit in V1.
+
+Customer verification is progressive. Provider and Runner verification is stronger.
+
+Provider is the generic business entity. **Provider and Provider Location are separate.** A Provider may have multiple Locations across multiple Zones. Opening a new Location must support cloning reusable configuration. Opening a new Location must not automatically close an existing Location. Location-specific configuration must support overrides. Provider-level reputation and Location-level reviews must remain distinguishable.
+
+Provider onboarding must be Picki-native and simple. **Do not scrape/import Grab, ShopeeFood, Google Maps or similar in V1.**
+
+New verticals must compose generic capabilities (LISTING, LIVE_STATUS, CONTACT, COMMERCE, etc.) instead of creating independent systems.
+
+Live Availability is first-class. Ranking uses relevance, availability, ETA, usage, repeat, verified reviews, local popularity, operational reliability, fair new-provider exposure. Picki does not declare which provider is "best" or "tastiest."
+
+Serviceability is the final authority for fulfillment eligibility. All money uses integer VND. Transaction states are server-controlled. Critical operations must be idempotent. Concurrency-sensitive operations must use atomic DB guarantees. Realtime subscriptions must be narrowly scoped. Sensitive operations must be audited.
+
+Use a Modular Monolith for V1. Future Zalo/iOS/Android clients must reuse the same Picki API and database.
+
+Read `docs/PICKI_MASTER_SPEC.md` and `docs/DECISIONS.md` before architectural decisions. Master Spec wins on conflict. Do not implement features outside approved scope without explicit approval.
+
+Never: Zalo UID as business PK; vendor logic in core modules; `same_zone` as only serviceability check; 1 order = 1 route; continuous GPS tracking; AI recs/dispatch; social feed; wallet; microservices; auto-publish Zone; marketplace scraping in V1.

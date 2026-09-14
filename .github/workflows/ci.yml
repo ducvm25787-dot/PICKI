@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm format
+
+  db:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: picki
+          POSTGRES_PASSWORD: picki
+          POSTGRES_DB: picki
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U picki -d picki"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Migrate and integration test
+        env:
+          DATABASE_URL: postgresql://picki:picki@localhost:5432/picki
+          SESSION_SECRET: ci-test-secret-min-16-chars
+          AUTH_OTP_DEV_EXPOSE: "true"
+        run: |
+          pnpm db:migrate
+          pnpm db:integration
+          pnpm api:e2e

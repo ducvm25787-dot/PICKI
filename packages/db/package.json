@@ -1,0 +1,28 @@
+{
+  "name": "@picki/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "migrate": "tsx src/migrate-cli.ts",
+    "seed:kvl": "tsx src/seed-kvl.ts",
+    "seed:providers": "tsx src/seed-providers-kvl.ts",
+    "seed:menu": "tsx src/seed-menu-kvl.ts",
+    "seed:ops": "tsx src/seed-ops-kvl.ts",
+    "seed:food": "tsx src/seed-food-kvl.ts",
+    "seed:lobby": "tsx src/seed-lobby-kvl.ts",
+    "test:integration": "vitest run src/**/*.integration.test.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.40.0",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.30.5",
+    "tsx": "^4.19.3"
+  }
+}

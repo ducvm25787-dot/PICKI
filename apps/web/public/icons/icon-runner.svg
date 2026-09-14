@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Picki Runner">
+  <rect width="512" height="512" rx="112" fill="#1d4ed8"/>
+  <circle cx="160" cy="352" r="48" fill="#fff"/>
+  <circle cx="352" cy="352" r="48" fill="#fff"/>
+  <circle cx="160" cy="352" r="24" fill="#1d4ed8"/>
+  <circle cx="352" cy="352" r="24" fill="#1d4ed8"/>
+  <path fill="#fff" d="M128 288h256l-32-128H192l-24 64H128v64z"/>
+  <path fill="#93c5fd" d="M256 128 192 160h128l-64-32z"/>
+</svg>

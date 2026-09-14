@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: picki-postgres
+    environment:
+      POSTGRES_USER: picki
+      POSTGRES_PASSWORD: picki
+      POSTGRES_DB: picki
+    ports:
+      - "5432:5432"
+    volumes:
+      - picki_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U picki -d picki"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  picki_pgdata:

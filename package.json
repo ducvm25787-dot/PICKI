@@ -1,0 +1,40 @@
+{
+  "name": "picki",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm format",
+    "db:up": "docker compose -f infra/docker-compose.yml up -d",
+    "db:down": "docker compose -f infra/docker-compose.yml down",
+    "db:migrate": "DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db migrate",
+    "db:integration": "DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db test:integration",
+    "api:dev": "DATABASE_URL=postgresql://picki:picki@localhost:5432/picki SESSION_SECRET=local-dev-secret-16chars AUTH_OTP_DEV_EXPOSE=true pnpm --filter @picki/api dev",
+    "api:e2e": "DATABASE_URL=postgresql://picki:picki@localhost:5432/picki SESSION_SECRET=local-dev-secret-16chars AUTH_OTP_DEV_EXPOSE=true pnpm --filter @picki/api test:e2e",
+    "db:seed": "DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db seed:kvl && DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db seed:providers && DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db seed:menu && DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db seed:food && DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db seed:lobby && DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db seed:ops",
+    "web:dev": "pnpm --filter @picki/web dev",
+    "dev:setup": "pnpm db:up && pnpm db:migrate && pnpm db:seed",
+    "dev": "concurrently -k -n api,web -c blue,magenta \"pnpm api:dev\" \"pnpm web:dev\"",
+    "start:local": "bash scripts/start-local.sh"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "concurrently": "^9.1.2",
+    "@types/node": "^22.13.10",
+    "eslint": "^9.22.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.26.1",
+    "vitest": "^3.0.9"
+  }
+}

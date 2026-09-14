@@ -1,0 +1,9 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/shared" },
+    { "path": "./packages/db" },
+    { "path": "./apps/api" }
+  ],
+  "include": ["vitest.config.ts", "eslint.config.js"]
+}

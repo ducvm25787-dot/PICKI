@@ -1,0 +1,25 @@
+---
+description: Adapter boundaries — no vendor SDKs in core modules
+globs: apps/api/**/*.ts
+alwaysApply: false
+---
+
+# Picki adapters
+
+Core modules under `apps/api/src/modules/` depend on **ports** in `@picki/shared`, never vendor SDKs.
+
+- Implementations: `apps/api/src/integrations/{identity,notifications,payments,geo}/`
+- Vendor HTTP: `/v1/integrations/{vendor}/*` only
+- Business APIs: `/v1/orders`, `/v1/zones`, `/v1/providers`, …
+
+```ts
+// ❌ BAD
+import { ZaloPay } from "zalopay-sdk";
+
+// ✅ GOOD
+await paymentService.createIntent({ pickiPaymentId, amountVnd });
+```
+
+Map external IDs in `user_identities`. Never use Zalo UID as `users.id`.
+
+No Grab/ShopeeFood/Google Maps scraping or import in V1 (ADR-027).
