@@ -3,6 +3,7 @@ export type DeliveryHandoffMode = "LOBBY_PICKUP" | "DOOR_DELIVERY";
 export type RouteOrderInput = {
   orderId: string;
   orderNumber: string;
+  serviceVertical?: "FOOD" | "LAUNDRY" | null;
   providerLocationId: string;
   providerName: string;
   providerLat: number | null;
@@ -46,8 +47,18 @@ export function deliveryClusterKey(order: RouteOrderInput): string | null {
   return null;
 }
 
+export type RouteStopType =
+  | "PICKUP"
+  | "LOBBY_DROPOFF"
+  | "APARTMENT_DROPOFF"
+  | "PICKI_POINT"
+  | "CUSTOMER_PICKUP"
+  | "PROVIDER_DROPOFF"
+  | "RETURN_PICKUP"
+  | "RETURN_DROPOFF";
+
 export type PlannedStop = {
-  stopType: "PICKUP" | "LOBBY_DROPOFF" | "APARTMENT_DROPOFF" | "PICKI_POINT";
+  stopType: RouteStopType;
   orderId: string | null;
   providerLocationId: string | null;
   building: string | null;

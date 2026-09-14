@@ -79,6 +79,14 @@ export class OrdersService {
       throw new PickiError("NOT_FOUND", "Provider location not available");
     }
 
+    const providerRow = await this.db
+      .select({ providerType: providers.providerType })
+      .from(providerLocations)
+      .innerJoin(providers, eq(providerLocations.providerId, providers.id))
+      .where(eq(providerLocations.id, input.providerLocationId))
+      .limit(1);
+    const serviceVertical = providerRow[0]?.providerType === "LAUNDRY" ? "LAUNDRY" : "FOOD";
+
     const inZone = await this.db
       .select()
       .from(providerZoneMemberships)
@@ -100,7 +108,9 @@ export class OrdersService {
     const isStreet = addr.addressType === "STREET_ADDRESS";
     let handoffMode = input.deliveryHandoffMode;
 
-    if (isStreet) {
+    if (serviceVertical === "LAUNDRY") {
+      handoffMode = "DOOR_DELIVERY";
+    } else if (isStreet) {
       handoffMode = "DOOR_DELIVERY";
       if (!addr.street?.trim()) {
         throw new PickiError("VALIDATION_ERROR", "Địa chỉ mặt đất cần tên đường/ngõ");
@@ -161,6 +171,7 @@ export class OrdersService {
           zoneId: input.zoneId,
           providerLocationId: input.providerLocationId,
           status: "CREATED",
+          serviceVertical,
           paymentMode: input.paymentMode,
           subtotalVnd,
           deliveryFeeVnd,
@@ -394,7 +405,8 @@ export class OrdersService {
         lineTotalVnd: i.lineTotalVnd,
       })),
       createdAt: order.createdAt.toISOString(),
-      canCancel: canCustomerCancel(order.status),
+      canCancel: canCustomerCancel(order.status, order.serviceVertical as "FOOD" | "LAUNDRY"),
+      serviceVertical: order.serviceVertical,
       ...orderHandoffFields(order),
       runner: await loadRunnerSummary(this.db, order.runnerUserId),
       fulfillment: fulfillment ?? null,

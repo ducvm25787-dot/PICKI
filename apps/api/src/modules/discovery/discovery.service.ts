@@ -4,6 +4,7 @@ import {
   discoveryBlocksForNow,
   listDailySpecialsForLocation,
   listDiscoveryProviders,
+  listLaundryProviders,
   listMapProviders,
   locationReviews,
   searchZone,
@@ -36,6 +37,17 @@ export class DiscoveryService {
         ),
       })),
     );
+
+    const laundry = await listLaundryProviders(this.sql, zone.id);
+    if (laundry.length > 0) {
+      enriched.push({
+        id: "laundry",
+        title: "GIẶT LÀ",
+        subtitle: "Lấy đồ tận nhà — giao tiệm giặt",
+        foodMoments: [],
+        providers: laundry.map(mapProvider),
+      });
+    }
 
     return { zoneId: zone.id, slug: zone.slug, blocks: enriched };
   }

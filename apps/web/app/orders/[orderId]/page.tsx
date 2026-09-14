@@ -15,6 +15,7 @@ type OrderDetail = {
   id: string;
   orderNumber: string;
   status: string;
+  serviceVertical?: string;
   estimatedReadyAt: string | null;
   providerHandoffAt: string | null;
   runner: { displayName: string } | null;
@@ -245,7 +246,7 @@ export default function OrderDetailPage() {
               runner: order.runner,
             })}
           </p>
-          <OrderStatusSteps status={order.status} />
+          <OrderStatusSteps status={order.status} serviceVertical={order.serviceVertical} />
           {order.runner ? (
             <p className="stat" style={{ margin: "8px 0 0" }}>
               Runner: <strong>{order.runner.displayName}</strong>

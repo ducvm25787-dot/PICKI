@@ -15,6 +15,7 @@
     "seed:ops": "tsx src/seed-ops-kvl.ts",
     "seed:food": "tsx src/seed-food-kvl.ts",
     "seed:lobby": "tsx src/seed-lobby-kvl.ts",
+    "seed:laundry": "tsx src/seed-laundry-kvl.ts",
     "test:integration": "vitest run src/**/*.integration.test.ts"
   },
   "dependencies": {

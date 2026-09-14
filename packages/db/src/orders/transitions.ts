@@ -1,5 +1,7 @@
+import { LAUNDRY_INBOUND_TRANSITIONS, type ServiceVertical } from "./laundry-transitions.js";
+
 /** Server-controlled transitions for Food orders (COD + online pay paths). */
-export const ORDER_TRANSITIONS: Record<string, string[]> = {
+export const FOOD_ORDER_TRANSITIONS: Record<string, string[]> = {
   CREATED: ["PAYMENT_PENDING", "PROVIDER_ACCEPTED", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
   PAYMENT_PENDING: ["PAID", "PAYMENT_FAILED", "CUSTOMER_CANCELLED"],
   PAID: ["PROVIDER_ACCEPTED", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
@@ -20,13 +22,24 @@ export const ORDER_TRANSITIONS: Record<string, string[]> = {
   DELIVERED: [],
 };
 
-export function canTransition(from: string, to: string): boolean {
-  const allowed = ORDER_TRANSITIONS[from];
+/** @deprecated use FOOD_ORDER_TRANSITIONS */
+export const ORDER_TRANSITIONS = FOOD_ORDER_TRANSITIONS;
+
+export function orderTransitionsForVertical(vertical: ServiceVertical = "FOOD") {
+  return vertical === "LAUNDRY" ? LAUNDRY_INBOUND_TRANSITIONS : FOOD_ORDER_TRANSITIONS;
+}
+
+export function canTransition(
+  from: string,
+  to: string,
+  vertical: ServiceVertical = "FOOD",
+): boolean {
+  const allowed = orderTransitionsForVertical(vertical)[from];
   return allowed?.includes(to) ?? false;
 }
 
-export function canCustomerCancel(from: string): boolean {
-  return canTransition(from, "CUSTOMER_CANCELLED");
+export function canCustomerCancel(from: string, vertical: ServiceVertical = "FOOD"): boolean {
+  return canTransition(from, "CUSTOMER_CANCELLED", vertical);
 }
 
 const TERMINAL_ORDER_STATUSES = [

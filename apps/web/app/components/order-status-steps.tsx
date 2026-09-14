@@ -1,20 +1,23 @@
 "use client";
 
-import { ORDER_FLOW_STEPS, orderStepIndex } from "../../lib/order-display";
+import { orderFlowSteps, orderStepIndex } from "../../lib/order-display";
 
 export function OrderStatusSteps({
   status,
   runnerSoughtAt,
+  serviceVertical,
 }: {
   status: string;
   runnerSoughtAt?: string | null;
+  serviceVertical?: string | null;
 }) {
-  const current = orderStepIndex(status, { runnerSoughtAt });
+  const steps = orderFlowSteps(serviceVertical);
+  const current = orderStepIndex(status, { runnerSoughtAt, serviceVertical });
   if (current < 0) return null;
 
   return (
     <div className="order-steps" aria-label="Tiến trình đơn hàng">
-      {ORDER_FLOW_STEPS.map((step, i) => {
+      {steps.map((step, i) => {
         const done = i < current;
         const active = i === current;
         return (

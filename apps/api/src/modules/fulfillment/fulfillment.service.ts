@@ -9,6 +9,7 @@ import {
   lobbyHandoffs,
   orders,
   pickiPoints,
+  planLaundryInboundStops,
   planRouteStops,
   providerLocations,
   routeOrders,
@@ -365,6 +366,10 @@ export class FulfillmentService {
 
     if (stop.stopType === "PICKUP") {
       await this.assertPickupStopReady(affectedOrderIds);
+    } else if (stop.stopType === "CUSTOMER_PICKUP") {
+      await this.assertLaundryCustomerPickupReady(affectedOrderIds);
+    } else if (stop.stopType === "PROVIDER_DROPOFF") {
+      await this.assertLaundryShopDropReady(affectedOrderIds);
     } else if (stop.stopType === "APARTMENT_DROPOFF") {
       for (const orderId of affectedOrderIds) {
         await this.assertApartmentStopReady(orderId);
@@ -483,6 +488,58 @@ export class FulfillmentService {
         .where(eq(deliveries.orderId, orderId));
     } else if (stopType === "LOBBY_DROPOFF" && order.status === "PICKED_UP" && !order.deliveryApartment) {
       await this.transitions.transition(orderId, "DELIVERED", runnerUserId, "Lobby-only delivery completed");
+    } else if (stopType === "CUSTOMER_PICKUP" && order.serviceVertical === "LAUNDRY") {
+      if (order.status === "RUNNER_ASSIGNED") {
+        await this.transitions.transition(orderId, "PICKED_UP", runnerUserId, "Laundry picked up at customer");
+        await this.db
+          .update(deliveries)
+          .set({ status: "IN_PROGRESS", updatedAt: new Date() })
+          .where(eq(deliveries.orderId, orderId));
+      }
+    } else if (stopType === "PROVIDER_DROPOFF" && order.serviceVertical === "LAUNDRY") {
+      if (order.status === "PICKED_UP") {
+        await this.transitions.transition(orderId, "DELIVERING", runnerUserId, "En route to laundry shop");
+      }
+      const refreshed = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+      if (refreshed[0]?.status === "DELIVERING") {
+        await this.transitions.transition(orderId, "DELIVERED", runnerUserId, "Dropped at laundry shop");
+        await this.db
+          .update(deliveries)
+          .set({ status: "COMPLETED", updatedAt: new Date() })
+          .where(eq(deliveries.orderId, orderId));
+      }
+    }
+  }
+
+  private async assertLaundryCustomerPickupReady(orderIds: string[]) {
+    for (const orderId of orderIds) {
+      const orderRow = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+      const order = orderRow[0];
+      if (!order || order.serviceVertical !== "LAUNDRY") continue;
+      if (order.status === "PICKED_UP" || order.status === "DELIVERING" || order.status === "DELIVERED") {
+        continue;
+      }
+      if (order.status !== "RUNNER_ASSIGNED") {
+        throw new PickiError(
+          "FORBIDDEN",
+          `Đơn giặt ${order.orderNumber} chưa sẵn sàng — chờ tiệm xác nhận và runner nhận đơn`,
+        );
+      }
+    }
+  }
+
+  private async assertLaundryShopDropReady(orderIds: string[]) {
+    for (const orderId of orderIds) {
+      const orderRow = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+      const order = orderRow[0];
+      if (!order || order.serviceVertical !== "LAUNDRY") continue;
+      if (order.status === "DELIVERED") continue;
+      if (order.status !== "PICKED_UP" && order.status !== "DELIVERING") {
+        throw new PickiError(
+          "FORBIDDEN",
+          `Phải lấy đồ tại nhà khách trước khi giao tiệm (${order.orderNumber})`,
+        );
+      }
     }
   }
 
@@ -522,7 +579,10 @@ export class FulfillmentService {
   }
 
   private async resolveStopOrders(stop: typeof routeStops.$inferSelect): Promise<string[]> {
-    if (stop.stopType === "PICKUP" && stop.providerLocationId) {
+    if (
+      (stop.stopType === "PICKUP" || stop.stopType === "PROVIDER_DROPOFF") &&
+      stop.providerLocationId
+    ) {
       const rows = await this.db
         .select({ orderId: routeOrders.orderId })
         .from(routeOrders)
@@ -597,7 +657,8 @@ export class FulfillmentService {
     const zoneId = route[0]?.zoneId;
 
     const inputs = await this.loadRouteOrders(tx, routeId);
-    const planned = planRouteStops(inputs);
+    const allLaundry = inputs.every((o) => o.serviceVertical === "LAUNDRY");
+    const planned = allLaundry ? planLaundryInboundStops(inputs) : planRouteStops(inputs);
 
     await tx.delete(routeStops).where(eq(routeStops.routeId, routeId));
 
@@ -710,6 +771,7 @@ export class FulfillmentService {
     return {
       orderId: order.id,
       orderNumber: order.orderNumber,
+      serviceVertical: order.serviceVertical as "FOOD" | "LAUNDRY",
       providerLocationId: order.providerLocationId,
       providerName,
       providerLat: providerLat ?? null,

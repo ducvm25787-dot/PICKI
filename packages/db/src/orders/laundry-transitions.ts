@@ -1,0 +1,23 @@
+/** Inbound pickup-and-return leg: customer → laundry shop (S29). */
+export const LAUNDRY_INBOUND_TRANSITIONS: Record<string, string[]> = {
+  CREATED: ["PAYMENT_PENDING", "PROVIDER_ACCEPTED", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
+  PAYMENT_PENDING: ["PAID", "PAYMENT_FAILED", "CUSTOMER_CANCELLED"],
+  PAID: ["PROVIDER_ACCEPTED", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
+  PROVIDER_ACCEPTED: ["RUNNER_ASSIGNED", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
+  RUNNER_ASSIGNED: ["PICKED_UP", "CUSTOMER_CANCELLED"],
+  PICKED_UP: ["DELIVERING"],
+  DELIVERING: ["DELIVERED"],
+  PAYMENT_FAILED: [],
+  PROVIDER_REJECTED: [],
+  CUSTOMER_CANCELLED: [],
+  SYSTEM_CANCELLED: [],
+  REFUND_PENDING: ["REFUNDED"],
+  REFUNDED: [],
+  DELIVERED: [],
+};
+
+export type ServiceVertical = "FOOD" | "LAUNDRY";
+
+export function transitionsForVertical(vertical: ServiceVertical): Record<string, string[]> {
+  return vertical === "LAUNDRY" ? LAUNDRY_INBOUND_TRANSITIONS : {};
+}

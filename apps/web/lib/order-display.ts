@@ -23,10 +23,34 @@ export const ORDER_FLOW_STEPS = [
   { key: "DELIVERED", label: "Xong" },
 ] as const;
 
+export const LAUNDRY_FLOW_STEPS = [
+  { key: "PROVIDER_ACCEPTED", label: "Tiệm nhận" },
+  { key: "SEEKING_RUNNER", label: "Tìm runner" },
+  { key: "RUNNER_ASSIGNED", label: "Runner nhận" },
+  { key: "PICKED_UP", label: "Lấy đồ" },
+  { key: "DELIVERING", label: "Giao tiệm" },
+  { key: "DELIVERED", label: "Đã giao tiệm" },
+] as const;
+
 export function orderStepIndex(
   status: string,
-  opts: { runnerSoughtAt?: string | null } = {},
+  opts: { runnerSoughtAt?: string | null; serviceVertical?: string | null } = {},
 ): number {
+  if (opts.serviceVertical === "LAUNDRY") {
+    if (status === "PROVIDER_ACCEPTED") {
+      return opts.runnerSoughtAt ? 1 : 0;
+    }
+    const laundryMap: Record<string, number> = {
+      CREATED: -1,
+      PAID: -1,
+      RUNNER_ASSIGNED: 2,
+      PICKED_UP: 3,
+      DELIVERING: 4,
+      DELIVERED: 5,
+    };
+    return laundryMap[status] ?? -1;
+  }
+
   if (status === "PROVIDER_ACCEPTED") {
     return opts.runnerSoughtAt ? 1 : 0;
   }
@@ -41,6 +65,10 @@ export function orderStepIndex(
     DELIVERED: 7,
   };
   return map[status] ?? -1;
+}
+
+export function orderFlowSteps(serviceVertical?: string | null) {
+  return serviceVertical === "LAUNDRY" ? LAUNDRY_FLOW_STEPS : ORDER_FLOW_STEPS;
 }
 
 type HandoffOpts = {

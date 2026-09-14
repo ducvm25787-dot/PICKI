@@ -7,6 +7,7 @@ import {
   orders,
   orderStatusHistory,
   type PickiDb,
+  type ServiceVertical,
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
 import { OutboxService } from "../outbox/outbox.service.js";
@@ -35,7 +36,7 @@ export class OrderTransitionService {
       if (!canAdminSystemCancel(order.status)) {
         throw new PickiError("FORBIDDEN", `Cannot cancel order in status ${order.status}`);
       }
-    } else if (!canTransition(order.status, toStatus)) {
+    } else if (!canTransition(order.status, toStatus, order.serviceVertical as ServiceVertical)) {
       throw new PickiError("FORBIDDEN", `Cannot transition ${order.status} → ${toStatus}`);
     }
 
@@ -55,7 +56,7 @@ export class OrderTransitionService {
       throw new PickiError("NOT_FOUND", "Order not found");
     }
 
-    if (!canTransition(order.status, toStatus)) {
+    if (!canTransition(order.status, toStatus, order.serviceVertical as ServiceVertical)) {
       throw new PickiError("FORBIDDEN", `Cannot transition ${order.status} → ${toStatus}`);
     }
 
