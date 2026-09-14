@@ -32,6 +32,11 @@ export class RunnerController {
     return this.runnerService.listOrders(userId);
   }
 
+  @Get("orders/history")
+  async orderHistory(@CurrentUserId() userId: string) {
+    return this.runnerService.listOrderHistory(userId);
+  }
+
   @Get("route/active")
   async activeRoute(@CurrentUserId() userId: string) {
     return this.runnerService.getActiveRoute(userId);

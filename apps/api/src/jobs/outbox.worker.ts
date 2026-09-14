@@ -69,6 +69,10 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
         await this.notifications.processMessageReceived(
           event.payload as Parameters<NotificationService["processMessageReceived"]>[0],
         );
+      } else if (event.eventType === "order.seeking_runner") {
+        await this.notifications.processSeekingRunner(
+          event.payload as Parameters<NotificationService["processSeekingRunner"]>[0],
+        );
       } else if (event.eventType === "order.provider_handoff") {
         await this.notifications.processProviderHandoff(
           event.payload as Parameters<NotificationService["processProviderHandoff"]>[0],

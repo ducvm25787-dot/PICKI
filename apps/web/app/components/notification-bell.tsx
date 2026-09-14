@@ -21,27 +21,65 @@ type NotificationResponse = {
 type Props = {
   /** Inline trong header-row (mặc định) thay vì float góc màn hình */
   inline?: boolean;
+  /** Bật desktop notification khi có đơn mới (Runner) */
+  desktopAlerts?: boolean;
 };
 
-export function NotificationBell({ inline = true }: Props) {
+function maybeDesktopAlert(items: NotificationItem[]) {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+
+  for (const n of items) {
+    if (n.read) continue;
+    if (n.eventType !== "order.seeking_runner" && n.eventType !== "order.status_changed") continue;
+    try {
+      new Notification(n.title, { body: n.body, tag: n.id });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+export function NotificationBell({ inline = true, desktopAlerts = false }: Props) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<NotificationResponse | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  const promptedRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
       const res = await api<NotificationResponse>("/notifications?limit=20");
       setData(res);
+
+      if (desktopAlerts) {
+        const fresh = res.notifications.filter((n) => !seenIdsRef.current.has(n.id));
+        for (const n of res.notifications) {
+          seenIdsRef.current.add(n.id);
+        }
+        if (fresh.length > 0) {
+          maybeDesktopAlert(fresh);
+        }
+      }
     } catch {
       /* not logged in or API down */
     }
-  }, []);
+  }, [desktopAlerts]);
+
+  useEffect(() => {
+    if (!desktopAlerts || promptedRef.current) return;
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    promptedRef.current = true;
+    if (Notification.permission === "default") {
+      void Notification.requestPermission();
+    }
+  }, [desktopAlerts]);
 
   useEffect(() => {
     void load();
-    const t = setInterval(() => void load(), 12000);
+    const t = setInterval(() => void load(), desktopAlerts ? 5000 : 12000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, desktopAlerts]);
 
   useEffect(() => {
     if (!open) return;

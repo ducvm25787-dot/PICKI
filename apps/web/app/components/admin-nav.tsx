@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NotificationBell } from "./notification-bell";
 
 const tabs = [
   { href: "/admin", label: "Dashboard", exact: true },
   { href: "/admin/orders", label: "Đơn hàng", exact: false },
+  { href: "/admin/audit", label: "Audit", exact: false },
   { href: "/admin/zones", label: "Zones", exact: false },
   { href: "/admin/settings", label: "Cài đặt", exact: false },
 ] as const;
@@ -29,9 +29,6 @@ export function AdminNav() {
           </Link>
         );
       })}
-      <div className="admin-nav-bell">
-        <NotificationBell />
-      </div>
     </nav>
   );
 }

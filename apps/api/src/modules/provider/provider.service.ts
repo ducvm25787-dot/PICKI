@@ -38,16 +38,48 @@ export class ProviderService {
       .leftJoin(providerLocations, eq(providerMembers.providerLocationId, providerLocations.id))
       .where(eq(providerMembers.userId, userId));
 
-    return {
-      locations: rows.map((r) => ({
-        providerId: r.provider.id,
-        providerSlug: r.provider.slug,
-        brandName: r.provider.brandName,
-        locationId: r.location?.id ?? null,
-        locationName: r.location?.displayName ?? r.provider.brandName,
-        role: r.member.role,
-      })),
-    };
+    const locations: Array<{
+      providerId: string;
+      providerSlug: string;
+      brandName: string;
+      locationId: string | null;
+      locationName: string;
+      role: string;
+    }> = [];
+
+    for (const r of rows) {
+      if (r.location?.id) {
+        locations.push({
+          providerId: r.provider.id,
+          providerSlug: r.provider.slug,
+          brandName: r.provider.brandName,
+          locationId: r.location.id,
+          locationName: r.location.displayName,
+          role: r.member.role,
+        });
+        continue;
+      }
+
+      // Provider-wide member — all active locations of the brand.
+      const allLocations = await this.db
+        .select()
+        .from(providerLocations)
+        .where(
+          and(eq(providerLocations.providerId, r.provider.id), eq(providerLocations.status, "ACTIVE")),
+        );
+      for (const loc of allLocations) {
+        locations.push({
+          providerId: r.provider.id,
+          providerSlug: r.provider.slug,
+          brandName: r.provider.brandName,
+          locationId: loc.id,
+          locationName: loc.displayName,
+          role: r.member.role,
+        });
+      }
+    }
+
+    return { locations };
   }
 
   async listLocationOrders(userId: string, locationId: string) {
@@ -74,9 +106,10 @@ export class ProviderService {
       .orderBy(desc(orders.createdAt))
       .limit(50);
 
-    return {
-      orders: await Promise.all(
-        rows.map(async (o) => ({
+    const ordersOut = await Promise.all(
+      rows.map(async (raw) => {
+        const o = await this.ensureRunnerSought(raw);
+        return {
           id: o.id,
           orderNumber: o.orderNumber,
           status: o.status,
@@ -93,9 +126,48 @@ export class ProviderService {
             .select()
             .from(orderItems)
             .where(eq(orderItems.orderId, o.id)),
-        })),
-      ),
-    };
+        };
+      }),
+    );
+
+    return { orders: ordersOut };
+  }
+
+  async listLocationOrderHistory(userId: string, locationId: string, limit = 30) {
+    await this.assertLocationAccess(userId, locationId);
+
+    const terminal = [
+      "DELIVERED",
+      "CUSTOMER_CANCELLED",
+      "SYSTEM_CANCELLED",
+      "PROVIDER_REJECTED",
+      "PAYMENT_FAILED",
+    ];
+
+    const rows = await this.db
+      .select()
+      .from(orders)
+      .where(and(eq(orders.providerLocationId, locationId), inArray(orders.status, terminal)))
+      .orderBy(desc(orders.updatedAt))
+      .limit(limit);
+
+    const ordersOut = await Promise.all(
+      rows.map(async (o) => ({
+        id: o.id,
+        orderNumber: o.orderNumber,
+        status: o.status,
+        totalVnd: o.totalVnd,
+        paymentMode: o.paymentMode,
+        completedAt: o.updatedAt.toISOString(),
+        delivery: {
+          building: o.deliveryBuilding,
+          apartment: o.deliveryApartment,
+        },
+        runner: await loadRunnerSummary(this.db, o.runnerUserId),
+      })),
+    );
+
+    return { orders: ordersOut };
   }
 
   async applyOrderAction(
@@ -110,16 +182,38 @@ export class ProviderService {
 
     await this.assertLocationAccess(userId, order[0].providerLocationId);
 
-    if (input.action === "accept" && order[0].paymentMode === "PAY_ON_PICKI" && order[0].status === "CREATED") {
-      throw new PickiError("FORBIDDEN", "Order awaiting online payment");
+    if (input.action === "accept") {
+      if (order[0].paymentMode === "PAY_ON_PICKI" && order[0].status === "CREATED") {
+        throw new PickiError("FORBIDDEN", "Order awaiting online payment");
+      }
+      if (order[0].status === "PROVIDER_ACCEPTED") {
+        return this.providerFindRunner(userId, order[0]);
+      }
+      const result = await this.transitions.transition(
+        orderId,
+        "PROVIDER_ACCEPTED",
+        userId,
+        "Provider: accept",
+      );
+      const refreshed = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+      return this.providerFindRunner(userId, refreshed[0] ?? result.order);
     }
 
     if (input.action === "handoff") {
       return this.providerHandoff(userId, order[0]);
     }
 
-    if (input.action === "preparing" && order[0].status !== "RUNNER_ASSIGNED") {
-      throw new PickiError("FORBIDDEN", "Runner phải nhận đơn trước khi bắt đầu nấu");
+    if (input.action === "find_runner") {
+      return this.providerFindRunner(userId, order[0]);
+    }
+
+    if (input.action === "preparing") {
+      if (order[0].status !== "RUNNER_ASSIGNED") {
+        throw new PickiError("FORBIDDEN", "Runner phải nhận đơn trước khi bắt đầu nấu");
+      }
+      if (!order[0].runnerUserId) {
+        throw new PickiError("FORBIDDEN", "Chưa có runner nhận đơn");
+      }
     }
 
     if (input.action === "ready" && order[0].status !== "PREPARING") {
@@ -139,13 +233,53 @@ export class ProviderService {
     }
 
     const refreshed = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    const latest = refreshed[0] ?? result.order;
 
     return {
       id: result.order.id,
       orderNumber: result.order.orderNumber,
-      status: refreshed[0]?.status ?? result.order.status,
-      ...orderHandoffFields(refreshed[0] ?? result.order),
-      runner: await loadRunnerSummary(this.db, refreshed[0]?.runnerUserId ?? null),
+      status: latest.status,
+      ...orderHandoffFields(latest),
+      runner: await loadRunnerSummary(this.db, latest.runnerUserId ?? null),
+    };
+  }
+
+  private async providerFindRunner(_userId: string, order: typeof orders.$inferSelect) {
+    if (order.status !== "PROVIDER_ACCEPTED") {
+      throw new PickiError("FORBIDDEN", "Chỉ tìm runner sau khi đã nhận đơn");
+    }
+    if (order.runnerUserId) {
+      throw new PickiError("FORBIDDEN", "Runner đã nhận đơn này");
+    }
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(orders)
+        .set({ runnerSoughtAt: new Date(), updatedAt: new Date() })
+        .where(eq(orders.id, order.id));
+
+      await this.outbox.enqueue(tx, {
+        eventType: "order.seeking_runner",
+        aggregateType: "order",
+        aggregateId: order.id,
+        payload: {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          customerUserId: order.customerUserId,
+          providerLocationId: order.providerLocationId,
+          zoneId: order.zoneId,
+        },
+      });
+    });
+
+    const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+
+    return {
+      id: order.id,
+      orderNumber: order.orderNumber,
+      status: refreshed[0]?.status ?? order.status,
+      ...orderHandoffFields(refreshed[0] ?? order),
+      runner: null,
     };
   }
 
@@ -234,6 +368,40 @@ export class ProviderService {
       });
 
     return { locationId, status: input.status };
+  }
+
+  /** Pilot: đơn đã nhận nhưng chưa tìm runner → tự bổ sung khi load list. */
+  private async ensureRunnerSought(order: typeof orders.$inferSelect) {
+    if (
+      order.status !== "PROVIDER_ACCEPTED" ||
+      order.runnerUserId ||
+      order.runnerSoughtAt
+    ) {
+      return order;
+    }
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(orders)
+        .set({ runnerSoughtAt: new Date(), updatedAt: new Date() })
+        .where(eq(orders.id, order.id));
+
+      await this.outbox.enqueue(tx, {
+        eventType: "order.seeking_runner",
+        aggregateType: "order",
+        aggregateId: order.id,
+        payload: {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          customerUserId: order.customerUserId,
+          providerLocationId: order.providerLocationId,
+          zoneId: order.zoneId,
+        },
+      });
+    });
+
+    const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+    return refreshed[0] ?? order;
   }
 
   private async assertLocationAccess(userId: string, locationId: string) {

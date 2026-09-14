@@ -27,6 +27,12 @@ export class AdminController {
     return this.adminService.listOrders(Number.isFinite(n) ? n : 50);
   }
 
+  @Get("audit-logs")
+  async auditLogs(@Query("limit") limit?: string) {
+    const n = limit ? Number.parseInt(limit, 10) : 50;
+    return this.adminService.listAuditLogs(Number.isFinite(n) ? n : 50);
+  }
+
   @Patch("orders/:orderId")
   async orderAction(
     @CurrentUserId() userId: string,

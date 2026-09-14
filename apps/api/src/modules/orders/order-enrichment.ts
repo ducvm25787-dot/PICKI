@@ -19,6 +19,7 @@ export function orderHandoffFields(order: typeof orders.$inferSelect) {
   return {
     estimatedReadyAt: order.estimatedReadyAt?.toISOString() ?? null,
     providerHandoffAt: order.providerHandoffAt?.toISOString() ?? null,
+    runnerSoughtAt: order.runnerSoughtAt?.toISOString() ?? null,
     runnerUserId: order.runnerUserId,
   };
 }

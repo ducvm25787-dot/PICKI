@@ -1,23 +1,11 @@
-/* Picki customer PWA — offline shell only; API always network. */
-const CACHE = "picki-shell-v3";
+/* Picki PWA — offline shell + Web Push */
+const CACHE = "picki-shell-v5";
 const PRECACHE = [
-  "/",
   "/offline",
-  "/login",
-  "/orders",
   "/icons/icon.svg",
-  "/provider",
-  "/provider/live",
-  "/provider/settings",
   "/provider/offline",
-  "/provider/login",
   "/icons/icon-provider.svg",
-  "/runner",
-  "/runner/route",
-  "/runner/status",
-  "/runner/settings",
   "/runner/offline",
-  "/runner/login",
   "/icons/icon-runner.svg",
 ];
 
@@ -45,14 +33,18 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   if (url.pathname.startsWith("/v1/")) return;
 
+  // Next.js bundles — luôn network-first (hash đổi mỗi build).
+  if (url.pathname.startsWith("/_next/")) {
+    event.respondWith(
+      fetch(request).catch(() => caches.match(request)),
+    );
+    return;
+  }
+
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((cache) => cache.put(request, copy));
-          return res;
-        })
+        .then((res) => res)
         .catch(() =>
           caches.match(request).then((cached) => {
             if (cached) return cached;
@@ -69,18 +61,56 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (url.origin === self.location.origin) {
+  if (url.origin === self.location.origin && url.pathname.startsWith("/icons/")) {
     event.respondWith(
-      caches.match(request).then((cached) => {
-        if (cached) return cached;
-        return fetch(request).then((res) => {
-          if (res.ok && (url.pathname.startsWith("/icons/") || url.pathname.startsWith("/_next/static/"))) {
+      caches.match(request).then(
+        (cached) =>
+          cached ??
+          fetch(request).then((res) => {
             const copy = res.clone();
             caches.open(CACHE).then((cache) => cache.put(request, copy));
-          }
-          return res;
-        });
-      }),
+            return res;
+          }),
+      ),
     );
   }
+});
+
+self.addEventListener("push", (event) => {
+  let data = { title: "Picki", body: "Bạn có thông báo mới", url: "/", tag: "picki" };
+  try {
+    if (event.data) {
+      data = { ...data, ...event.data.json() };
+    }
+  } catch {
+    /* use defaults */
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      tag: data.tag,
+      data: { url: data.url },
+      icon: "/icons/icon.svg",
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = event.notification.data?.url || "/";
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ("focus" in client && client.url.includes(self.location.origin)) {
+          client.navigate(target);
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(target);
+      }
+    }),
+  );
 });

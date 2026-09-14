@@ -23,6 +23,14 @@ export class ProviderController {
     return this.providerService.listLocationOrders(userId, locationId);
   }
 
+  @Get("orders/history")
+  async orderHistory(@CurrentUserId() userId: string, @Query("locationId") locationId: string) {
+    if (!locationId) {
+      throw new PickiError("VALIDATION_ERROR", "locationId is required");
+    }
+    return this.providerService.listLocationOrderHistory(userId, locationId);
+  }
+
   @Patch("orders/:orderId")
   async orderAction(
     @CurrentUserId() userId: string,

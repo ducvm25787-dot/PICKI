@@ -1,8 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, notInArray, or } from "drizzle-orm";
 import {
   orderItems,
   orders,
+  routeOrders,
   runnerActionToStatus,
   runnerPresence,
   runners,
@@ -76,7 +77,11 @@ export class RunnerService {
         and(
           eq(orders.zoneId, runner[0].zoneId),
           or(
-            and(eq(orders.status, "PROVIDER_ACCEPTED"), isNull(orders.runnerUserId)),
+            and(
+              eq(orders.status, "PROVIDER_ACCEPTED"),
+              isNull(orders.runnerUserId),
+              isNotNull(orders.runnerSoughtAt),
+            ),
             and(eq(orders.runnerUserId, userId), notInArray(orders.status, terminal)),
           ),
         ),
@@ -84,28 +89,69 @@ export class RunnerService {
       .orderBy(desc(orders.createdAt))
       .limit(50);
 
-    const mapOrder = async (o: (typeof rows)[0]) => ({
-      id: o.id,
-      orderNumber: o.orderNumber,
-      status: o.status,
-      totalVnd: o.totalVnd,
-      assignedToMe: o.runnerUserId === userId,
-      estimatedReadyAt: o.estimatedReadyAt?.toISOString() ?? null,
-      providerHandoffAt: o.providerHandoffAt?.toISOString() ?? null,
-      delivery: {
-        building: o.deliveryBuilding,
-        apartment: o.deliveryApartment,
-      },
-      items: await this.db.select().from(orderItems).where(eq(orderItems.orderId, o.id)),
-    });
+    const mapOrder = async (o: (typeof rows)[0]) => {
+      const routeLink = await this.db
+        .select({ routeId: routeOrders.routeId })
+        .from(routeOrders)
+        .where(eq(routeOrders.orderId, o.id))
+        .limit(1);
+      return {
+        id: o.id,
+        orderNumber: o.orderNumber,
+        status: o.status,
+        totalVnd: o.totalVnd,
+        assignedToMe: o.runnerUserId === userId,
+        estimatedReadyAt: o.estimatedReadyAt?.toISOString() ?? null,
+        providerHandoffAt: o.providerHandoffAt?.toISOString() ?? null,
+        runnerSoughtAt: o.runnerSoughtAt?.toISOString() ?? null,
+        routeId: routeLink[0]?.routeId ?? null,
+        delivery: {
+          building: o.deliveryBuilding,
+          apartment: o.deliveryApartment,
+        },
+        items: await this.db.select().from(orderItems).where(eq(orderItems.orderId, o.id)),
+      };
+    };
 
-    const pool = rows.filter((o) => !o.runnerUserId && o.status === "PROVIDER_ACCEPTED");
+    const pool = rows.filter(
+      (o) => !o.runnerUserId && o.status === "PROVIDER_ACCEPTED" && o.runnerSoughtAt != null,
+    );
     const mine = rows.filter((o) => o.runnerUserId === userId);
 
     return {
       orders: await Promise.all(rows.map(mapOrder)),
       pool: await Promise.all(pool.map(mapOrder)),
       mine: await Promise.all(mine.map(mapOrder)),
+    };
+  }
+
+  async listOrderHistory(userId: string, limit = 30) {
+    const runner = await this.db.select().from(runners).where(eq(runners.userId, userId)).limit(1);
+    if (!runner[0]) {
+      throw new PickiError("FORBIDDEN", "Runner profile not found");
+    }
+
+    const terminal = ["DELIVERED", "CUSTOMER_CANCELLED", "SYSTEM_CANCELLED", "PROVIDER_REJECTED"];
+
+    const rows = await this.db
+      .select()
+      .from(orders)
+      .where(and(eq(orders.runnerUserId, userId), inArray(orders.status, terminal)))
+      .orderBy(desc(orders.updatedAt))
+      .limit(limit);
+
+    return {
+      orders: rows.map((o) => ({
+        id: o.id,
+        orderNumber: o.orderNumber,
+        status: o.status,
+        totalVnd: o.totalVnd,
+        completedAt: o.updatedAt.toISOString(),
+        delivery: {
+          building: o.deliveryBuilding,
+          apartment: o.deliveryApartment,
+        },
+      })),
     };
   }
 
@@ -129,6 +175,9 @@ export class RunnerService {
     if (input.action === "accept") {
       if (order[0].status !== "PROVIDER_ACCEPTED") {
         throw new PickiError("FORBIDDEN", "Quán phải nhận đơn trước — runner chỉ nhận khi đang tìm runner");
+      }
+      if (!order[0].runnerSoughtAt) {
+        throw new PickiError("FORBIDDEN", "Quán chưa bấm Tìm runner");
       }
       if (order[0].runnerUserId && order[0].runnerUserId !== userId) {
         throw new PickiError("FORBIDDEN", "Another runner already claimed this order");

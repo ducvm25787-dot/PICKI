@@ -10,11 +10,11 @@ Before any architectural decision, read:
 
 Master Spec wins on conflict. Implement **the current sprint only**.
 
-**Sprint 20–29 (current):** Full pilot loop — Provider/Runner/Payments. **S11–S18:** discovery, search/map, favorites. **S22–S23:** route + lobby handoff. **S24–S26:** Customer/Provider/Runner Web/PWA. **S27:** Admin/Ops Web — dashboard, orders, zones, cancel + audit_logs. **S28:** Picki Chat (order threads) + WEB notifications via outbox worker.
+**Sprint 20–29 (current):** Full pilot loop — Provider/Runner/Payments. **S11–S18:** discovery, search/map, favorites. **S22–S23:** route + lobby handoff. **S24–S26:** Customer/Provider/Runner Web/PWA. **S27:** Admin/Ops Web — dashboard, orders, zones, cancel + audit_logs + audit UI. **S28:** Picki Chat + WEB notifications (outbox worker) + desktop alerts (Runner). **P2 pilot hardening:** customer cancel, auto find-runner on accept/list, SW cache fix. **Next:** S29 Laundry (LISTING + PICKUP_AND_RETURN).
 
 **Demo accounts (seed:ops):** Provider `0908888001` · Runner `0908888002` · Admin `0908888003` · Customer `0901234567`
 
-**Pilot Zone 1:** Kim Văn – Kim Lũ (`kim-van-kim-lu`) — see `docs/pilot/KIM_VAN_KIM_LU.md`.
+**Pilot Zone 1:** Kim Văn – Kim Lũ (`kim-van-kim-lu`) — see `docs/pilot/KIM_VAN_KIM_LU.md`. **E2E:** `pnpm pilot:e2e` · manual checklist `docs/pilot/FOOD_E2E_CHECKLIST.md`.
 
 Key model reminders:
 

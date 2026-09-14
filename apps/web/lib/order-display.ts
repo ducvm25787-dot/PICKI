@@ -11,10 +11,11 @@ export function formatEstimatedReady(iso: string | null | undefined): string | n
   return `Dự kiến ~${String(mins)} phút (${at.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })})`;
 }
 
-/** Grab-like: Quán nhận → Runner → Nấu → Sẵn sàng → Bàn giao → Giao → Xong */
+/** Grab-like: Quán nhận → Tìm runner → Runner nhận → Nấu → … */
 export const ORDER_FLOW_STEPS = [
   { key: "PROVIDER_ACCEPTED", label: "Quán nhận" },
-  { key: "RUNNER_ASSIGNED", label: "Runner" },
+  { key: "SEEKING_RUNNER", label: "Tìm runner" },
+  { key: "RUNNER_ASSIGNED", label: "Runner nhận" },
   { key: "PREPARING", label: "Nấu" },
   { key: "READY", label: "Sẵn sàng" },
   { key: "PICKED_UP", label: "Bàn giao" },
@@ -22,17 +23,22 @@ export const ORDER_FLOW_STEPS = [
   { key: "DELIVERED", label: "Xong" },
 ] as const;
 
-export function orderStepIndex(status: string): number {
+export function orderStepIndex(
+  status: string,
+  opts: { runnerSoughtAt?: string | null } = {},
+): number {
+  if (status === "PROVIDER_ACCEPTED") {
+    return opts.runnerSoughtAt ? 1 : 0;
+  }
   const map: Record<string, number> = {
     CREATED: -1,
     PAID: -1,
-    PROVIDER_ACCEPTED: 0,
-    RUNNER_ASSIGNED: 1,
-    PREPARING: 2,
-    READY: 3,
-    PICKED_UP: 4,
-    DELIVERING: 5,
-    DELIVERED: 6,
+    RUNNER_ASSIGNED: 2,
+    PREPARING: 3,
+    READY: 4,
+    PICKED_UP: 5,
+    DELIVERING: 6,
+    DELIVERED: 7,
   };
   return map[status] ?? -1;
 }
@@ -40,6 +46,7 @@ export function orderStepIndex(status: string): number {
 type HandoffOpts = {
   estimatedReadyAt?: string | null;
   providerHandoffAt?: string | null;
+  runnerSoughtAt?: string | null;
   runner?: { displayName: string } | null;
 };
 
@@ -50,6 +57,13 @@ export function orderStatusWithEta(status: string, estimatedReadyAt?: string | n
 export function orderStatusRich(status: string, opts: HandoffOpts = {}): string {
   let base = orderStatusLabel(status);
   const eta = formatEstimatedReady(opts.estimatedReadyAt);
+
+  if (status === "PROVIDER_ACCEPTED") {
+    if (opts.runnerSoughtAt) {
+      return "Đang tìm runner — chờ runner nhận giao";
+    }
+    return "Quán đã nhận — bấm Tìm runner";
+  }
 
   if (opts.runner && status !== "CREATED" && status !== "PAID" && status !== "PROVIDER_ACCEPTED") {
     base = `${base} · Runner: ${opts.runner.displayName}`;

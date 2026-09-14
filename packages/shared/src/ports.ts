@@ -43,13 +43,24 @@ export type PaymentWebhookResult = {
   raw: unknown;
 };
 
+export type PaymentIntentResult = {
+  adapterReference: string;
+  checkoutUrl?: string;
+  qrCode?: string;
+};
+
+export type PaymentWebhookParsed = PaymentWebhookResult & {
+  status: "SUCCEEDED" | "FAILED" | "CANCELLED";
+  providerRef: string;
+};
+
 export interface PaymentAdapter {
   readonly providerKey: string;
-  createIntent(intent: PaymentIntent): Promise<{ adapterReference: string }>;
+  createIntent(intent: PaymentIntent): Promise<PaymentIntentResult>;
   parseWebhook(
     headers: Record<string, string>,
     body: unknown,
-  ): Promise<PaymentWebhookResult>;
+  ): Promise<PaymentWebhookParsed>;
   refund(pickiPaymentId: PickiId, amountVnd: Vnd): Promise<void>;
 }
 

@@ -396,3 +396,20 @@ All public REST resources under `/v1/*`. Vendor integrations under `/v1/integrat
 Transactional outbox (`outbox_events`) processed by an in-process or same-deploy worker in V1. Extract to separate worker service only when load requires.
 
 ---
+
+### ADR-041 — Food delivery split payment (goods prepay + runner fee on delivery)
+
+**Status:** ACCEPTED (Official)
+
+**Context:** Pilot Food cần minh bạch tổng chi phí nhưng tránh Picki làm trung gian thu–chia phí giao (wallet / settlement §146).
+
+**Decision:**
+
+1. Picki **tính và hiển thị** `delivery_fee_vnd` trên đơn; `total_vnd = subtotal + delivery_fee` cho khách tham chiếu.
+2. Khách **prepay tiền hàng** qua Picki payment adapter (`PAY_ON_PICKI`) hoặc merchant quán (`PAY_PROVIDER_DIRECTLY`).
+3. **Phí runner** thu **khi nhận hàng** (COD trực tiếp cho runner) — **không** qua Picki payment adapter V1.
+4. Picki ghi snapshot; không wallet / complex automatic settlement cho phí runner.
+
+**Full spec:** `PICKI_MASTER_SPEC.md` §104 (Food delivery — split payment), §116.
+
+---

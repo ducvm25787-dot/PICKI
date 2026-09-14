@@ -19,13 +19,14 @@
     "db:down": "docker compose -f infra/docker-compose.yml down",
     "db:migrate": "DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db migrate",
     "db:integration": "DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db test:integration",
-    "api:dev": "DATABASE_URL=postgresql://picki:picki@localhost:5432/picki SESSION_SECRET=local-dev-secret-16chars AUTH_OTP_DEV_EXPOSE=true pnpm --filter @picki/api dev",
+    "api:dev": "bash scripts/run-api-dev.sh",
     "api:e2e": "DATABASE_URL=postgresql://picki:picki@localhost:5432/picki SESSION_SECRET=local-dev-secret-16chars AUTH_OTP_DEV_EXPOSE=true pnpm --filter @picki/api test:e2e",
     "db:seed": "DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db seed:kvl && DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db seed:providers && DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db seed:menu && DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db seed:food && DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db seed:lobby && DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db seed:ops",
-    "web:dev": "pnpm --filter @picki/web dev",
+    "web:dev": "bash scripts/run-web-dev.sh",
     "dev:setup": "pnpm db:up && pnpm db:migrate && pnpm db:seed",
     "dev": "concurrently -k -n api,web -c blue,magenta \"pnpm api:dev\" \"pnpm web:dev\"",
-    "start:local": "bash scripts/start-local.sh"
+    "start:local": "bash scripts/start-local.sh",
+    "pilot:e2e": "bash scripts/pilot-food-e2e.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",

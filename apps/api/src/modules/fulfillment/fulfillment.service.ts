@@ -363,6 +363,14 @@ export class FulfillmentService {
 
     const affectedOrderIds = await this.resolveStopOrders(stop);
 
+    if (stop.stopType === "PICKUP") {
+      await this.assertPickupStopReady(affectedOrderIds);
+    } else if (stop.stopType === "APARTMENT_DROPOFF") {
+      for (const orderId of affectedOrderIds) {
+        await this.assertApartmentStopReady(orderId);
+      }
+    }
+
     await this.db.transaction(async (tx) => {
       await tx
         .update(routeStops)
@@ -380,7 +388,7 @@ export class FulfillmentService {
         const handoffs = await this.loadHandoffsForStop(stopId);
         for (const h of handoffs) {
           if (h.customerStatus === "NO_RESPONSE") {
-            await this.applyStopToOrder(runnerUserId, "LOBBY_NO_RESPONSE", h.orderId);
+            await this.applyLobbyNoResponse(runnerUserId, h.orderId);
           }
         }
       } else {
@@ -417,19 +425,44 @@ export class FulfillmentService {
     return this.getActiveRoute(runnerUserId);
   }
 
+  private async applyLobbyNoResponse(runnerUserId: string, orderId: string) {
+    const orderRow = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    const order = orderRow[0];
+    if (!order || order.runnerUserId !== runnerUserId) return;
+
+    if (order.deliveryHandoffMode === "LOBBY_PICKUP") {
+      if (order.status === "PICKED_UP" || order.status === "DELIVERING") {
+        await this.transitions.transition(orderId, "DELIVERED", runnerUserId, "Lobby no-show");
+        await this.db
+          .update(deliveries)
+          .set({ status: "COMPLETED", updatedAt: new Date() })
+          .where(eq(deliveries.orderId, orderId));
+      }
+      return;
+    }
+
+    if (order.status === "PICKED_UP") {
+      await this.transitions.transition(orderId, "DELIVERING", runnerUserId, "Lobby no-response — door attempt");
+    }
+  }
+
   private async applyStopToOrder(runnerUserId: string, stopType: string, orderId: string) {
     const orderRow = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
     const order = orderRow[0];
     if (!order || order.runnerUserId !== runnerUserId) return;
 
-    if (stopType === "PICKUP" && order.status === "RUNNER_ASSIGNED") {
+    if (stopType === "PICKUP") {
+      if (order.status === "PICKED_UP" || order.status === "DELIVERING" || order.status === "DELIVERED") {
+        return;
+      }
+      if (order.status !== "READY" || !order.providerHandoffAt) {
+        return;
+      }
       await this.transitions.transition(orderId, "PICKED_UP", runnerUserId, "Pickup stop completed");
       await this.db
         .update(deliveries)
         .set({ status: "IN_PROGRESS", updatedAt: new Date() })
         .where(eq(deliveries.orderId, orderId));
-    } else if (stopType === "LOBBY_NO_RESPONSE" && order.status === "PICKED_UP") {
-      await this.transitions.transition(orderId, "DELIVERING", runnerUserId, "Lobby no-response — door attempt");
     } else if (
       (stopType === "LOBBY_DROPOFF" || stopType === "PICKI_POINT") &&
       order.status === "PICKED_UP"
@@ -450,6 +483,41 @@ export class FulfillmentService {
         .where(eq(deliveries.orderId, orderId));
     } else if (stopType === "LOBBY_DROPOFF" && order.status === "PICKED_UP" && !order.deliveryApartment) {
       await this.transitions.transition(orderId, "DELIVERED", runnerUserId, "Lobby-only delivery completed");
+    }
+  }
+
+  private async assertPickupStopReady(orderIds: string[]) {
+    for (const orderId of orderIds) {
+      const orderRow = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+      const order = orderRow[0];
+      if (!order) continue;
+      if (order.status === "PICKED_UP" || order.status === "DELIVERING" || order.status === "DELIVERED") {
+        continue;
+      }
+      if (order.status === "RUNNER_ASSIGNED" || order.status === "PREPARING") {
+        throw new PickiError(
+          "FORBIDDEN",
+          "Chưa hết đơn sẵn sàng tại quán — chờ quán nấu xong và bấm bàn giao cho runner",
+        );
+      }
+      if (order.status === "READY" && !order.providerHandoffAt) {
+        throw new PickiError(
+          "FORBIDDEN",
+          "Quán chưa bàn giao hết đơn — chờ quán bấm 'Đã giao cho runner'",
+        );
+      }
+      if (order.status !== "READY") {
+        throw new PickiError("FORBIDDEN", `Đơn ${order.orderNumber} chưa sẵn sàng lấy hàng`);
+      }
+    }
+  }
+
+  private async assertApartmentStopReady(orderId: string) {
+    const orderRow = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    const order = orderRow[0];
+    if (!order || order.status === "DELIVERED") return;
+    if (order.status !== "PICKED_UP" && order.status !== "DELIVERING") {
+      throw new PickiError("FORBIDDEN", "Phải hoàn thành lấy hàng tại quán trước khi giao căn");
     }
   }
 
@@ -646,7 +714,14 @@ export class FulfillmentService {
       providerName,
       providerLat: providerLat ?? null,
       providerLng: providerLng ?? null,
+      deliveryHandoffMode:
+        order.deliveryHandoffMode === "DOOR_DELIVERY" ? "DOOR_DELIVERY" : "LOBBY_PICKUP",
+      deliveryAddressType: order.deliveryAddressType,
       deliveryBuilding: order.deliveryBuilding,
+      deliveryHouseNumber: order.deliveryHouseNumber,
+      deliveryAlley: order.deliveryAlley,
+      deliveryStreet: order.deliveryStreet,
+      deliveryWard: order.deliveryWard,
       deliveryFloor: order.deliveryFloor,
       deliveryApartment: order.deliveryApartment,
       deliveryLat: order.deliveryLat,

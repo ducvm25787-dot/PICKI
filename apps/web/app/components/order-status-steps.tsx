@@ -2,8 +2,14 @@
 
 import { ORDER_FLOW_STEPS, orderStepIndex } from "../../lib/order-display";
 
-export function OrderStatusSteps({ status }: { status: string }) {
-  const current = orderStepIndex(status);
+export function OrderStatusSteps({
+  status,
+  runnerSoughtAt,
+}: {
+  status: string;
+  runnerSoughtAt?: string | null;
+}) {
+  const current = orderStepIndex(status, { runnerSoughtAt });
   if (current < 0) return null;
 
   return (

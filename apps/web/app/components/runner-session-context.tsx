@@ -14,6 +14,8 @@ export type RunnerOrder = {
   assignedToMe: boolean;
   estimatedReadyAt: string | null;
   providerHandoffAt: string | null;
+  runnerSoughtAt: string | null;
+  routeId: string | null;
   delivery: { building: string | null; apartment: string | null };
 };
 
@@ -169,7 +171,7 @@ export function RunnerPageShell({
           <div className="logo runner-logo">Picki Runner</div>
           <div className="tagline">{title}</div>
         </div>
-        <NotificationBell />
+        <NotificationBell desktopAlerts />
       </div>
       {children}
     </div>

@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { AdminNav } from "./admin-nav";
 import { CustomerNav } from "./customer-nav";
 import { ProviderNav } from "./provider-nav";
+import { PushSubscribe } from "./push-subscribe";
 import { PwaInstallHint } from "./pwa-install-hint";
 import { RunnerNav } from "./runner-nav";
 
@@ -45,8 +46,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (showRunnerChrome) mainClass += " runner-app";
   if (showAdminChrome) mainClass += " admin-app";
 
+  const enablePush =
+    showCustomerChrome || showProviderChrome || showRunnerChrome;
+
   return (
     <>
+      {enablePush ? <PushSubscribe /> : null}
       {showCustomerChrome ? <PwaInstallHint /> : null}
       {showProviderChrome ? (
         <PwaInstallHint

@@ -119,6 +119,13 @@ async function seed() {
     await migrateLegacyOpsUser(sql, LEGACY_PROVIDER_PHONES, providerUserId, "provider_members");
     await migrateLegacyOpsUser(sql, LEGACY_RUNNER_PHONES, runnerUserId, "runners");
 
+    for (const legacyPhone of [...LEGACY_PROVIDER_PHONES, ...LEGACY_RUNNER_PHONES]) {
+      const legacyUserId = await userIdForPhone(sql, legacyPhone);
+      if (!legacyUserId || legacyUserId === providerUserId || legacyUserId === runnerUserId) continue;
+      await sql`DELETE FROM user_identities WHERE user_id = ${legacyUserId}::uuid`;
+      await sql`DELETE FROM users WHERE id = ${legacyUserId}::uuid`;
+    }
+
     const memberExists = await sql<{ id: string }[]>`
       SELECT id FROM provider_members
       WHERE user_id = ${providerUserId}::uuid AND provider_id = ${location[0].provider_id}::uuid

@@ -11,6 +11,7 @@ export default function ProviderSettingsPage() {
 
   async function logout() {
     await api("/auth/logout", { method: "POST" });
+    localStorage.removeItem("picki-provider-location");
     router.replace("/provider/login");
   }
 

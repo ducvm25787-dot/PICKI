@@ -41,3 +41,8 @@ Approximate demand-core anchor for candidate generation (~not the final polygon)
 - Lng: 105.8414
 
 Travel-time accessibility and operator edits replace any fixed-radius assumption (ADR-010).
+
+## E2E testing (Food pilot)
+
+- **Automated API:** `pnpm pilot:e2e` (script: `scripts/pilot-food-e2e.sh`)
+- **Manual UI checklist:** [`FOOD_E2E_CHECKLIST.md`](./FOOD_E2E_CHECKLIST.md) — 3-tab COD flow, cancel, PayOS, push, Admin

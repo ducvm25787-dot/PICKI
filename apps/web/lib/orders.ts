@@ -7,7 +7,7 @@ export function orderStatusLabel(status: string): string {
     case "PAID":
       return "Đã thanh toán — chờ quán";
     case "PROVIDER_ACCEPTED":
-      return "Quán đã nhận — đang tìm runner";
+      return "Quán đã nhận";
     case "RUNNER_ASSIGNED":
       return "Runner đã nhận — chờ quán nấu";
     case "PREPARING":

@@ -9,6 +9,7 @@ import {
   providers,
   runners,
   userZoneMemberships,
+  users,
   zones,
   type PickiDb,
 } from "@picki/db";
@@ -156,5 +157,29 @@ export class AdminService {
     }
 
     throw new PickiError("VALIDATION_ERROR", "Unknown action");
+  }
+
+  async listAuditLogs(limit = 50) {
+    const rows = await this.db
+      .select({
+        log: auditLogs,
+        actorName: users.displayName,
+      })
+      .from(auditLogs)
+      .leftJoin(users, eq(auditLogs.actorUserId, users.id))
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(Math.min(limit, 100));
+
+    return {
+      logs: rows.map((r) => ({
+        id: r.log.id,
+        action: r.log.action,
+        entityType: r.log.entityType,
+        entityId: r.log.entityId,
+        actorName: r.actorName ?? "System",
+        metadata: r.log.metadata,
+        createdAt: r.log.createdAt.toISOString(),
+      })),
+    };
   }
 }

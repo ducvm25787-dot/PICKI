@@ -5,7 +5,7 @@ export const noopPaymentAdapter: PaymentAdapter = {
   async createIntent(intent) {
     return { adapterReference: `noop:${intent.pickiPaymentId}` };
   },
-  async parseWebhook() {
+  async parseWebhook(): Promise<never> {
     throw new Error("noop adapter has no webhooks");
   },
   async refund() {

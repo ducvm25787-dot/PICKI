@@ -46,6 +46,8 @@ export function ProviderLocationProvider({ children }: { children: React.ReactNo
         "Tài khoản này chưa được gán quán demo. Chạy: pnpm db:seed (hoặc seed:ops). Số demo: 0908888001.",
       );
       setLocations([]);
+      setLocationIdState("");
+      localStorage.removeItem(STORAGE_KEY);
       return;
     }
 
@@ -53,8 +55,11 @@ export function ProviderLocationProvider({ children }: { children: React.ReactNo
     setAccessError(null);
 
     const stored = localStorage.getItem(STORAGE_KEY);
-    const pick =
-      withIds.find((l) => l.locationId === stored)?.locationId ?? withIds[0]?.locationId ?? "";
+    const validStored = withIds.find((l) => l.locationId === stored)?.locationId;
+    if (stored && !validStored) {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+    const pick = validStored ?? withIds[0]?.locationId ?? "";
     setLocationIdState(pick);
     if (pick) localStorage.setItem(STORAGE_KEY, pick);
   }, []);
@@ -68,9 +73,14 @@ export function ProviderLocationProvider({ children }: { children: React.ReactNo
   }, [refreshLocations, router]);
 
   const setLocationId = useCallback((id: string) => {
-    setLocationIdState(id);
-    localStorage.setItem(STORAGE_KEY, id);
-  }, []);
+    setLocationIdState((prev) => {
+      const allowed = locations.some((l) => l.locationId === id);
+      const next = allowed ? id : prev;
+      if (next) localStorage.setItem(STORAGE_KEY, next);
+      else localStorage.removeItem(STORAGE_KEY);
+      return next;
+    });
+  }, [locations]);
 
   const activeLocation = useMemo(
     () => locations.find((l) => l.locationId === locationId),

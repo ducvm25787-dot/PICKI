@@ -1,4 +1,4 @@
-import { Controller, Inject, Param, Post, UseGuards } from "@nestjs/common";
+import { Controller, Get, Inject, Param, Post, UseGuards } from "@nestjs/common";
 import { CurrentUserId } from "../auth/current-user.decorator.js";
 import { SessionAuthGuard } from "../auth/session-auth.guard.js";
 import { PaymentsService } from "./payments.service.js";
@@ -11,6 +11,11 @@ export class PaymentsController {
   @Post("orders/:orderId/intent")
   async intent(@CurrentUserId() userId: string, @Param("orderId") orderId: string) {
     return this.paymentsService.createPaymentIntent(userId, orderId);
+  }
+
+  @Get(":paymentId")
+  async status(@CurrentUserId() userId: string, @Param("paymentId") paymentId: string) {
+    return this.paymentsService.getPaymentStatus(userId, paymentId);
   }
 
   @Post(":paymentId/dev-confirm")
