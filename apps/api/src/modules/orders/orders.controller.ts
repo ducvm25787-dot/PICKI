@@ -33,6 +33,19 @@ export class OrdersController {
     return this.ordersService.getById(userId, orderId);
   }
 
+  @Patch(":orderId")
+  async orderAction(
+    @CurrentUserId() userId: string,
+    @Param("orderId") orderId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = z.object({ action: z.literal("cancel") }).safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Invalid order action");
+    }
+    return this.ordersService.customerCancel(userId, orderId);
+  }
+
   @Patch(":orderId/lobby")
   async lobbyAction(
     @CurrentUserId() userId: string,

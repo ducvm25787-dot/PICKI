@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import {
   addressVerifications,
   addresses,
@@ -15,8 +15,10 @@ import { PickiError } from "@picki/shared";
 import { PICKI_DB, PICKI_SQL } from "../../shared/tokens.js";
 import type { z } from "zod";
 import type { joinZoneSchema } from "../zones/dto.js";
+import type { addressInputSchema } from "./dto.js";
 
 type JoinInput = z.infer<typeof joinZoneSchema>;
+type AddressInput = z.infer<typeof addressInputSchema>;
 
 @Injectable()
 export class AddressesService {
@@ -123,6 +125,278 @@ export class AddressesService {
         membershipStatus: "JOINED" as const,
       };
     });
+  }
+
+  async listZoneAddresses(userId: string, zoneId: string) {
+    await this.assertZoneMember(userId, zoneId);
+
+    const rows = await this.db
+      .select({
+        userAddressId: userAddresses.id,
+        label: userAddresses.label,
+        address: addresses,
+      })
+      .from(userAddresses)
+      .innerJoin(addresses, eq(userAddresses.addressId, addresses.id))
+      .where(and(eq(userAddresses.userId, userId), eq(userAddresses.zoneId, zoneId)))
+      .orderBy(asc(userAddresses.createdAt));
+
+    return {
+      addresses: rows.map((r) => ({
+        id: r.address.id,
+        label: r.label,
+        addressType: r.address.addressType,
+        building: r.address.building,
+        floor: r.address.floor,
+        apartment: r.address.apartment,
+        houseNumber: r.address.houseNumber,
+        alley: r.address.alley,
+        street: r.address.street,
+        ward: r.address.ward,
+        city: r.address.city,
+        deliveryNote: r.address.deliveryNote,
+      })),
+    };
+  }
+
+  async addZoneAddress(userId: string, zoneId: string, input: AddressInput) {
+    await this.assertZoneMember(userId, zoneId);
+
+    return this.db.transaction(async (tx) => {
+      const [address] = await tx
+        .insert(addresses)
+        .values({
+          zoneId,
+          addressType: input.addressType,
+          building: input.building ?? null,
+          floor: input.floor ?? null,
+          apartment: input.apartment ?? null,
+          houseNumber: input.houseNumber ?? null,
+          alley: input.alley ?? null,
+          street: input.street ?? null,
+          ward: input.ward ?? null,
+          city: input.city ?? "Hà Nội",
+          deliveryNote: input.deliveryNote ?? null,
+        })
+        .returning();
+
+      if (!address) {
+        throw new PickiError("INTERNAL_ERROR", "Failed to create address");
+      }
+
+      await tx.insert(addressVerifications).values({
+        addressId: address.id,
+        status: "LEVEL_1_VALIDATED",
+        verifiedAt: new Date(),
+      });
+
+      await tx.insert(userAddresses).values({
+        userId,
+        addressId: address.id,
+        zoneId,
+        label: input.label,
+      });
+
+      return {
+        id: address.id,
+        label: input.label,
+        addressType: address.addressType,
+        building: address.building,
+        floor: address.floor,
+        apartment: address.apartment,
+        houseNumber: address.houseNumber,
+        alley: address.alley,
+        street: address.street,
+        ward: address.ward,
+        city: address.city,
+        deliveryNote: address.deliveryNote,
+      };
+    });
+  }
+
+  async updateZoneAddress(
+    userId: string,
+    zoneId: string,
+    addressId: string,
+    input: AddressInput,
+  ) {
+    await this.assertZoneMember(userId, zoneId);
+    await this.assertUserAddress(userId, zoneId, addressId);
+
+    return this.db.transaction(async (tx) => {
+      const [address] = await tx
+        .update(addresses)
+        .set({
+          addressType: input.addressType,
+          building: input.building ?? null,
+          floor: input.floor ?? null,
+          apartment: input.apartment ?? null,
+          houseNumber: input.houseNumber ?? null,
+          alley: input.alley ?? null,
+          street: input.street ?? null,
+          ward: input.ward ?? null,
+          city: input.city ?? "Hà Nội",
+          deliveryNote: input.deliveryNote ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(addresses.id, addressId))
+        .returning();
+
+      if (!address) {
+        throw new PickiError("NOT_FOUND", "Address not found");
+      }
+
+      const link = await tx
+        .select({ label: userAddresses.label })
+        .from(userAddresses)
+        .where(
+          and(
+            eq(userAddresses.userId, userId),
+            eq(userAddresses.zoneId, zoneId),
+            eq(userAddresses.addressId, addressId),
+          ),
+        )
+        .limit(1);
+
+      return {
+        id: address.id,
+        label: link[0]?.label ?? input.label,
+        addressType: address.addressType,
+        building: address.building,
+        floor: address.floor,
+        apartment: address.apartment,
+        houseNumber: address.houseNumber,
+        alley: address.alley,
+        street: address.street,
+        ward: address.ward,
+        city: address.city,
+        deliveryNote: address.deliveryNote,
+      };
+    });
+  }
+
+  async deleteZoneAddress(userId: string, zoneId: string, addressId: string) {
+    await this.assertZoneMember(userId, zoneId);
+    await this.assertUserAddress(userId, zoneId, addressId);
+
+    const countRow = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(userAddresses)
+      .where(and(eq(userAddresses.userId, userId), eq(userAddresses.zoneId, zoneId)));
+
+    if ((countRow[0]?.count ?? 0) <= 1) {
+      throw new PickiError("FORBIDDEN", "Cannot delete your only address in this Zone");
+    }
+
+    await this.db.transaction(async (tx) => {
+      const membership = await tx
+        .select()
+        .from(userZoneMemberships)
+        .where(
+          and(
+            eq(userZoneMemberships.userId, userId),
+            eq(userZoneMemberships.zoneId, zoneId),
+            eq(userZoneMemberships.status, "JOINED"),
+          ),
+        )
+        .limit(1);
+
+      if (membership[0]?.defaultAddressId === addressId) {
+        const fallback = await tx
+          .select({ addressId: userAddresses.addressId })
+          .from(userAddresses)
+          .where(
+            and(
+              eq(userAddresses.userId, userId),
+              eq(userAddresses.zoneId, zoneId),
+              ne(userAddresses.addressId, addressId),
+            ),
+          )
+          .orderBy(asc(userAddresses.createdAt))
+          .limit(1);
+
+        await tx
+          .update(userZoneMemberships)
+          .set({
+            defaultAddressId: fallback[0]?.addressId ?? null,
+            updatedAt: new Date(),
+          })
+          .where(eq(userZoneMemberships.id, membership[0].id));
+      }
+
+      await tx
+        .delete(userAddresses)
+        .where(
+          and(
+            eq(userAddresses.userId, userId),
+            eq(userAddresses.zoneId, zoneId),
+            eq(userAddresses.addressId, addressId),
+          ),
+        );
+
+      await tx.delete(addresses).where(eq(addresses.id, addressId));
+    });
+
+    return { deleted: true as const };
+  }
+
+  async resolveDeliveryAddress(userId: string, zoneId: string, addressId: string) {
+    await this.assertZoneMember(userId, zoneId);
+
+    const row = await this.db
+      .select({ address: addresses })
+      .from(userAddresses)
+      .innerJoin(addresses, eq(userAddresses.addressId, addresses.id))
+      .where(
+        and(
+          eq(userAddresses.userId, userId),
+          eq(userAddresses.zoneId, zoneId),
+          eq(addresses.id, addressId),
+        ),
+      )
+      .limit(1);
+
+    if (!row[0]) {
+      throw new PickiError("NOT_FOUND", "Address not found in this Zone");
+    }
+
+    return row[0].address;
+  }
+
+  private async assertUserAddress(userId: string, zoneId: string, addressId: string) {
+    const row = await this.db
+      .select({ id: userAddresses.id })
+      .from(userAddresses)
+      .where(
+        and(
+          eq(userAddresses.userId, userId),
+          eq(userAddresses.zoneId, zoneId),
+          eq(userAddresses.addressId, addressId),
+        ),
+      )
+      .limit(1);
+
+    if (!row[0]) {
+      throw new PickiError("NOT_FOUND", "Address not found in this Zone");
+    }
+  }
+
+  private async assertZoneMember(userId: string, zoneId: string) {
+    const membership = await this.db
+      .select()
+      .from(userZoneMemberships)
+      .where(
+        and(
+          eq(userZoneMemberships.userId, userId),
+          eq(userZoneMemberships.zoneId, zoneId),
+          eq(userZoneMemberships.status, "JOINED"),
+        ),
+      )
+      .limit(1);
+
+    if (!membership[0]) {
+      throw new PickiError("FORBIDDEN", "Join the Zone before managing addresses");
+    }
   }
 
   async listMemberships(userId: string) {

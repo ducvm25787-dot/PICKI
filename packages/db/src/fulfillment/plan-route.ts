@@ -1,3 +1,5 @@
+export type DeliveryHandoffMode = "LOBBY_PICKUP" | "DOOR_DELIVERY";
+
 export type RouteOrderInput = {
   orderId: string;
   orderNumber: string;
@@ -5,13 +7,44 @@ export type RouteOrderInput = {
   providerName: string;
   providerLat: number | null;
   providerLng: number | null;
+  deliveryHandoffMode?: DeliveryHandoffMode | null;
+  deliveryAddressType?: string | null;
   deliveryBuilding: string | null;
   deliveryFloor: string | null;
   deliveryApartment: string | null;
+  deliveryHouseNumber?: string | null;
+  deliveryAlley?: string | null;
+  deliveryStreet?: string | null;
+  deliveryWard?: string | null;
   deliveryLat: number | null;
   deliveryLng: number | null;
   readyAt?: Date | null;
 };
+
+function handoffMode(order: RouteOrderInput): DeliveryHandoffMode {
+  return order.deliveryHandoffMode === "DOOR_DELIVERY" ? "DOOR_DELIVERY" : "LOBBY_PICKUP";
+}
+
+function isHighRise(order: RouteOrderInput): boolean {
+  return order.deliveryAddressType !== "STREET_ADDRESS" && Boolean(order.deliveryBuilding?.trim());
+}
+
+function streetLabel(order: RouteOrderInput): string {
+  const parts = [
+    order.deliveryHouseNumber,
+    order.deliveryAlley ? `ngõ ${order.deliveryAlley}` : null,
+    order.deliveryStreet,
+  ].filter(Boolean);
+  return parts.join(" ") || "Giao tận nơi";
+}
+
+export function deliveryClusterKey(order: RouteOrderInput): string | null {
+  const building = order.deliveryBuilding?.trim();
+  if (building) return `building:${building}`;
+  const street = order.deliveryStreet?.trim();
+  if (street) return `street:${street}|${order.deliveryWard?.trim() ?? ""}`;
+  return null;
+}
 
 export type PlannedStop = {
   stopType: "PICKUP" | "LOBBY_DROPOFF" | "APARTMENT_DROPOFF" | "PICKI_POINT";
@@ -52,6 +85,7 @@ export function planRouteStops(orders: RouteOrderInput[]): PlannedStop[] {
 
   const lobbyByBuilding = new Map<string, RouteOrderInput[]>();
   for (const order of orders) {
+    if (handoffMode(order) !== "LOBBY_PICKUP" || !isHighRise(order)) continue;
     const building = order.deliveryBuilding?.trim();
     if (!building) continue;
     const group = lobbyByBuilding.get(building) ?? [];
@@ -78,6 +112,7 @@ export function planRouteStops(orders: RouteOrderInput[]): PlannedStop[] {
   }
 
   for (const order of orders) {
+    if (handoffMode(order) !== "DOOR_DELIVERY") continue;
     const building = order.deliveryBuilding?.trim();
     const apartment = order.deliveryApartment?.trim();
     if (building && apartment) {
@@ -102,7 +137,7 @@ export function planRouteStops(orders: RouteOrderInput[]): PlannedStop[] {
         apartment: order.deliveryApartment,
         lat: order.deliveryLat,
         lng: order.deliveryLng,
-        label: `Giao tận nơi · ${order.orderNumber}`,
+        label: `${streetLabel(order)} · ${order.orderNumber}`,
       });
     }
   }
@@ -119,8 +154,8 @@ export function canBatchOrder(
   if (existingOrders.length >= MAX_BATCH_ORDERS) return false;
   if (existingOrders.some((o) => o.orderId === incoming.orderId)) return false;
 
-  const building = incoming.deliveryBuilding?.trim();
-  if (!building) return false;
+  const incomingKey = deliveryClusterKey(incoming);
+  if (!incomingKey) return false;
 
-  return existingOrders.every((o) => o.deliveryBuilding?.trim() === building);
+  return existingOrders.every((o) => deliveryClusterKey(o) === incomingKey);
 }

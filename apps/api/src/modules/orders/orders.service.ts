@@ -3,6 +3,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import {
   addresses,
   buildOrderNumber,
+  canCustomerCancel,
   listLocationMenu,
   lobbyHandoffs,
   orderItems,
@@ -21,7 +22,9 @@ import {
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
 import { loadRunnerSummary, orderHandoffFields } from "./order-enrichment.js";
+import { OrderTransitionService } from "./order-transition.service.js";
 import { OutboxService } from "../outbox/outbox.service.js";
+import { AddressesService } from "../addresses/addresses.service.js";
 import { PICKI_DB, PICKI_SQL } from "../../shared/tokens.js";
 import type { z } from "zod";
 import type { createOrderSchema } from "./dto.js";
@@ -34,6 +37,8 @@ export class OrdersService {
     @Inject(PICKI_DB) private readonly db: PickiDb,
     @Inject(PICKI_SQL) private readonly sql: PickiSql,
     @Inject(OutboxService) private readonly outbox: OutboxService,
+    @Inject(OrderTransitionService) private readonly transitions: OrderTransitionService,
+    @Inject(AddressesService) private readonly addresses: AddressesService,
   ) {}
 
   async create(userId: string, input: CreateOrderInput) {
@@ -90,26 +95,37 @@ export class OrdersService {
       throw new PickiError("FORBIDDEN", "Provider does not serve this Zone");
     }
 
-    let deliveryBuilding: string | null = null;
-    let deliveryFloor: string | null = null;
-    let deliveryApartment: string | null = null;
-    let deliveryNote: string | null = null;
-    let deliveryLat: number | null = null;
-    let deliveryLng: number | null = null;
+    const addr = await this.addresses.resolveDeliveryAddress(userId, input.zoneId, input.addressId);
 
-    if (membership[0].defaultAddressId) {
-      const addr = await this.db
-        .select()
-        .from(addresses)
-        .where(eq(addresses.id, membership[0].defaultAddressId))
-        .limit(1);
-      if (addr[0]) {
-        deliveryBuilding = addr[0].building;
-        deliveryFloor = addr[0].floor;
-        deliveryApartment = addr[0].apartment;
-        deliveryNote = addr[0].deliveryNote;
+    const isStreet = addr.addressType === "STREET_ADDRESS";
+    let handoffMode = input.deliveryHandoffMode;
+
+    if (isStreet) {
+      handoffMode = "DOOR_DELIVERY";
+      if (!addr.street?.trim()) {
+        throw new PickiError("VALIDATION_ERROR", "Địa chỉ mặt đất cần tên đường/ngõ");
+      }
+    } else {
+      if (
+        handoffMode === "DOOR_DELIVERY" &&
+        (!addr.building?.trim() || !addr.apartment?.trim())
+      ) {
+        throw new PickiError(
+          "VALIDATION_ERROR",
+          "Giao tận căn cần địa chỉ có tòa và số căn",
+        );
+      }
+      if (handoffMode === "LOBBY_PICKUP" && !addr.building?.trim()) {
+        throw new PickiError("VALIDATION_ERROR", "Giao tại sảnh cần địa chỉ có tòa nhà");
       }
     }
+
+    const deliveryBuilding = addr.building;
+    const deliveryFloor = addr.floor;
+    const deliveryApartment = addr.apartment;
+    const deliveryNote = addr.deliveryNote;
+    const deliveryLat: number | null = null;
+    const deliveryLng: number | null = null;
 
     const menu = await listLocationMenu(this.sql, input.providerLocationId);
     const menuById = new Map(menu.map((m) => [m.offering_id, m]));
@@ -149,7 +165,15 @@ export class OrdersService {
           subtotalVnd,
           deliveryFeeVnd,
           totalVnd,
+          deliveryAddressId: addr.id,
+          deliveryAddressType: addr.addressType,
+          deliveryHandoffMode: handoffMode,
           deliveryBuilding,
+          deliveryHouseNumber: addr.houseNumber,
+          deliveryAlley: addr.alley,
+          deliveryStreet: addr.street,
+          deliveryWard: addr.ward,
+          deliveryCity: addr.city,
           deliveryFloor,
           deliveryApartment,
           deliveryNote,
@@ -225,6 +249,30 @@ export class OrdersService {
       await this.loadFulfillment(order.id),
       await this.loadLobby(order.id),
     );
+  }
+
+  async customerCancel(userId: string, orderId: string) {
+    const row = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    const order = row[0];
+    if (!order || order.customerUserId !== userId) {
+      throw new PickiError("NOT_FOUND", "Order not found");
+    }
+    if (!canCustomerCancel(order.status)) {
+      throw new PickiError("FORBIDDEN", `Không thể hủy đơn ở trạng thái ${order.status}`);
+    }
+
+    const result = await this.transitions.transition(
+      orderId,
+      "CUSTOMER_CANCELLED",
+      userId,
+      "Customer cancelled",
+    );
+
+    return {
+      id: result.order.id,
+      orderNumber: result.order.orderNumber,
+      status: result.order.status,
+    };
   }
 
   async customerLobbyAction(userId: string, orderId: string, action: "coming_down") {
@@ -324,7 +372,15 @@ export class OrdersService {
       deliveryFeeVnd: order.deliveryFeeVnd,
       totalVnd: order.totalVnd,
       delivery: {
+        addressId: order.deliveryAddressId,
+        addressType: order.deliveryAddressType,
+        handoffMode: order.deliveryHandoffMode,
         building: order.deliveryBuilding,
+        houseNumber: order.deliveryHouseNumber,
+        alley: order.deliveryAlley,
+        street: order.deliveryStreet,
+        ward: order.deliveryWard,
+        city: order.deliveryCity,
         floor: order.deliveryFloor,
         apartment: order.deliveryApartment,
         note: order.deliveryNote,
@@ -338,6 +394,7 @@ export class OrdersService {
         lineTotalVnd: i.lineTotalVnd,
       })),
       createdAt: order.createdAt.toISOString(),
+      canCancel: canCustomerCancel(order.status),
       ...orderHandoffFields(order),
       runner: await loadRunnerSummary(this.db, order.runnerUserId),
       fulfillment: fulfillment ?? null,

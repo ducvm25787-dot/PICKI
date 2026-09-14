@@ -25,6 +25,10 @@ export function canTransition(from: string, to: string): boolean {
   return allowed?.includes(to) ?? false;
 }
 
+export function canCustomerCancel(from: string): boolean {
+  return canTransition(from, "CUSTOMER_CANCELLED");
+}
+
 const TERMINAL_ORDER_STATUSES = [
   "DELIVERED",
   "CUSTOMER_CANCELLED",
@@ -39,7 +43,7 @@ export function canAdminSystemCancel(from: string): boolean {
   return !TERMINAL_ORDER_STATUSES.includes(from as (typeof TERMINAL_ORDER_STATUSES)[number]);
 }
 
-export type ProviderAction = "accept" | "reject" | "preparing" | "ready" | "handoff";
+export type ProviderAction = "accept" | "reject" | "find_runner" | "preparing" | "ready" | "handoff";
 
 export function providerActionToStatus(action: ProviderAction): string | null {
   switch (action) {
@@ -47,6 +51,8 @@ export function providerActionToStatus(action: ProviderAction): string | null {
       return "PROVIDER_ACCEPTED";
     case "reject":
       return "PROVIDER_REJECTED";
+    case "find_runner":
+      return null;
     case "preparing":
       return "PREPARING";
     case "ready":

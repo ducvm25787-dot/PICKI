@@ -8,6 +8,7 @@ import { OrderChat } from "../../components/order-chat";
 import { api } from "../../../lib/api";
 import { formatVnd } from "../../../lib/money";
 import { OrderStatusSteps } from "../../components/order-status-steps";
+import { formatAddressLine, handoffModeLabel, isApartmentAddress } from "../../../lib/addresses";
 import { orderStatusRich } from "../../../lib/order-display";
 
 type OrderDetail = {
@@ -20,9 +21,16 @@ type OrderDetail = {
   paymentMode: string;
   totalVnd: number;
   delivery: {
+    addressType?: string;
+    handoffMode?: string;
     building: string | null;
+    houseNumber?: string | null;
+    alley?: string | null;
+    street?: string | null;
+    ward?: string | null;
     floor: string | null;
     apartment: string | null;
+    note?: string | null;
   };
   items: {
     name: string;
@@ -40,6 +48,7 @@ type OrderDetail = {
     runnerArrived: boolean;
     customerStatus: string;
   } | null;
+  canCancel?: boolean;
 };
 
 export default function OrderDetailPage() {
@@ -50,7 +59,17 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
+  const [paymentInfo, setPaymentInfo] = useState<{
+    paymentId: string;
+    checkoutUrl?: string;
+    qrCode?: string;
+    providerKind?: string;
+    devConfirmPath?: string;
+  } | null>(null);
+  const [payError, setPayError] = useState<string | null>(null);
   const [lobbySending, setLobbySending] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     const data = await api<OrderDetail>(`/orders/${params.orderId}`);
@@ -76,14 +95,91 @@ export default function OrderDetailPage() {
     }
   }
 
+  async function cancelOrder() {
+    if (!window.confirm("Hủy đơn này?")) return;
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      await api(`/orders/${params.orderId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "cancel" }),
+      });
+      await reload();
+    } catch (e) {
+      setCancelError(e instanceof Error ? e.message : "Không hủy được đơn");
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   async function payOnline() {
     setPaying(true);
+    setPayError(null);
     try {
-      const intent = await api<{ paymentId: string }>(
-        `/payments/orders/${params.orderId}/intent`,
-        { method: "POST" },
-      );
-      await api(`/payments/${intent.paymentId}/dev-confirm`, { method: "POST" });
+      const intent = await api<{
+        paymentId: string;
+        status: string;
+        providerKind: string;
+        checkoutUrl?: string;
+        qrCode?: string;
+        devConfirmPath?: string;
+      }>(`/payments/orders/${params.orderId}/intent`, { method: "POST" });
+
+      if (intent.status === "SUCCEEDED") {
+        await reload();
+        return;
+      }
+
+      setPaymentInfo({
+        paymentId: intent.paymentId,
+        checkoutUrl: intent.checkoutUrl,
+        qrCode: intent.qrCode,
+        providerKind: intent.providerKind,
+        devConfirmPath: intent.devConfirmPath,
+      });
+
+      if (intent.providerKind === "PAYOS") {
+        void pollPayment(intent.paymentId);
+        return;
+      }
+
+      if (intent.devConfirmPath) {
+        await api(`/payments/${intent.paymentId}/dev-confirm`, { method: "POST" });
+        await reload();
+      }
+    } catch (e) {
+      setPayError(e instanceof Error ? e.message : "Thanh toán thất bại");
+    } finally {
+      setPaying(false);
+    }
+  }
+
+  async function pollPayment(paymentId: string) {
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      try {
+        const st = await api<{ status: string; orderStatus: string }>(`/payments/${paymentId}`);
+        if (st.status === "SUCCEEDED") {
+          setPaymentInfo(null);
+          await reload();
+          return;
+        }
+        if (st.status === "FAILED") {
+          setPayError("Thanh toán không thành công");
+          return;
+        }
+      } catch {
+        /* retry */
+      }
+    }
+  }
+
+  async function devConfirmPayment() {
+    if (!paymentInfo?.paymentId) return;
+    setPaying(true);
+    try {
+      await api(`/payments/${paymentInfo.paymentId}/dev-confirm`, { method: "POST" });
+      setPaymentInfo(null);
       await reload();
     } finally {
       setPaying(false);
@@ -98,9 +194,30 @@ export default function OrderDetailPage() {
     );
   }
 
-  const addr = [order.delivery.building, order.delivery.floor, order.delivery.apartment]
-    .filter(Boolean)
-    .join(" · ");
+  const addr = formatAddressLine({
+    id: "",
+    label: "",
+    addressType: order.delivery.addressType ?? "RESIDENTIAL",
+    building: order.delivery.building,
+    floor: order.delivery.floor,
+    apartment: order.delivery.apartment,
+    houseNumber: order.delivery.houseNumber ?? null,
+    alley: order.delivery.alley ?? null,
+    street: order.delivery.street ?? null,
+    ward: order.delivery.ward ?? null,
+    city: null,
+    deliveryNote: order.delivery.note ?? null,
+  });
+  const handoffMode =
+    order.delivery.handoffMode === "DOOR_DELIVERY" ? "DOOR_DELIVERY" : "LOBBY_PICKUP";
+  const isApartment = isApartmentAddress({
+    addressType: order.delivery.addressType ?? "RESIDENTIAL",
+  });
+  const showLobbyPickup =
+    isApartment &&
+    handoffMode === "LOBBY_PICKUP" &&
+    order.lobby?.runnerArrived &&
+    order.status !== "DELIVERED";
 
   const showPay =
     needPay ||
@@ -140,11 +257,71 @@ export default function OrderDetailPage() {
 
       {showPay && order.status !== "PAID" && (
         <div className="card" style={{ margin: "16px 0" }}>
-          <button type="button" className="btn" disabled={paying} onClick={() => void payOnline()}>
-            {paying ? "Đang xử lý…" : `Thanh toán ${formatVnd(order.totalVnd)} (demo)`}
-          </button>
+          {!paymentInfo ? (
+            <button type="button" className="btn" disabled={paying} onClick={() => void payOnline()}>
+              {paying ? "Đang xử lý…" : `Thanh toán ${formatVnd(order.totalVnd)}`}
+            </button>
+          ) : (
+            <>
+              <p className="section-title" style={{ marginTop: 0 }}>
+                {paymentInfo.providerKind === "PAYOS" ? "Quét VietQR để thanh toán" : "Xác nhận thanh toán"}
+              </p>
+              {paymentInfo.qrCode ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={paymentInfo.qrCode}
+                  alt="VietQR thanh toán Picki"
+                  style={{ width: "100%", maxWidth: 280, display: "block", margin: "0 auto 12px" }}
+                />
+              ) : null}
+              {paymentInfo.checkoutUrl ? (
+                <a
+                  href={paymentInfo.checkoutUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-secondary"
+                  style={{ display: "block", textAlign: "center", marginBottom: 8 }}
+                >
+                  Mở trang thanh toán PayOS
+                </a>
+              ) : null}
+              {paymentInfo.devConfirmPath ? (
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={paying}
+                  onClick={() => void devConfirmPayment()}
+                >
+                  {paying ? "…" : "Xác nhận demo (dev)"}
+                </button>
+              ) : (
+                <p className="stat" style={{ margin: "8px 0 0" }}>
+                  Đang chờ xác nhận từ ngân hàng… Trang sẽ tự cập nhật khi thanh toán thành công.
+                </p>
+              )}
+            </>
+          )}
+          {payError ? (
+            <p style={{ color: "crimson", margin: "8px 0 0", fontSize: 14 }}>{payError}</p>
+          ) : null}
         </div>
       )}
+
+      {order.canCancel ? (
+        <div className="card" style={{ margin: "16px 0" }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={cancelling}
+            onClick={() => void cancelOrder()}
+          >
+            {cancelling ? "Đang hủy…" : "Hủy đơn"}
+          </button>
+          {cancelError ? (
+            <p style={{ color: "crimson", margin: "8px 0 0", fontSize: 14 }}>{cancelError}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="card" style={{ margin: "16px 0" }}>
         <p className="section-title">Món đã đặt</p>
@@ -167,10 +344,18 @@ export default function OrderDetailPage() {
         <div className="card" style={{ marginBottom: 16 }}>
           <p className="section-title">Giao đến</p>
           <p style={{ margin: 0 }}>{addr}</p>
+          <p className="stat" style={{ margin: "8px 0 0" }}>
+            {isApartment ? handoffModeLabel(handoffMode) : "Giao tận cửa"}
+          </p>
+          {order.delivery.note ? (
+            <p className="stat" style={{ margin: "4px 0 0" }}>
+              {order.delivery.note}
+            </p>
+          ) : null}
         </div>
       )}
 
-      {order.lobby?.runnerArrived && order.status !== "DELIVERED" && (
+      {showLobbyPickup && (
         <div
           className="card"
           style={{ marginBottom: 16, background: "#fff8e6", borderColor: "#e6c878" }}

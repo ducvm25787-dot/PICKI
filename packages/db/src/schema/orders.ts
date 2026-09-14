@@ -1,5 +1,6 @@
 import { doublePrecision, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { createdAt, updatedAt } from "./helpers.js";
+import { addresses } from "./addresses.js";
 import { offerings } from "./catalog.js";
 import { users } from "./identity.js";
 import { providerLocations } from "./providers.js";
@@ -22,7 +23,17 @@ export const orders = pgTable("orders", {
   subtotalVnd: integer("subtotal_vnd").notNull(),
   deliveryFeeVnd: integer("delivery_fee_vnd").notNull().default(0),
   totalVnd: integer("total_vnd").notNull(),
+  deliveryAddressId: uuid("delivery_address_id").references(() => addresses.id, {
+    onDelete: "set null",
+  }),
+  deliveryAddressType: text("delivery_address_type").notNull().default("RESIDENTIAL"),
+  deliveryHandoffMode: text("delivery_handoff_mode").notNull().default("LOBBY_PICKUP"),
   deliveryBuilding: text("delivery_building"),
+  deliveryHouseNumber: text("delivery_house_number"),
+  deliveryAlley: text("delivery_alley"),
+  deliveryStreet: text("delivery_street"),
+  deliveryWard: text("delivery_ward"),
+  deliveryCity: text("delivery_city"),
   deliveryFloor: text("delivery_floor"),
   deliveryApartment: text("delivery_apartment"),
   deliveryNote: text("delivery_note"),
@@ -32,6 +43,7 @@ export const orders = pgTable("orders", {
   runnerUserId: uuid("runner_user_id").references(() => users.id, { onDelete: "set null" }),
   estimatedReadyAt: timestamp("estimated_ready_at", { withTimezone: true, mode: "date" }),
   providerHandoffAt: timestamp("provider_handoff_at", { withTimezone: true, mode: "date" }),
+  runnerSoughtAt: timestamp("runner_sought_at", { withTimezone: true, mode: "date" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
