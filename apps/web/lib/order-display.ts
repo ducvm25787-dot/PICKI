@@ -29,7 +29,13 @@ export const LAUNDRY_FLOW_STEPS = [
   { key: "RUNNER_ASSIGNED", label: "Runner nhận" },
   { key: "PICKED_UP", label: "Lấy đồ" },
   { key: "DELIVERING", label: "Giao tiệm" },
-  { key: "DELIVERED", label: "Đã giao tiệm" },
+  { key: "AT_SHOP", label: "Tại tiệm" },
+  { key: "PROCESSING", label: "Đang giặt" },
+  { key: "READY_FOR_RETURN", label: "Sẵn sàng trả" },
+  { key: "RETURN_RUNNER_ASSIGNED", label: "Runner giao lại" },
+  { key: "RETURN_PICKED_UP", label: "Lấy tại tiệm" },
+  { key: "RETURN_DELIVERING", label: "Đang giao về" },
+  { key: "COMPLETED", label: "Hoàn tất" },
 ] as const;
 
 export function orderStepIndex(
@@ -46,6 +52,13 @@ export function orderStepIndex(
       RUNNER_ASSIGNED: 2,
       PICKED_UP: 3,
       DELIVERING: 4,
+      AT_SHOP: 5,
+      PROCESSING: 6,
+      READY_FOR_RETURN: 7,
+      RETURN_RUNNER_ASSIGNED: 8,
+      RETURN_PICKED_UP: 9,
+      RETURN_DELIVERING: 10,
+      COMPLETED: 11,
       DELIVERED: 5,
     };
     return laundryMap[status] ?? -1;

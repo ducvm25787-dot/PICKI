@@ -18,6 +18,16 @@ const base = (): RouteOrderInput => ({
 });
 
 describe("canBatchOrderWithSettings", () => {
+  it("allows first order on an empty route (incl. street address)", () => {
+    const streetOrder: RouteOrderInput = {
+      ...base(),
+      deliveryBuilding: null,
+      deliveryStreet: "Kim Văn",
+      deliveryAddressType: "STREET_ADDRESS",
+    };
+    expect(canBatchOrderWithSettings([], streetOrder, DEFAULT_BATCH_SETTINGS)).toBe(true);
+  });
+
   it("respects max batch orders from zone settings", () => {
     const existing = [base(), { ...base(), orderId: "o2", orderNumber: "PK-2" }];
     const incoming = { ...base(), orderId: "o3", orderNumber: "PK-3" };

@@ -100,6 +100,12 @@ export class ProviderService {
             "RUNNER_ASSIGNED",
             "PICKED_UP",
             "DELIVERING",
+            "AT_SHOP",
+            "PROCESSING",
+            "READY_FOR_RETURN",
+            "RETURN_RUNNER_ASSIGNED",
+            "RETURN_PICKED_UP",
+            "RETURN_DELIVERING",
           ]),
         ),
       )
@@ -113,6 +119,8 @@ export class ProviderService {
           id: o.id,
           orderNumber: o.orderNumber,
           status: o.status,
+          serviceVertical: o.serviceVertical,
+          laundryPickupMode: o.laundryPickupMode,
           totalVnd: o.totalVnd,
           paymentMode: o.paymentMode,
           delivery: {
@@ -138,6 +146,7 @@ export class ProviderService {
 
     const terminal = [
       "DELIVERED",
+      "COMPLETED",
       "CUSTOMER_CANCELLED",
       "SYSTEM_CANCELLED",
       "PROVIDER_REJECTED",
@@ -181,6 +190,10 @@ export class ProviderService {
     }
 
     await this.assertLocationAccess(userId, order[0].providerLocationId);
+
+    if (order[0].serviceVertical === "LAUNDRY") {
+      return this.applyLaundryOrderAction(userId, order[0], input);
+    }
 
     if (input.action === "accept") {
       if (order[0].paymentMode === "PAY_ON_PICKI" && order[0].status === "CREATED") {
@@ -242,6 +255,115 @@ export class ProviderService {
       ...orderHandoffFields(latest),
       runner: await loadRunnerSummary(this.db, latest.runnerUserId ?? null),
     };
+  }
+
+  private async applyLaundryOrderAction(
+    userId: string,
+    order: typeof orders.$inferSelect,
+    input: z.infer<typeof providerOrderActionSchema>,
+  ) {
+    if (input.action === "accept") {
+      if (order.paymentMode === "PAY_ON_PICKI" && order.status === "CREATED") {
+        throw new PickiError("FORBIDDEN", "Order awaiting online payment");
+      }
+      if (order.status === "PROVIDER_ACCEPTED") {
+        if (order.laundryPickupMode === "HOME_PICKUP") {
+          return this.providerFindRunner(userId, order);
+        }
+        return this.laundryOrderDto(order);
+      }
+      const result = await this.transitions.transition(
+        order.id,
+        "PROVIDER_ACCEPTED",
+        userId,
+        "Laundry: accept",
+      );
+      const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+      const latest = refreshed[0] ?? result.order;
+      if (latest.laundryPickupMode === "HOME_PICKUP") {
+        return this.providerFindRunner(userId, latest);
+      }
+      return this.laundryOrderDto(latest);
+    }
+
+    if (input.action === "find_runner") {
+      return this.providerFindRunner(userId, order);
+    }
+
+    if (input.action === "find_return_runner") {
+      return this.providerFindReturnRunner(userId, order);
+    }
+
+    if (input.action === "received") {
+      if (order.laundryPickupMode !== "SHOP_DROP_OFF") {
+        throw new PickiError("FORBIDDEN", "Chỉ áp dụng khi khách tự mang đồ tới tiệm");
+      }
+      if (order.status !== "PROVIDER_ACCEPTED") {
+        throw new PickiError("FORBIDDEN", "Đơn chưa ở trạng thái chờ nhận đồ tại tiệm");
+      }
+    }
+
+    if (["preparing", "ready", "handoff"].includes(input.action)) {
+      throw new PickiError("FORBIDDEN", "Đơn giặt không dùng luồng nấu/bàn giao quán ăn");
+    }
+
+    const toStatus = providerActionToStatus(input.action);
+    if (!toStatus) {
+      throw new PickiError("VALIDATION_ERROR", "Invalid laundry action");
+    }
+
+    const result = await this.transitions.transition(
+      order.id,
+      toStatus,
+      userId,
+      `Laundry: ${input.action}`,
+    );
+    const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+    return this.laundryOrderDto(refreshed[0] ?? result.order);
+  }
+
+  private async laundryOrderDto(order: typeof orders.$inferSelect) {
+    return {
+      id: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      ...orderHandoffFields(order),
+      runner: await loadRunnerSummary(this.db, order.runnerUserId ?? null),
+    };
+  }
+
+  private async providerFindReturnRunner(_userId: string, order: typeof orders.$inferSelect) {
+    if (order.status !== "READY_FOR_RETURN") {
+      throw new PickiError("FORBIDDEN", "Chỉ tìm runner giao lại khi đồ đã sẵn sàng");
+    }
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(orders)
+        .set({
+          runnerUserId: null,
+          runnerSoughtAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(orders.id, order.id));
+
+      await this.outbox.enqueue(tx, {
+        eventType: "order.seeking_runner",
+        aggregateType: "order",
+        aggregateId: order.id,
+        payload: {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          customerUserId: order.customerUserId,
+          providerLocationId: order.providerLocationId,
+          zoneId: order.zoneId,
+          leg: "RETURN",
+        },
+      });
+    });
+
+    const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+    return this.laundryOrderDto(refreshed[0] ?? order);
   }
 
   private async providerFindRunner(_userId: string, order: typeof orders.$inferSelect) {

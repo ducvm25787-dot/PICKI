@@ -20,6 +20,7 @@ export const orders = pgTable("orders", {
     .references(() => providerLocations.id, { onDelete: "restrict" }),
   status: text("status").notNull().default("CREATED"),
   serviceVertical: text("service_vertical").notNull().default("FOOD"),
+  laundryPickupMode: text("laundry_pickup_mode"),
   paymentMode: text("payment_mode").notNull().default("COD"),
   subtotalVnd: integer("subtotal_vnd").notNull(),
   deliveryFeeVnd: integer("delivery_fee_vnd").notNull().default(0),

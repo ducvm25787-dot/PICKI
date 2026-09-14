@@ -27,6 +27,7 @@ export class CatalogService {
       location: {
         id: header.location_id,
         providerId: header.provider_id,
+        providerType: header.provider_type,
         brandName: header.brand_name,
         displayName: header.display_name,
         liveStatus: header.live_status,

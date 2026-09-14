@@ -68,7 +68,16 @@ export class RunnerService {
       throw new PickiError("FORBIDDEN", "Runner profile not found");
     }
 
-    const terminal = ["DELIVERED", "CUSTOMER_CANCELLED", "SYSTEM_CANCELLED", "PROVIDER_REJECTED"];
+    const terminal = [
+      "DELIVERED",
+      "COMPLETED",
+      "AT_SHOP",
+      "PROCESSING",
+      "READY_FOR_RETURN",
+      "CUSTOMER_CANCELLED",
+      "SYSTEM_CANCELLED",
+      "PROVIDER_REJECTED",
+    ];
 
     const rows = await this.db
       .select()
@@ -79,6 +88,11 @@ export class RunnerService {
           or(
             and(
               eq(orders.status, "PROVIDER_ACCEPTED"),
+              isNull(orders.runnerUserId),
+              isNotNull(orders.runnerSoughtAt),
+            ),
+            and(
+              eq(orders.status, "READY_FOR_RETURN"),
               isNull(orders.runnerUserId),
               isNotNull(orders.runnerSoughtAt),
             ),
@@ -114,7 +128,10 @@ export class RunnerService {
     };
 
     const pool = rows.filter(
-      (o) => !o.runnerUserId && o.status === "PROVIDER_ACCEPTED" && o.runnerSoughtAt != null,
+      (o) =>
+        !o.runnerUserId &&
+        o.runnerSoughtAt != null &&
+        (o.status === "PROVIDER_ACCEPTED" || o.status === "READY_FOR_RETURN"),
     );
     const mine = rows.filter((o) => o.runnerUserId === userId);
 
@@ -131,7 +148,13 @@ export class RunnerService {
       throw new PickiError("FORBIDDEN", "Runner profile not found");
     }
 
-    const terminal = ["DELIVERED", "CUSTOMER_CANCELLED", "SYSTEM_CANCELLED", "PROVIDER_REJECTED"];
+    const terminal = [
+      "DELIVERED",
+      "COMPLETED",
+      "CUSTOMER_CANCELLED",
+      "SYSTEM_CANCELLED",
+      "PROVIDER_REJECTED",
+    ];
 
     const rows = await this.db
       .select()
@@ -170,10 +193,14 @@ export class RunnerService {
       throw new PickiError("NOT_FOUND", "Order not found in your zone");
     }
 
-    const toStatus = runnerActionToStatus(input.action);
+    let toStatus = runnerActionToStatus(input.action);
 
     if (input.action === "accept") {
-      if (order[0].status !== "PROVIDER_ACCEPTED") {
+      const isReturn =
+        order[0].serviceVertical === "LAUNDRY" && order[0].status === "READY_FOR_RETURN";
+      const isInbound = order[0].status === "PROVIDER_ACCEPTED";
+
+      if (!isReturn && !isInbound) {
         throw new PickiError("FORBIDDEN", "Quán phải nhận đơn trước — runner chỉ nhận khi đang tìm runner");
       }
       if (!order[0].runnerSoughtAt) {
@@ -181,6 +208,9 @@ export class RunnerService {
       }
       if (order[0].runnerUserId && order[0].runnerUserId !== userId) {
         throw new PickiError("FORBIDDEN", "Another runner already claimed this order");
+      }
+      if (isReturn) {
+        toStatus = "RETURN_RUNNER_ASSIGNED";
       }
       const result = await this.transitions.transition(orderId, toStatus, userId, "Runner accepted", {
         runnerUserId: userId,
@@ -196,6 +226,13 @@ export class RunnerService {
 
     if (order[0].runnerUserId !== userId) {
       throw new PickiError("FORBIDDEN", "Not assigned to this order");
+    }
+
+    if (order[0].serviceVertical === "LAUNDRY") {
+      throw new PickiError(
+        "FORBIDDEN",
+        "Đơn giặt dùng Route — hoàn thành từng điểm dừng trên bản đồ route",
+      );
     }
 
     if (input.action === "picked_up") {

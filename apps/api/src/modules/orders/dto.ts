@@ -10,6 +10,7 @@ export const createOrderSchema = z.object({
   zoneId: z.string().uuid(),
   addressId: z.string().uuid(),
   deliveryHandoffMode: z.enum(["LOBBY_PICKUP", "DOOR_DELIVERY"]).default("LOBBY_PICKUP"),
+  laundryPickupMode: z.enum(["HOME_PICKUP", "SHOP_DROP_OFF"]).optional(),
   items: z.array(createOrderItemSchema).min(1).max(30),
   paymentMode: z.enum(["COD", "PAY_ON_PICKI", "PAY_ON_COMPLETION"]).default("COD"),
   idempotencyKey: z.string().min(8).max(128).optional(),

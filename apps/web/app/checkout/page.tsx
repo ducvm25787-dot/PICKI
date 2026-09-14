@@ -50,6 +50,9 @@ export default function CheckoutPage() {
   const [confirmingAddress, setConfirmingAddress] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [paymentMode, setPaymentMode] = useState<"COD" | "PAY_ON_PICKI">("COD");
+  const [laundryPickupMode, setLaundryPickupMode] = useState<"HOME_PICKUP" | "SHOP_DROP_OFF">(
+    "HOME_PICKUP",
+  );
   const [addressMenuId, setAddressMenuId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -250,6 +253,7 @@ export default function CheckoutPage() {
           zoneId: cart.zoneId,
           addressId: selectedAddressId,
           deliveryHandoffMode: effectiveHandoff,
+          ...(isLaundry ? { laundryPickupMode } : {}),
           paymentMode,
           idempotencyKey,
           items: cart.items.map((i) => ({
@@ -278,8 +282,9 @@ export default function CheckoutPage() {
 
   const total = cartTotalVnd(cart);
   const selected = addresses.find((a) => a.id === selectedAddressId);
+  const isLaundry = cart.providerType === "LAUNDRY";
   const selectedIsApartment = selected ? isApartmentAddress(selected) : true;
-  const effectiveHandoff = selectedIsApartment ? handoffMode : "DOOR_DELIVERY";
+  const effectiveHandoff = isLaundry ? "DOOR_DELIVERY" : selectedIsApartment ? handoffMode : "DOOR_DELIVERY";
 
   return (
     <div className="container">
@@ -468,7 +473,38 @@ export default function CheckoutPage() {
         )}
       </div>
 
-      {selectedIsApartment ? (
+      {isLaundry ? (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <p className="section-title">Hình thức nhận đồ</p>
+          <label className="field" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+            <input
+              type="radio"
+              checked={laundryPickupMode === "HOME_PICKUP"}
+              onChange={() => setLaundryPickupMode("HOME_PICKUP")}
+            />
+            <span>
+              <strong>Đến lấy tận nhà</strong>
+              <span className="stat" style={{ display: "block", fontSize: 13 }}>
+                Runner đến {selected ? formatAddressLine(selected) : "địa chỉ bạn"} lấy đồ → tiệm giặt →
+                giao lại sau khi xong
+              </span>
+            </span>
+          </label>
+          <label className="field" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+            <input
+              type="radio"
+              checked={laundryPickupMode === "SHOP_DROP_OFF"}
+              onChange={() => setLaundryPickupMode("SHOP_DROP_OFF")}
+            />
+            <span>
+              <strong>Tự mang tới tiệm</strong>
+              <span className="stat" style={{ display: "block", fontSize: 13 }}>
+                Bạn mang quần áo/chăn màn/giày/rèm tới tiệm — chỉ cần runner giao lại khi xong
+              </span>
+            </span>
+          </label>
+        </div>
+      ) : selectedIsApartment ? (
         <div className="card" style={{ marginBottom: 16 }}>
           <p className="section-title">Hình thức giao (chung cư)</p>
           <label className="field" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>

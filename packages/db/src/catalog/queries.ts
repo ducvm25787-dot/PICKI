@@ -15,6 +15,7 @@ export type LocationMenuRow = {
 export type LocationHeaderRow = {
   location_id: string;
   provider_id: string;
+  provider_type: string;
   brand_name: string;
   display_name: string;
   live_status: string;
@@ -32,6 +33,7 @@ export async function getLocationHeader(
     SELECT
       pl.id AS location_id,
       p.id AS provider_id,
+      p.provider_type,
       p.brand_name,
       pl.display_name,
       COALESCE(pls.status, 'OFFLINE') AS live_status,

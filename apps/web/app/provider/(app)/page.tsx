@@ -12,6 +12,8 @@ type ProviderOrder = {
   id: string;
   orderNumber: string;
   status: string;
+  serviceVertical?: string;
+  laundryPickupMode?: string | null;
   totalVnd: number;
   estimatedReadyAt: string | null;
   providerHandoffAt: string | null;
@@ -222,7 +224,11 @@ export default function ProviderOrdersPage() {
                     runner: o.runner,
                   })}
                 </p>
-                <OrderStatusSteps status={o.status} runnerSoughtAt={o.runnerSoughtAt} />
+                <OrderStatusSteps
+                  status={o.status}
+                  runnerSoughtAt={o.runnerSoughtAt}
+                  serviceVertical={o.serviceVertical}
+                />
                 {waitingRunner ? (
                   <div className="runner-route-hint" style={{ margin: "8px 0", fontSize: 14 }}>
                     <strong>Bước tiếp:</strong> Runner mở app{" "}
@@ -242,7 +248,92 @@ export default function ProviderOrdersPage() {
                   Giao: {o.delivery.building}-{o.delivery.apartment}
                 </p>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                  {o.status === "CREATED" || o.status === "PAID" ? (
+                  {o.serviceVertical === "LAUNDRY" && o.status === "PROVIDER_ACCEPTED" && o.laundryPickupMode === "SHOP_DROP_OFF" ? (
+                    <button
+                      type="button"
+                      className="btn provider-btn"
+                      style={{ width: "auto", padding: "8px 12px" }}
+                      disabled={busy}
+                      onClick={() => void action(o.id, "received")}
+                    >
+                      {busy ? "…" : "Đã nhận đồ tại tiệm"}
+                    </button>
+                  ) : null}
+                  {o.serviceVertical === "LAUNDRY" && o.status === "AT_SHOP" ? (
+                    <button
+                      type="button"
+                      className="btn provider-btn"
+                      style={{ width: "auto", padding: "8px 12px" }}
+                      disabled={busy}
+                      onClick={() => void action(o.id, "processing")}
+                    >
+                      {busy ? "…" : "Bắt đầu giặt"}
+                    </button>
+                  ) : null}
+                  {o.serviceVertical === "LAUNDRY" && o.status === "PROCESSING" ? (
+                    <button
+                      type="button"
+                      className="btn provider-btn"
+                      style={{ width: "auto", padding: "8px 12px" }}
+                      disabled={busy}
+                      onClick={() => void action(o.id, "ready_for_return")}
+                    >
+                      {busy ? "…" : "Sẵn sàng giao lại"}
+                    </button>
+                  ) : null}
+                  {o.serviceVertical === "LAUNDRY" && o.status === "READY_FOR_RETURN" && !sought ? (
+                    <button
+                      type="button"
+                      className="btn provider-btn"
+                      style={{ width: "auto", padding: "8px 12px" }}
+                      disabled={busy}
+                      onClick={() => void action(o.id, "find_return_runner")}
+                    >
+                      {busy ? "…" : "Tìm runner giao lại"}
+                    </button>
+                  ) : null}
+                  {o.serviceVertical === "LAUNDRY" && o.status === "READY_FOR_RETURN" && sought ? (
+                    <span className="live-pill live-open" style={{ margin: 0 }}>
+                      Đang chờ runner giao lại
+                    </span>
+                  ) : null}
+                  {o.serviceVertical === "LAUNDRY" && (o.status === "CREATED" || o.status === "PAID") ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn provider-btn"
+                        style={{ width: "auto", padding: "8px 12px" }}
+                        disabled={busy}
+                        onClick={() => void action(o.id, "accept")}
+                      >
+                        {busy ? "…" : "Nhận đơn giặt"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ width: "auto", padding: "8px 12px" }}
+                        disabled={busy}
+                        onClick={() => void action(o.id, "reject")}
+                      >
+                        Từ chối
+                      </button>
+                    </>
+                  ) : null}
+                  {o.serviceVertical === "LAUNDRY" &&
+                  o.status === "PROVIDER_ACCEPTED" &&
+                  o.laundryPickupMode === "HOME_PICKUP" &&
+                  !sought ? (
+                    <button
+                      type="button"
+                      className="btn provider-btn"
+                      style={{ width: "auto", padding: "8px 12px" }}
+                      disabled={busy}
+                      onClick={() => void action(o.id, "find_runner")}
+                    >
+                      {busy ? "…" : "Tìm runner lấy đồ"}
+                    </button>
+                  ) : null}
+                  {o.serviceVertical !== "LAUNDRY" && (o.status === "CREATED" || o.status === "PAID") ? (
                     <>
                       <button
                         type="button"
@@ -264,7 +355,7 @@ export default function ProviderOrdersPage() {
                       </button>
                     </>
                   ) : null}
-                  {o.status === "PROVIDER_ACCEPTED" && !sought ? (
+                  {o.serviceVertical !== "LAUNDRY" && o.status === "PROVIDER_ACCEPTED" && !sought ? (
                     <button
                       type="button"
                       className="btn provider-btn"
@@ -275,7 +366,7 @@ export default function ProviderOrdersPage() {
                       {busy ? "…" : "Tìm runner"}
                     </button>
                   ) : null}
-                  {waitingRunner ? (
+                  {waitingRunner && o.serviceVertical !== "LAUNDRY" ? (
                     <>
                       <span className="live-pill live-open" style={{ margin: 0 }}>
                         Đang chờ runner
@@ -291,7 +382,15 @@ export default function ProviderOrdersPage() {
                       </button>
                     </>
                   ) : null}
-                  {o.status === "RUNNER_ASSIGNED" ? (
+                  {o.serviceVertical === "LAUNDRY" &&
+                  o.status === "PROVIDER_ACCEPTED" &&
+                  o.laundryPickupMode === "HOME_PICKUP" &&
+                  sought ? (
+                    <span className="live-pill live-open" style={{ margin: 0 }}>
+                      Đang chờ runner lấy đồ
+                    </span>
+                  ) : null}
+                  {o.serviceVertical !== "LAUNDRY" && o.status === "RUNNER_ASSIGNED" ? (
                     <button
                       type="button"
                       className="btn provider-btn"
@@ -302,7 +401,7 @@ export default function ProviderOrdersPage() {
                       {busy ? "…" : "Bắt đầu nấu"}
                     </button>
                   ) : null}
-                  {o.status === "PREPARING" ? (
+                  {o.serviceVertical !== "LAUNDRY" && o.status === "PREPARING" ? (
                     <button
                       type="button"
                       className="btn provider-btn"
@@ -313,7 +412,7 @@ export default function ProviderOrdersPage() {
                       Sẵn sàng giao
                     </button>
                   ) : null}
-                  {o.status === "READY" && !o.providerHandoffAt && (o.runner || o.runnerUserId) ? (
+                  {o.serviceVertical !== "LAUNDRY" && o.status === "READY" && !o.providerHandoffAt && (o.runner || o.runnerUserId) ? (
                     <button
                       type="button"
                       className="btn provider-btn"
@@ -324,7 +423,7 @@ export default function ProviderOrdersPage() {
                       Đã giao cho runner
                     </button>
                   ) : null}
-                  {o.status === "READY" && o.providerHandoffAt ? (
+                  {o.serviceVertical !== "LAUNDRY" && o.status === "READY" && o.providerHandoffAt ? (
                     <p className="stat" style={{ margin: 0 }}>
                       ✓ Đã giao — chờ runner xác nhận nhận hàng
                     </p>

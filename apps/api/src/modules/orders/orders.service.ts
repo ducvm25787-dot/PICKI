@@ -108,6 +108,9 @@ export class OrdersService {
     const isStreet = addr.addressType === "STREET_ADDRESS";
     let handoffMode = input.deliveryHandoffMode;
 
+    const laundryPickupMode =
+      serviceVertical === "LAUNDRY" ? (input.laundryPickupMode ?? "HOME_PICKUP") : null;
+
     if (serviceVertical === "LAUNDRY") {
       handoffMode = "DOOR_DELIVERY";
     } else if (isStreet) {
@@ -172,6 +175,7 @@ export class OrdersService {
           providerLocationId: input.providerLocationId,
           status: "CREATED",
           serviceVertical,
+          laundryPickupMode,
           paymentMode: input.paymentMode,
           subtotalVnd,
           deliveryFeeVnd,
@@ -405,8 +409,13 @@ export class OrdersService {
         lineTotalVnd: i.lineTotalVnd,
       })),
       createdAt: order.createdAt.toISOString(),
-      canCancel: canCustomerCancel(order.status, order.serviceVertical as "FOOD" | "LAUNDRY"),
+      canCancel: canCustomerCancel(
+        order.status,
+        order.serviceVertical as "FOOD" | "LAUNDRY",
+        order.laundryPickupMode as "HOME_PICKUP" | "SHOP_DROP_OFF" | null,
+      ),
       serviceVertical: order.serviceVertical,
+      laundryPickupMode: order.laundryPickupMode,
       ...orderHandoffFields(order),
       runner: await loadRunnerSummary(this.db, order.runnerUserId),
       fulfillment: fulfillment ?? null,

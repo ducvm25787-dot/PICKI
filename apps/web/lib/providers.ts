@@ -50,6 +50,8 @@ export function fulfillmentLabel(mode: string | null | undefined): string {
       return "Giao ngay";
     case "PICKUP":
       return "Tự lấy";
+    case "PICKUP_AND_RETURN":
+      return "Lấy & trả tận nhà";
     default:
       return "";
   }

@@ -9,17 +9,20 @@ const LAUNDRY = {
   brandName: "Giặt Kim Văn",
   locationSlug: "giat-kim-van-shop",
   displayName: "Giặt Kim Văn — CT12",
-  tagline: "Giặt sấy, giặt hấp — lấy đồ tận nhà",
+  tagline: "Giặt quần áo, chăn màn, giày, rèm — lấy đồ tận nhà",
   address: "CT12 Kim Văn, Hoàng Mai",
   lat: 20.9885,
   lng: 105.8415,
 } as const;
 
 const OFFERINGS = [
-  { slug: "giat-say-kg", name: "Giặt sấy (theo kg)", amountVnd: 25000, sortOrder: 1 },
-  { slug: "giat-hap", name: "Giặt hấp (áo sơ mi)", amountVnd: 35000, sortOrder: 2 },
-  { slug: "giat-chan-ga", name: "Giặt chăn ga (bộ)", amountVnd: 80000, sortOrder: 3 },
+  { slug: "giat-quan-ao", name: "Giặt quần áo (kg)", amountVnd: 25000, sortOrder: 1 },
+  { slug: "giat-chan-man", name: "Giặt chăn màn (bộ)", amountVnd: 90000, sortOrder: 2 },
+  { slug: "giat-giay", name: "Giặt giày (đôi)", amountVnd: 50000, sortOrder: 3 },
+  { slug: "giat-rem", name: "Giặt rèm cửa (m²)", amountVnd: 40000, sortOrder: 4 },
 ] as const;
+
+const LEGACY_SLUGS = ["giat-say-kg", "giat-hap", "giat-chan-ga"];
 
 async function seed() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -104,6 +107,11 @@ async function seed() {
     if (!providerId || !locationId) {
       throw new Error("Laundry provider/location missing after seed");
     }
+
+    await sql`
+      DELETE FROM offerings
+      WHERE provider_id = ${providerId}::uuid AND slug = ANY(${LEGACY_SLUGS})
+    `;
 
     for (const item of OFFERINGS) {
       const exists = await sql<{ id: string }[]>`

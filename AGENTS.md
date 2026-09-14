@@ -10,7 +10,7 @@ Before any architectural decision, read:
 
 Master Spec wins on conflict. Implement **the current sprint only**.
 
-**Sprint 20–29 (current):** Full pilot loop — Provider/Runner/Payments. **S11–S18:** discovery, search/map, favorites. **S22–S23:** route + lobby handoff. **S24–S26:** Customer/Provider/Runner Web/PWA. **S27:** Admin/Ops Web — dashboard, orders, zones, cancel + audit_logs + audit UI. **S28:** Picki Chat + WEB notifications (outbox worker) + desktop alerts (Runner). **P2 pilot hardening:** committed — customer cancel, auto find-runner, PayOS/push adapters, E2E (`pnpm pilot:e2e`). **Current — S29 Laundry:** inbound `PICKUP_AND_RETURN` (customer → tiệm); seed `pnpm --filter @picki/db seed:laundry`; demo tiệm **Giặt Kim Văn** (`giat-kim-van`). **Next:** return leg + laundry E2E.
+**Sprint 20–29 (current):** Full pilot loop — Provider/Runner/Payments. **S11–S18:** discovery, search/map, favorites. **S22–S23:** route + lobby handoff. **S24–S26:** Customer/Provider/Runner Web/PWA. **S27:** Admin/Ops Web — dashboard, orders, zones, cancel + audit_logs + audit UI. **S28:** Picki Chat + WEB notifications (outbox worker) + desktop alerts (Runner). **P2 pilot hardening:** committed — customer cancel, auto find-runner, PayOS/push adapters, E2E (`pnpm pilot:e2e`). **Current — S29 Laundry:** full `PICKUP_AND_RETURN` — lấy tận nhà (hoặc tự mang tiệm) → giặt → giao lại; offerings: quần áo, chăn màn, giày, rèm; seed `pnpm --filter @picki/db seed:laundry`; demo **Giặt Kim Văn** (`giat-kim-van`). **E2E:** `pnpm pilot:laundry:e2e`.
 
 **Demo accounts (seed:ops):** Provider `0908888001` · Runner `0908888002` · Admin `0908888003` · Customer `0901234567`
 

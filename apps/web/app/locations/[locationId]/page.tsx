@@ -21,6 +21,7 @@ import {
 type MenuResponse = {
   location: {
     id: string;
+    providerType?: string;
     brandName: string;
     displayName: string;
     liveStatus: string;
@@ -101,6 +102,7 @@ export default function LocationMenuPage() {
         providerLocationId: menu.location.id,
         zoneId,
         brandName: menu.location.brandName,
+        providerType: menu.location.providerType,
       },
       { offeringId: item.id, name: item.name, amountVnd: item.amountVnd },
     );

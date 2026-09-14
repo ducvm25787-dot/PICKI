@@ -16,6 +16,7 @@ export function canBatchOrderWithSettings(
   incoming: RouteOrderInput,
   settings: BatchSettings,
 ): boolean {
+  if (existing.length === 0) return true;
   if (existing.length >= settings.maxBatchOrders) return false;
   if (existing.some((o) => o.orderId === incoming.orderId)) return false;
 

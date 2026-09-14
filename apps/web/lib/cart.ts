@@ -9,6 +9,7 @@ export type Cart = {
   providerLocationId: string;
   zoneId: string;
   brandName: string;
+  providerType?: string;
   items: CartLine[];
 };
 

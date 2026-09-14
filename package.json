@@ -26,7 +26,8 @@
     "dev:setup": "pnpm db:up && pnpm db:migrate && pnpm db:seed",
     "dev": "concurrently -k -n api,web -c blue,magenta \"pnpm api:dev\" \"pnpm web:dev\"",
     "start:local": "bash scripts/start-local.sh",
-    "pilot:e2e": "bash scripts/pilot-food-e2e.sh"
+    "pilot:e2e": "bash scripts/pilot-food-e2e.sh",
+    "pilot:laundry:e2e": "bash scripts/pilot-laundry-e2e.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",

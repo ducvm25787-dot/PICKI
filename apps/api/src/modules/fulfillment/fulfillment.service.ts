@@ -10,6 +10,7 @@ import {
   orders,
   pickiPoints,
   planLaundryInboundStops,
+  planLaundryReturnStops,
   planRouteStops,
   providerLocations,
   routeOrders,
@@ -72,6 +73,11 @@ export class FulfillmentService {
         const existing = await this.loadRouteOrders(tx, route.id);
         const settings = await this.loadBatchSettings(tx, order.zoneId);
         if (!canBatchOrderWithSettings(existing, input, settings)) {
+          if (existing.length === 0) {
+            await tx.delete(routeStops).where(eq(routeStops.routeId, route.id));
+            await tx.delete(routeOrders).where(eq(routeOrders.routeId, route.id));
+            await tx.delete(deliveryRoutes).where(eq(deliveryRoutes.id, route.id));
+          }
           route = undefined;
         }
       }
@@ -91,6 +97,7 @@ export class FulfillmentService {
         route = created;
       }
 
+      // Laundry return leg reuses orderId — move from completed inbound route to active route.
       await tx
         .insert(routeOrders)
         .values({
@@ -98,7 +105,10 @@ export class FulfillmentService {
           orderId: order.id,
           deliveryId: delivery.id,
         })
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: routeOrders.orderId,
+          set: { routeId: route.id, deliveryId: delivery.id },
+        });
 
       await this.rebuildStops(tx, route.id);
       return { routeId: route.id };
@@ -106,7 +116,7 @@ export class FulfillmentService {
   }
 
   async getActiveRoute(runnerUserId: string) {
-    const route = await this.db
+    const routes = await this.db
       .select()
       .from(deliveryRoutes)
       .where(
@@ -115,18 +125,37 @@ export class FulfillmentService {
           inArray(deliveryRoutes.status, ["PLANNED", "IN_PROGRESS"]),
         ),
       )
-      .orderBy(asc(deliveryRoutes.createdAt))
-      .limit(1);
+      .orderBy(desc(deliveryRoutes.createdAt));
 
-    if (!route[0]) {
+    let active: (typeof deliveryRoutes.$inferSelect) | undefined;
+    let stops: (typeof routeStops.$inferSelect)[] = [];
+
+    for (const candidate of routes) {
+      const linkedCount = await this.db
+        .select({ orderId: routeOrders.orderId })
+        .from(routeOrders)
+        .where(eq(routeOrders.routeId, candidate.id));
+
+      const candidateStops = await this.db
+        .select()
+        .from(routeStops)
+        .where(eq(routeStops.routeId, candidate.id))
+        .orderBy(asc(routeStops.sequence));
+
+      if (linkedCount.length === 0 && candidateStops.length === 0) {
+        continue;
+      }
+
+      active = candidate;
+      stops = candidateStops;
+      break;
+    }
+
+    if (!active) {
       return { route: null };
     }
 
-    const stops = await this.db
-      .select()
-      .from(routeStops)
-      .where(eq(routeStops.routeId, route[0].id))
-      .orderBy(asc(routeStops.sequence));
+    const route = [active];
 
     const stopPayload = await Promise.all(
       stops.map(async (s) => {
@@ -370,6 +399,10 @@ export class FulfillmentService {
       await this.assertLaundryCustomerPickupReady(affectedOrderIds);
     } else if (stop.stopType === "PROVIDER_DROPOFF") {
       await this.assertLaundryShopDropReady(affectedOrderIds);
+    } else if (stop.stopType === "RETURN_PICKUP") {
+      await this.assertLaundryReturnPickupReady(affectedOrderIds);
+    } else if (stop.stopType === "RETURN_DROPOFF") {
+      await this.assertLaundryReturnDropReady(affectedOrderIds);
     } else if (stop.stopType === "APARTMENT_DROPOFF") {
       for (const orderId of affectedOrderIds) {
         await this.assertApartmentStopReady(orderId);
@@ -502,7 +535,27 @@ export class FulfillmentService {
       }
       const refreshed = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
       if (refreshed[0]?.status === "DELIVERING") {
-        await this.transitions.transition(orderId, "DELIVERED", runnerUserId, "Dropped at laundry shop");
+        await this.transitions.transition(orderId, "AT_SHOP", runnerUserId, "Dropped at laundry shop");
+        await this.db
+          .update(orders)
+          .set({ runnerUserId: null, updatedAt: new Date() })
+          .where(eq(orders.id, orderId));
+        await this.db
+          .update(deliveries)
+          .set({ status: "COMPLETED", updatedAt: new Date() })
+          .where(eq(deliveries.orderId, orderId));
+      }
+    } else if (stopType === "RETURN_PICKUP" && order.serviceVertical === "LAUNDRY") {
+      if (order.status === "RETURN_RUNNER_ASSIGNED") {
+        await this.transitions.transition(orderId, "RETURN_PICKED_UP", runnerUserId, "Picked up at laundry shop");
+      }
+    } else if (stopType === "RETURN_DROPOFF" && order.serviceVertical === "LAUNDRY") {
+      if (order.status === "RETURN_PICKED_UP") {
+        await this.transitions.transition(orderId, "RETURN_DELIVERING", runnerUserId, "En route to customer");
+      }
+      const refreshed = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+      if (refreshed[0]?.status === "RETURN_DELIVERING") {
+        await this.transitions.transition(orderId, "COMPLETED", runnerUserId, "Returned to customer");
         await this.db
           .update(deliveries)
           .set({ status: "COMPLETED", updatedAt: new Date() })
@@ -533,11 +586,38 @@ export class FulfillmentService {
       const orderRow = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
       const order = orderRow[0];
       if (!order || order.serviceVertical !== "LAUNDRY") continue;
-      if (order.status === "DELIVERED") continue;
+      if (order.status === "AT_SHOP" || order.status === "COMPLETED") continue;
       if (order.status !== "PICKED_UP" && order.status !== "DELIVERING") {
         throw new PickiError(
           "FORBIDDEN",
           `Phải lấy đồ tại nhà khách trước khi giao tiệm (${order.orderNumber})`,
+        );
+      }
+    }
+  }
+
+  private async assertLaundryReturnPickupReady(orderIds: string[]) {
+    for (const orderId of orderIds) {
+      const orderRow = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+      const order = orderRow[0];
+      if (!order || order.serviceVertical !== "LAUNDRY") continue;
+      if (order.status === "RETURN_PICKED_UP" || order.status === "COMPLETED") continue;
+      if (order.status !== "RETURN_RUNNER_ASSIGNED") {
+        throw new PickiError("FORBIDDEN", `Đơn ${order.orderNumber} chưa sẵn sàng lấy tại tiệm`);
+      }
+    }
+  }
+
+  private async assertLaundryReturnDropReady(orderIds: string[]) {
+    for (const orderId of orderIds) {
+      const orderRow = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+      const order = orderRow[0];
+      if (!order || order.serviceVertical !== "LAUNDRY") continue;
+      if (order.status === "COMPLETED") continue;
+      if (order.status !== "RETURN_PICKED_UP" && order.status !== "RETURN_DELIVERING") {
+        throw new PickiError(
+          "FORBIDDEN",
+          `Phải lấy đồ tại tiệm trước khi giao khách (${order.orderNumber})`,
         );
       }
     }
@@ -580,7 +660,9 @@ export class FulfillmentService {
 
   private async resolveStopOrders(stop: typeof routeStops.$inferSelect): Promise<string[]> {
     if (
-      (stop.stopType === "PICKUP" || stop.stopType === "PROVIDER_DROPOFF") &&
+      (stop.stopType === "PICKUP" ||
+        stop.stopType === "PROVIDER_DROPOFF" ||
+        stop.stopType === "RETURN_PICKUP") &&
       stop.providerLocationId
     ) {
       const rows = await this.db
@@ -657,8 +739,32 @@ export class FulfillmentService {
     const zoneId = route[0]?.zoneId;
 
     const inputs = await this.loadRouteOrders(tx, routeId);
+    const orderIds = inputs.map((o) => o.orderId);
+    const statusRows =
+      orderIds.length > 0
+        ? await tx
+            .select({ id: orders.id, status: orders.status })
+            .from(orders)
+            .where(inArray(orders.id, orderIds))
+        : [];
+    const statusById = new Map(statusRows.map((r) => [r.id, r.status]));
     const allLaundry = inputs.every((o) => o.serviceVertical === "LAUNDRY");
-    const planned = allLaundry ? planLaundryInboundStops(inputs) : planRouteStops(inputs);
+    const isReturnLeg = inputs.some((o) => {
+      const s = statusById.get(o.orderId);
+      return (
+        s === "RETURN_RUNNER_ASSIGNED" ||
+        s === "RETURN_PICKED_UP" ||
+        s === "RETURN_DELIVERING"
+      );
+    });
+    let planned;
+    if (allLaundry && isReturnLeg) {
+      planned = planLaundryReturnStops(inputs);
+    } else if (allLaundry) {
+      planned = planLaundryInboundStops(inputs);
+    } else {
+      planned = planRouteStops(inputs);
+    }
 
     await tx.delete(routeStops).where(eq(routeStops.routeId, routeId));
 

@@ -7,6 +7,7 @@ import {
   orders,
   orderStatusHistory,
   type PickiDb,
+  type LaundryPickupMode,
   type ServiceVertical,
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
@@ -36,7 +37,14 @@ export class OrderTransitionService {
       if (!canAdminSystemCancel(order.status)) {
         throw new PickiError("FORBIDDEN", `Cannot cancel order in status ${order.status}`);
       }
-    } else if (!canTransition(order.status, toStatus, order.serviceVertical as ServiceVertical)) {
+    } else if (
+      !canTransition(
+        order.status,
+        toStatus,
+        order.serviceVertical as ServiceVertical,
+        order.laundryPickupMode as LaundryPickupMode | null,
+      )
+    ) {
       throw new PickiError("FORBIDDEN", `Cannot transition ${order.status} → ${toStatus}`);
     }
 
@@ -56,7 +64,14 @@ export class OrderTransitionService {
       throw new PickiError("NOT_FOUND", "Order not found");
     }
 
-    if (!canTransition(order.status, toStatus, order.serviceVertical as ServiceVertical)) {
+    if (
+      !canTransition(
+        order.status,
+        toStatus,
+        order.serviceVertical as ServiceVertical,
+        order.laundryPickupMode as LaundryPickupMode | null,
+      )
+    ) {
       throw new PickiError("FORBIDDEN", `Cannot transition ${order.status} → ${toStatus}`);
     }
 

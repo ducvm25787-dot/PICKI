@@ -1,4 +1,8 @@
-import { LAUNDRY_INBOUND_TRANSITIONS, type ServiceVertical } from "./laundry-transitions.js";
+import {
+  laundryTransitionsForMode,
+  type LaundryPickupMode,
+  type ServiceVertical,
+} from "./laundry-transitions.js";
 
 /** Server-controlled transitions for Food orders (COD + online pay paths). */
 export const FOOD_ORDER_TRANSITIONS: Record<string, string[]> = {
@@ -25,25 +29,37 @@ export const FOOD_ORDER_TRANSITIONS: Record<string, string[]> = {
 /** @deprecated use FOOD_ORDER_TRANSITIONS */
 export const ORDER_TRANSITIONS = FOOD_ORDER_TRANSITIONS;
 
-export function orderTransitionsForVertical(vertical: ServiceVertical = "FOOD") {
-  return vertical === "LAUNDRY" ? LAUNDRY_INBOUND_TRANSITIONS : FOOD_ORDER_TRANSITIONS;
+export function orderTransitionsForVertical(
+  vertical: ServiceVertical = "FOOD",
+  laundryPickupMode?: LaundryPickupMode | null,
+) {
+  if (vertical === "LAUNDRY") {
+    return laundryTransitionsForMode(laundryPickupMode);
+  }
+  return FOOD_ORDER_TRANSITIONS;
 }
 
 export function canTransition(
   from: string,
   to: string,
   vertical: ServiceVertical = "FOOD",
+  laundryPickupMode?: LaundryPickupMode | null,
 ): boolean {
-  const allowed = orderTransitionsForVertical(vertical)[from];
+  const allowed = orderTransitionsForVertical(vertical, laundryPickupMode)[from];
   return allowed?.includes(to) ?? false;
 }
 
-export function canCustomerCancel(from: string, vertical: ServiceVertical = "FOOD"): boolean {
-  return canTransition(from, "CUSTOMER_CANCELLED", vertical);
+export function canCustomerCancel(
+  from: string,
+  vertical: ServiceVertical = "FOOD",
+  laundryPickupMode?: LaundryPickupMode | null,
+): boolean {
+  return canTransition(from, "CUSTOMER_CANCELLED", vertical, laundryPickupMode);
 }
 
 const TERMINAL_ORDER_STATUSES = [
   "DELIVERED",
+  "COMPLETED",
   "CUSTOMER_CANCELLED",
   "SYSTEM_CANCELLED",
   "REFUNDED",
@@ -56,7 +72,17 @@ export function canAdminSystemCancel(from: string): boolean {
   return !TERMINAL_ORDER_STATUSES.includes(from as (typeof TERMINAL_ORDER_STATUSES)[number]);
 }
 
-export type ProviderAction = "accept" | "reject" | "find_runner" | "preparing" | "ready" | "handoff";
+export type ProviderAction =
+  | "accept"
+  | "reject"
+  | "find_runner"
+  | "preparing"
+  | "ready"
+  | "handoff"
+  | "received"
+  | "processing"
+  | "ready_for_return"
+  | "find_return_runner";
 
 export function providerActionToStatus(action: ProviderAction): string | null {
   switch (action) {
@@ -65,13 +91,19 @@ export function providerActionToStatus(action: ProviderAction): string | null {
     case "reject":
       return "PROVIDER_REJECTED";
     case "find_runner":
+    case "find_return_runner":
+    case "handoff":
       return null;
     case "preparing":
       return "PREPARING";
     case "ready":
       return "READY";
-    case "handoff":
-      return null;
+    case "received":
+      return "AT_SHOP";
+    case "processing":
+      return "PROCESSING";
+    case "ready_for_return":
+      return "READY_FOR_RETURN";
   }
 }
 
