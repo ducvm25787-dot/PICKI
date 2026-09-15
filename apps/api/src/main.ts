@@ -1,13 +1,19 @@
 import "reflect-metadata";
 import cookieParser from "cookie-parser";
 import { NestFactory } from "@nestjs/core";
+import { NestExpressApplication } from "@nestjs/platform-express";
+import path from "node:path";
 import { AppModule } from "./app.module.js";
 import { loadConfig } from "./shared/config.js";
 import { PickiExceptionFilter } from "./shared/picki-exception.filter.js";
 
 async function bootstrap() {
   const config = loadConfig();
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  app.useStaticAssets(path.join(process.cwd(), "storage", "uploads"), {
+    prefix: "/v1/uploads/",
+  });
 
   app.setGlobalPrefix("v1");
   app.enableCors({

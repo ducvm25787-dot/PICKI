@@ -91,6 +91,16 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
           event.eventType,
           event.payload as Parameters<NotificationService["processVisitIntent"]>[1],
         );
+      } else if (event.eventType.startsWith("health.")) {
+        await this.notifications.processHealthFollowup(
+          event.eventType,
+          event.payload as Parameters<NotificationService["processHealthFollowup"]>[1],
+        );
+      } else if (event.eventType.startsWith("classified.")) {
+        await this.notifications.processClassified(
+          event.eventType,
+          event.payload as Parameters<NotificationService["processClassified"]>[1],
+        );
       }
 
       await this.db

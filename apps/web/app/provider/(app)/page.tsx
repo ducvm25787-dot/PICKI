@@ -404,6 +404,60 @@ export default function ProviderOrdersPage() {
                 .
               </p>
             </div>
+          ) : activeLocation?.providerType === "AUTO_SERVICE" ? (
+            <div className="card">
+              <p className="stat" style={{ margin: 0 }}>
+                Rửa xe / bơm lốp — xem xe sắp tới ở tab{" "}
+                <a href="/provider/incoming" style={{ color: "var(--accent-dark)" }}>
+                  Sắp tới
+                </a>
+                . Cập nhật thời gian chờ ở tab{" "}
+                <a href="/provider/live" style={{ color: "var(--accent-dark)" }}>
+                  Trạng thái
+                </a>
+                . Thay dầu/sửa chữa — khách liên hệ trực tiếp.
+              </p>
+            </div>
+          ) : activeLocation?.providerType === "PET_SERVICE" ? (
+            <div className="card">
+              <p className="stat" style={{ margin: 0 }}>
+                PET SPA — spa pet ở tab{" "}
+                <a href="/provider/incoming" style={{ color: "var(--accent-dark)" }}>
+                  Sắp tới
+                </a>
+                , trông pet / dắt chó ở tab{" "}
+                <a href="/provider/requests" style={{ color: "var(--accent-dark)" }}>
+                  Yêu cầu
+                </a>
+                . Cập nhật thời gian chờ ở tab{" "}
+                <a href="/provider/live" style={{ color: "var(--accent-dark)" }}>
+                  Trạng thái
+                </a>
+                .
+              </p>
+            </div>
+          ) : activeLocation?.providerType === "EDUCATION_PROVIDER" ||
+            activeLocation?.providerType === "TUTOR" ? (
+            <div className="card">
+              <p className="stat" style={{ margin: 0 }}>
+                Trung tâm giáo dục quản lý{" "}
+                <strong>buổi học thử</strong> ở tab{" "}
+                <a href="/provider/requests" style={{ color: "var(--accent-dark)" }}>
+                  Yêu cầu
+                </a>
+                .
+              </p>
+            </div>
+          ) : activeLocation?.providerType === "SPORTS_FACILITY" ? (
+            <div className="card">
+              <p className="stat" style={{ margin: 0 }}>
+                Đặt sân — xem yêu cầu khung giờ ở tab{" "}
+                <a href="/provider/requests" style={{ color: "var(--accent-dark)" }}>
+                  Yêu cầu
+                </a>
+                . Xác nhận hoặc từ chối, không thu phí qua Picki V1.
+              </p>
+            </div>
           ) : (
             <p className="stat">Chưa có đơn mới.</p>
           )

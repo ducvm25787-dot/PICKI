@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ServiceRequestZaloContact } from "../../components/service-request-zalo";
 import { api } from "../../../lib/api";
-import { serviceRequestStatusLabel } from "../../../lib/providers";
+import { isEducationVertical, isSportsVertical, serviceRequestStatusLabel } from "../../../lib/providers";
 
 type ServiceRequest = {
   id: string;
@@ -14,12 +14,17 @@ type ServiceRequest = {
   offeringName: string | null;
   providerBrandName: string | null;
   providerDisplayName: string | null;
+  providerType: string | null;
   customerNote: string | null;
   providerNote: string | null;
   preferredAt: string | null;
   deliveryBuilding: string | null;
   deliveryApartment: string | null;
   deliveryNote: string | null;
+  trialScheduledAt: string | null;
+  trialLocationType: string | null;
+  trialLocationDetail: string | null;
+  trialTeacherName: string | null;
   contacts?: {
     customer: { phone: string | null; displayName?: string | null };
     provider: { phone: string | null; label?: string };
@@ -68,7 +73,12 @@ export default function RequestDetailPage() {
     );
   }
 
-  const canCancel = request.status === "OPEN" || request.status === "CONFIRMED";
+  const isEducation = isEducationVertical(request.providerType);
+  const isSports = isSportsVertical(request.providerType);
+  const canCancel =
+    request.status === "OPEN" ||
+    request.status === "CONFIRMED" ||
+    request.status === "UPCOMING";
 
   return (
     <div className="container">
@@ -79,12 +89,14 @@ export default function RequestDetailPage() {
       <div className="card" style={{ marginTop: 16 }}>
         <h1 style={{ margin: "0 0 8px", fontSize: 22 }}>{request.requestNumber}</h1>
         <p className="stat" style={{ margin: 0 }}>
-          {serviceRequestStatusLabel(request.status)}
+          {serviceRequestStatusLabel(request.status, request.providerType)}
         </p>
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
-        <p className="section-title">Thợ / dịch vụ</p>
+        <p className="section-title">
+          {isEducation ? "Giáo dục / dịch vụ" : isSports ? "Sân / dịch vụ" : "Thợ / dịch vụ"}
+        </p>
         <p style={{ margin: 0 }}>
           <strong>{request.providerBrandName}</strong>
           {request.providerDisplayName ? ` · ${request.providerDisplayName}` : ""}
@@ -92,7 +104,29 @@ export default function RequestDetailPage() {
         {request.offeringName ? <p className="stat">{request.offeringName}</p> : null}
       </div>
 
-      {(request.deliveryBuilding || request.deliveryApartment || request.deliveryNote) && (
+      {isEducation && request.deliveryNote ? (
+        <div className="card" style={{ marginTop: 16 }}>
+          <p className="section-title">Địa chỉ nhà</p>
+          <p style={{ margin: 0 }}>{request.deliveryNote}</p>
+        </div>
+      ) : null}
+
+      {request.preferredAt ? (
+        <div className="card" style={{ marginTop: 16 }}>
+          <p className="section-title">{isSports ? "Khung giờ muốn chơi" : "Thời gian mong muốn"}</p>
+          <p style={{ margin: 0 }}>
+            {new Date(request.preferredAt).toLocaleString("vi-VN", {
+              weekday: "short",
+              day: "2-digit",
+              month: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </p>
+        </div>
+      ) : null}
+
+      {!isEducation && !isSports && (request.deliveryBuilding || request.deliveryApartment || request.deliveryNote) ? (
         <div className="card" style={{ marginTop: 16 }}>
           <p className="section-title">Địa chỉ</p>
           <p style={{ margin: 0 }}>
@@ -100,7 +134,33 @@ export default function RequestDetailPage() {
           </p>
           {request.deliveryNote ? <p className="stat">{request.deliveryNote}</p> : null}
         </div>
-      )}
+      ) : null}
+
+      {request.trialScheduledAt ? (
+        <div className="card" style={{ marginTop: 16, borderColor: "#9fd4b5" }}>
+          <p className="section-title">Lịch học thử</p>
+          <p style={{ margin: "0 0 6px" }}>
+            {new Date(request.trialScheduledAt).toLocaleString("vi-VN", {
+              weekday: "short",
+              day: "2-digit",
+              month: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </p>
+          {request.trialTeacherName ? (
+            <p className="stat" style={{ margin: "0 0 6px" }}>
+              Giáo viên: {request.trialTeacherName}
+            </p>
+          ) : null}
+          {request.trialLocationDetail ? (
+            <p className="stat" style={{ margin: 0 }}>
+              {request.trialLocationType === "ONLINE" ? "Online" : "Tại"}:{" "}
+              {request.trialLocationDetail}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {request.customerNote ? (
         <div className="card" style={{ marginTop: 16 }}>
@@ -112,13 +172,20 @@ export default function RequestDetailPage() {
       {request.contacts ? (
         <div className="card" style={{ marginTop: 16 }}>
           <p className="section-title">Liên hệ qua Zalo</p>
-          <ServiceRequestZaloContact role="customer" contacts={request.contacts} />
+          <ServiceRequestZaloContact
+            role="customer"
+            education={isEducation}
+            sports={isSports}
+            contacts={request.contacts}
+          />
         </div>
       ) : null}
 
       {request.providerNote ? (
         <div className="card" style={{ marginTop: 16 }}>
-          <p className="section-title">Phản hồi thợ</p>
+          <p className="section-title">
+            {isEducation ? "Phản hồi trung tâm" : isSports ? "Phản hồi sân" : "Phản hồi thợ"}
+          </p>
           <p style={{ margin: 0 }}>{request.providerNote}</p>
         </div>
       ) : null}

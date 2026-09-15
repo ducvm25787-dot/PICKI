@@ -25,11 +25,50 @@ export function isBeautyVertical(providerType?: string | null) {
   return providerType === "BEAUTY";
 }
 
-function beautyWaitLabel(status: string, waitMinutes: number | null | undefined): string {
-  if (status === "CLOSED") return "Tạm hết lượt";
+export function isPetVertical(providerType?: string | null) {
+  return providerType === "PET_SERVICE";
+}
+
+export function isAutoVertical(providerType?: string | null) {
+  return providerType === "AUTO_SERVICE";
+}
+
+export function isHealthVertical(providerType?: string | null) {
+  return providerType === "HEALTH_PROVIDER";
+}
+
+export function isCustomerVisitVertical(providerType?: string | null) {
+  return (
+    isBeautyVertical(providerType) ||
+    isPetVertical(providerType) ||
+    isAutoVertical(providerType) ||
+    isHealthVertical(providerType)
+  );
+}
+
+/** Tiệm chỉ queue (beauty/auto/phòng khám) — không tab Yêu cầu dịch vụ */
+export function isQueueOnlyShop(providerType?: string | null) {
+  return isBeautyVertical(providerType) || isAutoVertical(providerType) || isHealthVertical(providerType);
+}
+
+export function isEducationVertical(providerType?: string | null) {
+  return providerType === "EDUCATION_PROVIDER" || providerType === "TUTOR";
+}
+
+export function isSportsVertical(providerType?: string | null) {
+  return providerType === "SPORTS_FACILITY";
+}
+
+function beautyWaitLabel(
+  status: string,
+  waitMinutes: number | null | undefined,
+  providerType?: string | null,
+): string {
+  const health = isHealthVertical(providerType);
+  if (status === "CLOSED") return health ? "Tạm ngừng nhận khám" : "Tạm hết lượt";
   if (status === "OFFLINE") return "Đóng cửa";
   const wait = waitMinutes ?? 0;
-  if (status === "OPEN" && wait <= 0) return "Ra được ngay";
+  if (status === "OPEN" && wait <= 0) return health ? "Khám được ngay" : "Ra được ngay";
   if (wait <= 15) return wait > 0 ? `~${String(wait)} phút` : "~15 phút";
   return `~${String(wait)} phút`;
 }
@@ -47,8 +86,11 @@ export function liveStatusLabel(
   providerType?: string | null,
   estimatedWaitMinutes?: number | null,
 ): string {
-  if (isBeautyVertical(providerType)) {
-    return beautyWaitLabel(status, estimatedWaitMinutes);
+  if (isEducationVertical(providerType)) {
+    return "Đang mở";
+  }
+  if (isCustomerVisitVertical(providerType)) {
+    return beautyWaitLabel(status, estimatedWaitMinutes, providerType);
   }
   if (isHomeServiceVertical(providerType)) {
     switch (status) {
@@ -87,7 +129,10 @@ export function liveStatusClass(status: string): string {
   }
 }
 
-export function fulfillmentLabel(mode: string | null | undefined): string {
+export function fulfillmentLabel(
+  mode: string | null | undefined,
+  providerType?: string | null,
+): string {
   switch (mode) {
     case "PREORDER":
       return "Đặt trước";
@@ -102,7 +147,16 @@ export function fulfillmentLabel(mode: string | null | undefined): string {
     case "PROVIDER_VISIT":
       return "Thợ đến nhà";
     case "CUSTOMER_VISIT":
+      if (isEducationVertical(providerType)) return "Tại lớp";
+      if (isPetVertical(providerType)) return "Mang pet tới tiệm";
+      if (isAutoVertical(providerType)) return "Mang xe tới";
+      if (isSportsVertical(providerType)) return "Tới sân";
+      if (isHealthVertical(providerType)) return "Tới phòng khám";
       return "Tại tiệm";
+    case "CONTACT_ONLY":
+      return isHealthVertical(providerType) ? "Liên hệ phòng khám" : "Liên hệ tiệm";
+    case "ONLINE":
+      return "Học online";
     default:
       return "";
   }
@@ -111,8 +165,9 @@ export function fulfillmentLabel(mode: string | null | undefined): string {
 export function beautyWaitDisplay(
   status: string,
   estimatedWaitMinutes?: number | null,
+  providerType?: string | null,
 ): string {
-  return `${beautyWaitEmoji(status, estimatedWaitMinutes)} ${beautyWaitLabel(status, estimatedWaitMinutes)}`;
+  return `${beautyWaitEmoji(status, estimatedWaitMinutes)} ${beautyWaitLabel(status, estimatedWaitMinutes, providerType)}`;
 }
 
 export function isLaundryVertical(providerType?: string | null) {
@@ -124,18 +179,29 @@ export function orderButtonLabel(providerType?: string | null) {
   return isLaundryVertical(providerType) ? "Đặt hàng" : "Đặt món";
 }
 
-export function serviceRequestStatusLabel(status: string): string {
+export function serviceRequestStatusLabel(
+  status: string,
+  providerType?: string | null,
+): string {
+  const edu = isEducationVertical(providerType);
+  const sports = isSportsVertical(providerType);
   switch (status) {
     case "OPEN":
-      return "Chờ thợ phản hồi";
+      return edu
+        ? "Đợi Phụ trách lớp phản hồi"
+        : sports
+          ? "Đợi sân xác nhận"
+          : "Chờ thợ phản hồi";
     case "CONFIRMED":
-      return "Thợ đã nhận";
+      return edu ? "Chờ tạo lịch học thử" : sports ? "Sân đã giữ chỗ" : "Thợ đã nhận";
+    case "UPCOMING":
+      return edu ? "Đã sắp lịch — chờ buổi học thử" : status;
     case "IN_PROGRESS":
-      return "Đang thực hiện";
+      return edu ? "Đang diễn ra" : sports ? "Đang chơi" : "Đang thực hiện";
     case "COMPLETED":
-      return "Hoàn tất";
+      return edu ? "Đã hoàn thành buổi học" : sports ? "Ca sân xong" : "Hoàn tất";
     case "PROVIDER_REJECTED":
-      return "Thợ từ chối";
+      return edu ? "Trung tâm từ chối" : sports ? "Sân từ chối" : "Thợ từ chối";
     case "CANCELLED":
       return "Đã hủy";
     default:

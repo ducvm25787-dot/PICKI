@@ -20,6 +20,8 @@ export const beautyVisitIntents = pgTable("beauty_visit_intents", {
   status: text("status").notNull().default("ACTIVE"),
   etaMinutes: integer("eta_minutes").notNull(),
   expectedAt: timestamp("expected_at", { withTimezone: true, mode: "date" }).notNull(),
+  shopWaitingAt: timestamp("shop_waiting_at", { withTimezone: true, mode: "date" }),
+  providerNote: text("provider_note"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

@@ -20,6 +20,8 @@ export const providerProfiles = pgTable("provider_profiles", {
   description: text("description"),
   logoUrl: text("logo_url"),
   coverUrl: text("cover_url"),
+  licenseNumber: text("license_number"),
+  licenseVerifiedAt: timestamp("license_verified_at", { withTimezone: true, mode: "date" }),
   updatedAt: updatedAt(),
 });
 

@@ -13,6 +13,7 @@ type ServiceRequest = {
   status: string;
   offeringName: string | null;
   providerBrandName: string | null;
+  providerType: string | null;
   customerNote: string | null;
   createdAt: string;
 };
@@ -89,7 +90,9 @@ export default function RequestsPage() {
                       {r.providerBrandName}
                       {r.offeringName ? ` · ${r.offeringName}` : ""}
                     </p>
-                    <p style={{ margin: 0 }}>{serviceRequestStatusLabel(r.status)}</p>
+                    <p style={{ margin: 0 }}>
+                      {serviceRequestStatusLabel(r.status, r.providerType)}
+                    </p>
                   </Link>
                 ))}
               </div>
@@ -114,7 +117,9 @@ export default function RequestsPage() {
                     <p className="stat" style={{ margin: "6px 0" }}>
                       {r.providerBrandName}
                     </p>
-                    <p style={{ margin: 0 }}>{serviceRequestStatusLabel(r.status)}</p>
+                    <p style={{ margin: 0 }}>
+                      {serviceRequestStatusLabel(r.status, r.providerType)}
+                    </p>
                   </Link>
                 ))}
               </div>

@@ -2,6 +2,10 @@ import Link from "next/link";
 import {
   beautyWaitDisplay,
   isBeautyVertical,
+  isCustomerVisitVertical,
+  isEducationVertical,
+  isHealthVertical,
+  isPetVertical,
   liveStatusClass,
   liveStatusLabel,
   type ProviderListing,
@@ -31,9 +35,13 @@ export function ProviderList({
             >
               <h3 style={{ margin: "0 0 4px" }}>
                 {p.brandName}
-                <span className={`live-pill ${liveStatusClass(p.liveStatus)}`}>
-                  {isBeautyVertical(p.providerType)
-                    ? beautyWaitDisplay(p.liveStatus, p.estimatedWaitMinutes)
+                <span
+                  className={`live-pill ${liveStatusClass(
+                    isEducationVertical(p.providerType) ? "OPEN" : p.liveStatus,
+                  )}`}
+                >
+                  {isCustomerVisitVertical(p.providerType)
+                    ? beautyWaitDisplay(p.liveStatus, p.estimatedWaitMinutes, p.providerType)
                     : liveStatusLabel(p.liveStatus, p.providerType, p.estimatedWaitMinutes)}
                 </span>
               </h3>
@@ -41,12 +49,12 @@ export function ProviderList({
                 {p.displayName}
               </p>
               {p.tagline && <p style={{ margin: "0 0 4px", fontSize: 14 }}>{p.tagline}</p>}
-              {isBeautyVertical(p.providerType) && p.estimatedWaitMinutes != null ? (
+              {isCustomerVisitVertical(p.providerType) && p.estimatedWaitMinutes != null ? (
                 <p className="stat" style={{ margin: "4px 0 0" }}>
-                  {beautyWaitDisplay(p.liveStatus, p.estimatedWaitMinutes)}
+                  {beautyWaitDisplay(p.liveStatus, p.estimatedWaitMinutes, p.providerType)}
                 </p>
               ) : null}
-              {!isBeautyVertical(p.providerType) &&
+              {!isCustomerVisitVertical(p.providerType) &&
               (p.prepMinutes != null || p.etaMinutes != null) ? (
                 <p className="stat" style={{ margin: "4px 0 0" }}>
                   ⏱ {p.prepMinutes ?? "?"} phút nấu · ~{p.etaMinutes ?? "?"} phút giao
@@ -63,7 +71,13 @@ export function ProviderList({
                 </p>
               )}
               <p className="stat" style={{ margin: "8px 0 0", fontSize: 13 }}>
-                {isBeautyVertical(p.providerType) ? "Xem tiệm →" : "Xem menu →"}
+                {isHealthVertical(p.providerType)
+                  ? "Xem phòng khám →"
+                  : isBeautyVertical(p.providerType) || isPetVertical(p.providerType)
+                    ? "Xem tiệm →"
+                    : isEducationVertical(p.providerType)
+                      ? "Xem chi tiết →"
+                      : "Xem menu →"}
               </p>
             </Link>
             {onToggleFavorite ? (

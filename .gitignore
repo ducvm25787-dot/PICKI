@@ -9,4 +9,5 @@ build
 *.log
 coverage
 .drizzle
+apps/api/storage
 ~$*

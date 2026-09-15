@@ -20,6 +20,7 @@
     "db:migrate": "bash scripts/db-migrate.sh",
     "db:seed:home": "bash scripts/db-seed-home.sh",
     "db:seed:beauty": "bash scripts/db-seed-beauty.sh",
+    "db:seed:health": "bash scripts/db-seed-health.sh",
     "db:integration": "DATABASE_URL=postgresql://picki:picki@localhost:5432/picki pnpm --filter @picki/db test:integration",
     "api:dev": "bash scripts/run-api-dev.sh",
     "api:e2e": "DATABASE_URL=postgresql://picki:picki@localhost:5432/picki SESSION_SECRET=local-dev-secret-16chars AUTH_OTP_DEV_EXPOSE=true pnpm --filter @picki/api test:e2e",

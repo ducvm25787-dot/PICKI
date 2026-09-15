@@ -5,6 +5,7 @@ import { SessionAuthGuard } from "../auth/session-auth.guard.js";
 import {
   createServiceRequestSchema,
   providerServiceRequestActionSchema,
+  scheduleEducationTrialSchema,
 } from "./dto.js";
 import { ServiceRequestsService } from "./service-requests.service.js";
 
@@ -63,5 +64,20 @@ export class ServiceRequestsController {
       });
     }
     return this.requests.providerAction(userId, requestId, parsed.data);
+  }
+
+  @Patch("provider/service-requests/:requestId/trial-schedule")
+  scheduleTrial(
+    @CurrentUserId() userId: string,
+    @Param("requestId") requestId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = scheduleEducationTrialSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Invalid trial schedule", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.requests.scheduleEducationTrial(userId, requestId, parsed.data);
   }
 }

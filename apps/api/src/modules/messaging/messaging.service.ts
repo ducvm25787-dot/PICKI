@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import {
+  classifiedListings,
   conversationParticipants,
   conversations,
   messages,
@@ -54,6 +55,13 @@ export class MessagingService {
             .where(eq(orders.id, c.contextId))
             .limit(1);
           title = order[0] ? `Đơn ${order[0].orderNumber}` : title;
+        } else if (c.contextType === "CLASSIFIED") {
+          const listing = await this.db
+            .select({ title: classifiedListings.title, listingNumber: classifiedListings.listingNumber })
+            .from(classifiedListings)
+            .where(eq(classifiedListings.id, c.contextId))
+            .limit(1);
+          title = listing[0] ? `${listing[0].listingNumber}: ${listing[0].title}` : title;
         }
 
         return {
@@ -177,6 +185,71 @@ export class MessagingService {
     return this.getConversation(userId, conv[0]!.id);
   }
 
+  async getOrCreateClassifiedConversation(userId: string, listingId: string) {
+    const listing = await this.db
+      .select()
+      .from(classifiedListings)
+      .where(eq(classifiedListings.id, listingId))
+      .limit(1);
+    if (!listing[0]) {
+      throw new PickiError("NOT_FOUND", "Listing not found");
+    }
+    if (listing[0].sellerUserId === userId) {
+      throw new PickiError("VALIDATION_ERROR", "Không thể chat với chính mình");
+    }
+
+    const existing = await this.db
+      .select({ conversation: conversations })
+      .from(conversations)
+      .innerJoin(
+        conversationParticipants,
+        eq(conversationParticipants.conversationId, conversations.id),
+      )
+      .where(
+        and(
+          eq(conversations.contextType, "CLASSIFIED"),
+          eq(conversations.contextId, listingId),
+          eq(conversationParticipants.userId, userId),
+        ),
+      )
+      .limit(20);
+
+    for (const row of existing) {
+      const sellerParticipant = await this.db
+        .select({ id: conversationParticipants.id })
+        .from(conversationParticipants)
+        .where(
+          and(
+            eq(conversationParticipants.conversationId, row.conversation.id),
+            eq(conversationParticipants.userId, listing[0].sellerUserId),
+          ),
+        )
+        .limit(1);
+      if (sellerParticipant[0]) {
+        return this.getClassifiedConversation(userId, row.conversation.id, listing[0].sellerUserId);
+      }
+    }
+
+    const conv = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(conversations)
+        .values({ contextType: "CLASSIFIED", contextId: listingId })
+        .returning();
+      if (!created) {
+        throw new PickiError("INTERNAL_ERROR", "Failed to create conversation");
+      }
+
+      await tx.insert(conversationParticipants).values([
+        { conversationId: created.id, userId: listing[0]!.sellerUserId, role: "SELLER" },
+        { conversationId: created.id, userId, role: "BUYER" },
+      ]);
+
+      return created;
+    });
+
+    return this.getClassifiedConversation(userId, conv.id, listing[0].sellerUserId);
+  }
+
   async sendMessage(userId: string, conversationId: string, body: string) {
     await this.assertParticipant(userId, conversationId);
 
@@ -196,6 +269,8 @@ export class MessagingService {
 
     let orderNumber: string | undefined;
     let orderId: string | undefined;
+    let listingId: string | undefined;
+    let listingNumber: string | undefined;
     if (conv[0].contextType === "ORDER") {
       const order = await this.db
         .select({ orderNumber: orders.orderNumber })
@@ -204,6 +279,14 @@ export class MessagingService {
         .limit(1);
       orderNumber = order[0]?.orderNumber;
       orderId = conv[0].contextId;
+    } else if (conv[0].contextType === "CLASSIFIED") {
+      listingId = conv[0].contextId;
+      const listing = await this.db
+        .select({ listingNumber: classifiedListings.listingNumber })
+        .from(classifiedListings)
+        .where(eq(classifiedListings.id, conv[0].contextId))
+        .limit(1);
+      listingNumber = listing[0]?.listingNumber;
     }
 
     const message = await this.db.transaction(async (tx) => {
@@ -230,6 +313,8 @@ export class MessagingService {
           senderUserId: userId,
           orderId,
           orderNumber,
+          listingId,
+          listingNumber,
           preview: body,
           recipientUserIds: participantRows.map((p) => p.userId),
         },
@@ -244,6 +329,49 @@ export class MessagingService {
       body: message.body,
       createdAt: message.createdAt.toISOString(),
       mine: true,
+    };
+  }
+
+  private async getClassifiedConversation(
+    userId: string,
+    conversationId: string,
+    sellerUserId: string,
+  ) {
+    await this.assertParticipant(userId, conversationId);
+
+    const conv = await this.db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .limit(1);
+    if (!conv[0]) {
+      throw new PickiError("NOT_FOUND", "Conversation not found");
+    }
+
+    const msgs = await this.db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(messages.createdAt)
+      .limit(200);
+
+    return {
+      id: conv[0].id,
+      contextType: conv[0].contextType,
+      contextId: conv[0].contextId,
+      messages: msgs.map((m) => ({
+        id: m.id,
+        senderUserId: m.senderUserId,
+        body: m.body,
+        createdAt: m.createdAt.toISOString(),
+        mine: m.senderUserId === userId,
+        senderRole:
+          m.senderUserId === sellerUserId
+            ? ("SELLER" as const)
+            : m.senderUserId === userId
+              ? ("BUYER" as const)
+              : ("BUYER" as const),
+      })),
     };
   }
 

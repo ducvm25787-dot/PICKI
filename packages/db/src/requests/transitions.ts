@@ -1,6 +1,7 @@
 export type ServiceRequestStatus =
   | "OPEN"
   | "CONFIRMED"
+  | "UPCOMING"
   | "IN_PROGRESS"
   | "COMPLETED"
   | "CANCELLED"
@@ -15,7 +16,8 @@ export type ServiceRequestAction =
 
 const TRANSITIONS: Record<ServiceRequestStatus, ServiceRequestStatus[]> = {
   OPEN: ["CONFIRMED", "PROVIDER_REJECTED", "CANCELLED"],
-  CONFIRMED: ["IN_PROGRESS", "CANCELLED"],
+  CONFIRMED: ["IN_PROGRESS", "UPCOMING", "CANCELLED"],
+  UPCOMING: ["IN_PROGRESS", "CANCELLED"],
   IN_PROGRESS: ["COMPLETED", "CANCELLED"],
   COMPLETED: [],
   CANCELLED: [],

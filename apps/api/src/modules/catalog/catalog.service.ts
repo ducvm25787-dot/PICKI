@@ -29,7 +29,14 @@ export class CatalogService {
     ]);
 
     const isBeauty = header.provider_type === "BEAUTY";
-    const [providerPhone, brandName] = isBeauty
+    const isPet = header.provider_type === "PET_SERVICE";
+    const isAuto = header.provider_type === "AUTO_SERVICE";
+    const isSports = header.provider_type === "SPORTS_FACILITY";
+    const isHealth = header.provider_type === "HEALTH_PROVIDER";
+    const isEducation =
+      header.provider_type === "EDUCATION_PROVIDER" || header.provider_type === "TUTOR";
+    const withContacts = isBeauty || isPet || isAuto || isSports || isEducation || isHealth;
+    const [providerPhone, brandName] = withContacts
       ? await Promise.all([
           loadProviderContactPhone(this.db, locationId),
           loadProviderBrand(this.db, locationId),
@@ -52,7 +59,7 @@ export class CatalogService {
         addressLine: header.address_line,
         lat: header.lat,
         lng: header.lng,
-        contacts: isBeauty
+        contacts: withContacts
           ? {
               provider: {
                 phone: providerPhone,
@@ -70,6 +77,8 @@ export class CatalogService {
         pricingKind: i.pricing_kind,
         foodMoment: i.food_moment,
         fulfillmentMode: i.fulfillment_mode,
+        educationSubject: i.education_subject,
+        educationGrade: i.education_grade,
         paymentPolicy: i.payment_policy,
         estimatedDays: i.estimated_days,
       })),

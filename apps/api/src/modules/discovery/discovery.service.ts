@@ -1,10 +1,16 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
+  classifiedListings,
   discoveryBlocksForNow,
   listDailySpecialsForLocation,
   listDiscoveryProviders,
+  listAutoProviders,
   listBeautyProviders,
+  listEducationProviders,
+  listHealthProviders,
+  listPetProviders,
+  listSportsProviders,
   listHomeServiceProviders,
   listLaundryProviders,
   listMapProviders,
@@ -73,7 +79,125 @@ export class DiscoveryService {
       });
     }
 
-    return { zoneId: zone.id, slug: zone.slug, blocks: enriched };
+    const education = await listEducationProviders(this.sql, zone.id);
+    if (education.length > 0) {
+      enriched.push({
+        id: "education",
+        title: "HỌC TẬP",
+        subtitle: "Gia sư, học thêm, lớp trẻ em — đặt buổi học thử",
+        foodMoments: [],
+        providers: education.map(mapProvider),
+      });
+    }
+
+    const pet = await listPetProviders(this.sql, zone.id);
+    if (pet.length > 0) {
+      enriched.push({
+        id: "pet",
+        title: "THÚ CƯNG",
+        subtitle: "Spa pet, trông pet, dắt chó — báo sắp tới hoặc gửi yêu cầu",
+        foodMoments: [],
+        providers: pet.map(mapProvider),
+      });
+    }
+
+    const auto = await listAutoProviders(this.sql, zone.id);
+    if (auto.length > 0) {
+      enriched.push({
+        id: "auto",
+        title: "XE MÁY / Ô TÔ",
+        subtitle: "Rửa xe, bơm lốp — xem chờ live · thay dầu/sửa chữa liên hệ trực tiếp",
+        foodMoments: [],
+        providers: auto.map(mapProvider),
+      });
+    }
+
+    const health = await listHealthProviders(this.sql, zone.id);
+    if (health.length > 0) {
+      enriched.push({
+        id: "health",
+        title: "PHÒNG KHÁM",
+        subtitle: "Đa khoa, nha khoa, đông y — xem chờ live, báo sắp tới khám",
+        foodMoments: [],
+        providers: health.map(mapProvider),
+      });
+    }
+
+    const sports = await listSportsProviders(this.sql, zone.id);
+    if (sports.length > 0) {
+      enriched.push({
+        id: "sports",
+        title: "ĐẶT SÂN",
+        subtitle: "Pickleball, bóng đá, cầu lông — gửi yêu cầu khung giờ",
+        foodMoments: [],
+        providers: sports.map(mapProvider),
+      });
+    }
+
+    const community = await this.communitySummary(zone.id);
+
+    return { zoneId: zone.id, slug: zone.slug, blocks: enriched, community };
+  }
+
+  private async communitySummary(zoneId: string) {
+    const counts = await this.db
+      .select({
+        listingType: classifiedListings.listingType,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(classifiedListings)
+      .where(
+        and(
+          eq(classifiedListings.zoneId, zoneId),
+          inArray(classifiedListings.status, ["AVAILABLE", "RESERVED"]),
+        ),
+      )
+      .groupBy(classifiedListings.listingType);
+
+    const resaleCount = counts.find((r) => r.listingType === "RESALE")?.count ?? 0;
+    const giveAwayCount = counts.find((r) => r.listingType === "GIVE_AWAY")?.count ?? 0;
+
+    const recent = await this.db
+      .select({
+        id: classifiedListings.id,
+        listingType: classifiedListings.listingType,
+        title: classifiedListings.title,
+        priceVnd: classifiedListings.priceVnd,
+        status: classifiedListings.status,
+        locationLabel: classifiedListings.locationLabel,
+        photoUrl: classifiedListings.photoUrl,
+        photoUrls: classifiedListings.photoUrls,
+      })
+      .from(classifiedListings)
+      .where(
+        and(
+          eq(classifiedListings.zoneId, zoneId),
+          inArray(classifiedListings.status, ["AVAILABLE", "RESERVED"]),
+        ),
+      )
+      .orderBy(desc(classifiedListings.createdAt))
+      .limit(4);
+
+    return {
+      resaleCount,
+      giveAwayCount,
+      recentListings: recent.map((r) => {
+        const photoUrls = Array.isArray(r.photoUrls)
+          ? (r.photoUrls as string[]).filter((u) => typeof u === "string")
+          : r.photoUrl
+            ? [r.photoUrl]
+            : [];
+        return {
+          id: r.id,
+          listingType: r.listingType,
+          title: r.title,
+          priceVnd: r.priceVnd,
+          status: r.status,
+          locationLabel: r.locationLabel,
+          photoUrl: photoUrls[0] ?? null,
+        };
+      }),
+    };
   }
 
   async search(slugOrId: string, query: string) {

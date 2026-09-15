@@ -48,6 +48,19 @@ export class VisitIntentsController {
     return this.visits.listForProvider(userId, locationId);
   }
 
+  @Get("provider/visit-intents/history")
+  listHistoryForProvider(
+    @CurrentUserId() userId: string,
+    @Query("locationId") locationId: string,
+    @Query("limit") limitRaw?: string,
+  ) {
+    if (!locationId) {
+      throw new PickiError("VALIDATION_ERROR", "locationId is required");
+    }
+    const limit = limitRaw ? Number.parseInt(limitRaw, 10) : 50;
+    return this.visits.listHistoryForProvider(userId, locationId, Number.isFinite(limit) ? limit : 50);
+  }
+
   @Patch("provider/visit-intents/:intentId")
   providerAction(
     @CurrentUserId() userId: string,

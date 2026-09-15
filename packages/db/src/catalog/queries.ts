@@ -9,6 +9,8 @@ export type LocationMenuRow = {
   pricing_kind: string;
   food_moment: string | null;
   fulfillment_mode: string | null;
+  education_subject: string | null;
+  education_grade: string | null;
   payment_policy: string | null;
   estimated_days: number | null;
 };
@@ -77,6 +79,8 @@ export async function listLocationMenu(
       COALESCE(loc_price.pricing_kind, master_price.pricing_kind) AS pricing_kind,
       o.food_moment,
       o.fulfillment_mode,
+      o.education_subject,
+      o.education_grade,
       o.payment_policy,
       o.estimated_days
     FROM offerings o

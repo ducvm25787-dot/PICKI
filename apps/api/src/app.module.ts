@@ -4,8 +4,10 @@ import { HealthController } from "./health.controller.js";
 import { AdminModule } from "./modules/admin/admin.module.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
 import { CatalogModule } from "./modules/catalog/catalog.module.js";
+import { ClassifiedsModule } from "./modules/classifieds/classifieds.module.js";
 import { DiscoveryModule } from "./modules/discovery/discovery.module.js";
 import { GeoModule } from "./modules/geo/geo.module.js";
+import { HealthModule } from "./modules/health/health.module.js";
 import { OrdersModule } from "./modules/orders/orders.module.js";
 import { MessagingModule } from "./modules/messaging/messaging.module.js";
 import { NotificationsModule } from "./modules/notifications/notifications.module.js";
@@ -23,8 +25,10 @@ import { ZonesModule } from "./modules/zones/zones.module.js";
     NotificationsModule,
     AdminModule,
     GeoModule,
+    HealthModule,
     ZonesModule,
     CatalogModule,
+    ClassifiedsModule,
     DiscoveryModule,
     OrdersModule,
     ProviderModule,

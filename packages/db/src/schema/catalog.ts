@@ -15,6 +15,8 @@ export const offerings = pgTable("offerings", {
   sortOrder: integer("sort_order").notNull().default(0),
   foodMoment: text("food_moment"),
   fulfillmentMode: text("fulfillment_mode"),
+  educationSubject: text("education_subject"),
+  educationGrade: text("education_grade"),
   paymentPolicy: text("payment_policy"),
   estimatedDays: integer("estimated_days"),
   createdAt: createdAt(),

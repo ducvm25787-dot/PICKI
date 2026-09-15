@@ -18,6 +18,12 @@
     "seed:laundry": "tsx src/seed-laundry-kvl.ts",
     "seed:home": "tsx src/seed-home-kvl.ts",
     "seed:beauty": "tsx src/seed-beauty-kvl.ts",
+    "seed:education": "tsx src/seed-education-kvl.ts",
+    "seed:pet": "tsx src/seed-pet-kvl.ts",
+    "seed:classified": "tsx src/seed-classified-kvl.ts",
+    "seed:auto": "tsx src/seed-auto-kvl.ts",
+    "seed:sports": "tsx src/seed-sports-kvl.ts",
+    "seed:health": "tsx src/seed-health-kvl.ts",
     "test:integration": "vitest run src/**/*.integration.test.ts"
   },
   "dependencies": {

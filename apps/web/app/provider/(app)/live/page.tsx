@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ProviderPageShell, useProviderLocation } from "../../../components/provider-location-context";
-import { beautyWaitDisplay } from "../../../../lib/providers";
+import { beautyWaitDisplay, isCustomerVisitVertical, isHealthVertical } from "../../../../lib/providers";
 import { api } from "../../../../lib/api";
 
 type LiveStatus = {
@@ -24,10 +24,16 @@ function statusLabel(status: string, providerType?: string): string {
     if (status === "OFFLINE") return "Chưa cập nhật";
     return status;
   }
-  if (providerType === "BEAUTY") {
-    if (status === "OPEN") return "Đang nhận khách";
-    if (status === "BUSY") return "Đông khách";
-    if (status === "CLOSED") return "Tạm hết lượt";
+  if (isCustomerVisitVertical(providerType)) {
+    if (status === "OPEN") {
+      if (providerType === "PET_SERVICE") return "Đang nhận pet";
+      if (providerType === "AUTO_SERVICE") return "Đang nhận xe";
+      if (isHealthVertical(providerType)) return "Đang nhận khám";
+      return "Đang nhận khách";
+    }
+    if (status === "BUSY") return isHealthVertical(providerType) ? "Đông bệnh nhân" : "Đông khách";
+    if (status === "CLOSED")
+      return isHealthVertical(providerType) ? "Tạm ngừng nhận khám" : "Tạm hết lượt";
     if (status === "OFFLINE") return "Chưa cập nhật";
     return status;
   }
@@ -48,7 +54,8 @@ export default function ProviderLivePage() {
   const { locationId, activeLocation } = useProviderLocation();
   const [live, setLive] = useState<LiveStatus | null>(null);
   const [saving, setSaving] = useState(false);
-  const isBeauty = activeLocation?.providerType === "BEAUTY";
+  const isCustomerVisit = isCustomerVisitVertical(activeLocation?.providerType);
+  const isHealth = isHealthVertical(activeLocation?.providerType);
 
   const loadLive = useCallback(async () => {
     if (!locationId) return;
@@ -96,8 +103,12 @@ export default function ProviderLivePage() {
           {activeLocation?.locationName ?? "Quán"}
           {live ? (
             <span className={statusPillClass(live.status)}>
-              {isBeauty
-                ? beautyWaitDisplay(live.status, live.estimatedWaitMinutes)
+              {isCustomerVisit
+                ? beautyWaitDisplay(
+                    live.status,
+                    live.estimatedWaitMinutes,
+                    activeLocation?.providerType,
+                  )
                 : statusLabel(live.status, activeLocation?.providerType)}
             </span>
           ) : null}
@@ -122,11 +133,15 @@ export default function ProviderLivePage() {
           ))}
         </div>
 
-        {isBeauty ? (
+        {isCustomerVisit ? (
           <div style={{ marginTop: 20 }}>
             <p className="section-title">Thời gian chờ (Live Wait)</p>
             <p className="stat" style={{ margin: "0 0 10px" }}>
-              Khách thấy ước lượng chờ trên trang chủ và trang tiệm.
+              {activeLocation?.providerType === "AUTO_SERVICE"
+                ? "Khách xem đông vắng trước khi mang xe — cập nhật thường xuyên."
+                : isHealth
+                  ? "Khách xem thời gian chờ trước khi tới phòng khám — cập nhật khi đông/vắng."
+                  : "Khách thấy ước lượng chờ trên trang chủ và trang tiệm."}
             </p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {WAIT_PRESETS.map((m) => (
@@ -148,8 +163,8 @@ export default function ProviderLivePage() {
         ) : null}
 
         <p className="stat" style={{ marginTop: 16, marginBottom: 0 }}>
-          {isBeauty
-            ? "Cập nhật trạng thái và thời gian chờ khi tiệm đông/thưa."
+          {isCustomerVisit
+            ? "Cập nhật trạng thái và thời gian chờ khi đông/thưa."
             : "Khách thấy trạng thái này trên discovery và menu quán."}
         </p>
       </div>

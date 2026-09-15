@@ -99,6 +99,8 @@ export const providerTypes = [
   "TUTOR",
   "EDUCATION_PROVIDER",
   "PET_SERVICE",
+  "AUTO_SERVICE",
+  "SPORTS_FACILITY",
   "HEALTH_PROVIDER",
   "INDIVIDUAL",
   "COMPANY",

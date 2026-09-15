@@ -12,6 +12,7 @@ import {
   type Cart,
 } from "../../../lib/cart";
 import { LocationContactActions } from "../../components/location-contact-actions";
+import { OrderPhoneLinks } from "../../components/order-phone-links";
 import {
   formatBeautyPrice,
   formatHomeServicePrice,
@@ -21,8 +22,14 @@ import {
 import {
   beautyWaitDisplay,
   fulfillmentLabel,
+  isAutoVertical,
   isBeautyVertical,
+  isCustomerVisitVertical,
+  isEducationVertical,
+  isHealthVertical,
   isHomeServiceVertical,
+  isPetVertical,
+  isSportsVertical,
   isLaundryVertical,
   laundryPriceUnit,
   liveStatusClass,
@@ -56,6 +63,8 @@ type MenuResponse = {
     description: string | null;
     amountVnd: number;
     fulfillmentMode?: string | null;
+    educationSubject?: string | null;
+    educationGrade?: string | null;
     paymentPolicy?: string | null;
     estimatedDays?: number | null;
     pricingKind?: string | null;
@@ -82,6 +91,7 @@ type VisitIntent = {
   etaMinutes: number;
   expectedAt: string;
   status: string;
+  shopWaitingAt?: string | null;
 };
 
 const VISIT_ETA_PRESETS = [15, 30, 45, 60] as const;
@@ -100,6 +110,8 @@ export default function LocationMenuPage() {
   const [requestNote, setRequestNote] = useState("");
   const [requestBuilding, setRequestBuilding] = useState("CT12");
   const [requestApartment, setRequestApartment] = useState("");
+  const [homeAddress, setHomeAddress] = useState("");
+  const [preferredAtLocal, setPreferredAtLocal] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [visitItem, setVisitItem] = useState<MenuResponse["items"][0] | null>(null);
   const [visitEtaMinutes, setVisitEtaMinutes] = useState<number>(30);
@@ -129,6 +141,13 @@ export default function LocationMenuPage() {
   }
 
   useEffect(() => {
+    if (!menu?.location.id || !isCustomerVisitVertical(menu.location.providerType)) return;
+    void loadActiveVisit(menu.location.id);
+    const t = setInterval(() => void loadActiveVisit(menu.location.id), 15000);
+    return () => clearInterval(t);
+  }, [menu?.location.id, menu?.location.providerType]);
+
+  useEffect(() => {
     async function load() {
       try {
         await api("/me").catch(() => {
@@ -144,7 +163,7 @@ export default function LocationMenuPage() {
         setReviews(rev);
         setZoneId(mine.zones[0]?.zoneId ?? null);
         setCart(readCart());
-        if (data.location.providerType === "BEAUTY") {
+        if (isCustomerVisitVertical(data.location.providerType)) {
           await loadActiveVisit(data.location.id);
         }
       } catch (e) {
@@ -233,12 +252,25 @@ export default function LocationMenuPage() {
       setToast("Tham gia Zone trước khi gửi yêu cầu");
       return;
     }
-    if (!requestApartment.trim()) {
+    const isEducation = isEducationVertical(menu.location.providerType);
+    const isSports = isSportsVertical(menu.location.providerType);
+    if (isEducation && !homeAddress.trim()) {
+      setToast("Nhập địa chỉ nhà");
+      return;
+    }
+    if (isSports && !preferredAtLocal) {
+      setToast("Chọn khung giờ muốn đặt sân");
+      return;
+    }
+    if (!isEducation && !isSports && !requestApartment.trim()) {
       setToast("Nhập số căn hộ");
       return;
     }
     setSubmitting(true);
     try {
+      const preferredAt = preferredAtLocal
+        ? new Date(preferredAtLocal).toISOString()
+        : undefined;
       const created = await api<{ id: string }>("/service-requests", {
         method: "POST",
         body: JSON.stringify({
@@ -246,12 +278,16 @@ export default function LocationMenuPage() {
           zoneId,
           offeringId: requestItem.id,
           customerNote: requestNote.trim() || undefined,
-          deliveryBuilding: requestBuilding.trim(),
-          deliveryApartment: requestApartment.trim(),
+          preferredAt,
+          deliveryNote: isEducation ? homeAddress.trim() : undefined,
+          deliveryBuilding: isEducation || isSports ? undefined : requestBuilding.trim(),
+          deliveryApartment: isEducation || isSports ? undefined : requestApartment.trim(),
         }),
       });
       setRequestItem(null);
       setRequestNote("");
+      setHomeAddress("");
+      setPreferredAtLocal("");
       router.push(`/requests/${created.id}`);
     } catch (e) {
       setToast(e instanceof Error ? e.message : "Không gửi được yêu cầu");
@@ -281,6 +317,12 @@ export default function LocationMenuPage() {
   const isLaundry = isLaundryVertical(location.providerType);
   const isHomeService = isHomeServiceVertical(location.providerType);
   const isBeauty = isBeautyVertical(location.providerType);
+  const isPet = isPetVertical(location.providerType);
+  const isAuto = isAutoVertical(location.providerType);
+  const isHealth = isHealthVertical(location.providerType);
+  const isCustomerVisit = isCustomerVisitVertical(location.providerType);
+  const isEducation = isEducationVertical(location.providerType);
+  const isSports = isSportsVertical(location.providerType);
   const count = cartItemCount(cart);
   const total = cartTotalVnd(cart);
 
@@ -307,9 +349,17 @@ export default function LocationMenuPage() {
       <div className="card" style={{ marginBottom: 16 }}>
         <h1 style={{ margin: "0 0 4px", fontSize: 24 }}>
           {location.brandName}
-          <span className={`live-pill ${liveStatusClass(location.liveStatus)}`}>
-            {isBeauty
-              ? beautyWaitDisplay(location.liveStatus, location.estimatedWaitMinutes)
+          <span
+            className={`live-pill ${liveStatusClass(
+              isEducation ? "OPEN" : location.liveStatus,
+            )}`}
+          >
+            {isCustomerVisit
+              ? beautyWaitDisplay(
+                  location.liveStatus,
+                  location.estimatedWaitMinutes,
+                  location.providerType,
+                )
               : liveStatusLabel(
                   location.liveStatus,
                   location.providerType,
@@ -320,12 +370,42 @@ export default function LocationMenuPage() {
         <p className="stat">{location.displayName}</p>
         {location.addressLine ? <p className="stat">{location.addressLine}</p> : null}
         {location.tagline && <p style={{ margin: "12px 0 0" }}>{location.tagline}</p>}
-        {isBeauty ? (
+        {isCustomerVisit ? (
           <p className="stat" style={{ marginTop: 8 }}>
-            {beautyWaitDisplay(location.liveStatus, location.estimatedWaitMinutes)}
+            {beautyWaitDisplay(
+              location.liveStatus,
+              location.estimatedWaitMinutes,
+              location.providerType,
+            )}
           </p>
         ) : null}
-        {!isLaundry && !isHomeService && !isBeauty && (location.prepMinutes != null || location.etaMinutes != null) && (
+        {isHealth ? (
+          <p className="stat" style={{ marginTop: 8 }}>
+            Xem thời gian chờ rồi báo sắp tới khám. Triệu chứng và kết quả khám trao đổi trực tiếp
+            với phòng khám — Picki không lưu thông tin bệnh án.
+          </p>
+        ) : null}
+        {isPet ? (
+          <p className="stat" style={{ marginTop: 8 }}>
+            Spa tại tiệm — báo sắp tới · Trông pet / dắt chó — gửi yêu cầu tại nhà.
+          </p>
+        ) : null}
+        {isAuto ? (
+          <p className="stat" style={{ marginTop: 8 }}>
+            Rửa xe & bơm lốp — xem chờ live, báo sắp mang xe · Thay dầu/sửa chữa — liên hệ trực tiếp.
+          </p>
+        ) : null}
+        {isEducation ? (
+          <p className="stat" style={{ marginTop: 8 }}>
+            Gia sư · học online · lớp tại trung tâm — đặt buổi học thử, không thu học phí qua Picki.
+          </p>
+        ) : null}
+        {isSports ? (
+          <p className="stat" style={{ marginTop: 8 }}>
+            Chọn sân và gửi khung giờ mong muốn — sân xác nhận qua yêu cầu, không thanh toán qua Picki V1.
+          </p>
+        ) : null}
+        {!isLaundry && !isHomeService && !isCustomerVisit && !isEducation && !isSports && (location.prepMinutes != null || location.etaMinutes != null) && (
           <p className="stat" style={{ marginTop: 8 }}>
             ⏱ {location.prepMinutes ?? "?"} phút nấu · ~{location.etaMinutes ?? "?"} phút giao
           </p>
@@ -343,14 +423,50 @@ export default function LocationMenuPage() {
         {!zoneId && (
           <p className="stat" style={{ marginTop: 12, color: "var(--accent-dark)" }}>
             Tham gia Zone KVL để{" "}
-            {isHomeService ? "gửi yêu cầu" : isBeauty ? "xem tiệm" : isLaundry ? "đặt hàng" : "đặt món"}.
+            {isHomeService || isEducation || isSports
+              ? "gửi yêu cầu"
+              : isCustomerVisit
+                ? "xem tiệm"
+                : isLaundry
+                  ? "đặt hàng"
+                  : "đặt món"}
+            .
           </p>
         )}
       </div>
 
-      {isBeauty && activeVisit ? (
-        <div className="card" style={{ marginBottom: 16, borderColor: "#9fd4b5" }}>
-          <p className="section-title">Bạn đang báo sắp tới</p>
+      {isCustomerVisit && activeVisit ? (
+        <div
+          className="card"
+          style={{
+            marginBottom: 16,
+            borderColor: activeVisit.shopWaitingAt ? "#2d6a4f" : "#9fd4b5",
+          }}
+        >
+          {activeVisit.shopWaitingAt ? (
+            <p
+              style={{
+                margin: "0 0 10px",
+                padding: "8px 10px",
+                borderRadius: 8,
+                background: "#d8f3dc",
+                color: "#1b4332",
+                fontSize: 14,
+                fontWeight: 600,
+              }}
+            >
+              ✓ {isHealth ? "Phòng khám đang chờ bạn" : "Tiệm đang chờ bạn"}
+            </p>
+          ) : null}
+          <p className="section-title">
+            {isPet
+              ? "Bạn đang báo pet sắp tới"
+              : isAuto
+                ? "Bạn đang báo sắp mang xe"
+                : isHealth
+                  ? "Bạn đang báo sắp tới khám"
+                  : "Bạn đang báo sắp tới"}
+          </p>
           <p style={{ margin: "0 0 8px" }}>
             {activeVisit.offeringName ?? "Dịch vụ"} · ~{String(activeVisit.etaMinutes)} phút nữa
           </p>
@@ -361,8 +477,29 @@ export default function LocationMenuPage() {
               minute: "2-digit",
             })}
             {" · "}
-            Tiệm đã nhận thông báo (không phải đặt lịch cố định).
+            {activeVisit.shopWaitingAt
+              ? isHealth
+                ? "Phòng khám đang mở và chờ bạn tới."
+                : "Tiệm đang mở cửa và chờ bạn tới."
+              : isHealth
+                ? "Phòng khám đã nhận thông báo (không phải đặt lịch hẹn)."
+                : "Tiệm đã nhận thông báo (không phải đặt lịch cố định)."}
           </p>
+          {location.contacts?.provider.phone ? (
+            <div style={{ marginBottom: 10 }}>
+              <OrderPhoneLinks
+                contacts={{
+                  customer: { phone: null },
+                  provider: {
+                    phone: location.contacts.provider.phone,
+                    label: location.contacts.provider.label ?? location.brandName,
+                  },
+                }}
+                hideRole="customer"
+                compact
+              />
+            </div>
+          ) : null}
           <button
             type="button"
             className="btn btn-secondary"
@@ -375,11 +512,21 @@ export default function LocationMenuPage() {
         </div>
       ) : null}
 
-      {isBeauty && location.contacts?.provider ? (
-        <div className="card" style={{ marginBottom: 16 }}>
+      {(isCustomerVisit || isEducation || isSports) && location.contacts?.provider ? (
+        <div id="location-contact" className="card" style={{ marginBottom: 16 }}>
           <p className="section-title">Liên hệ</p>
           <p className="stat" style={{ margin: "0 0 10px" }}>
-            Gọi/Zalo tiệm hoặc chỉ đường — chọn dịch vụ bên dưới để báo sắp tới.
+            {isEducation
+              ? "Gọi/Zalo trung tâm hoặc đặt buổi học thử bên dưới."
+              : isSports
+                ? "Gọi/Zalo sân hoặc gửi yêu cầu khung giờ bên dưới."
+              : isAuto
+                ? "Thay dầu, sửa chữa — gọi/Zalo trực tiếp. Rửa xe/bơm lốp có thể báo sắp mang xe bên dưới."
+              : isHealth
+                ? "Gọi/Zalo phòng khám để hỏi trước — hoặc chọn dịch vụ bên dưới để báo sắp tới khám."
+              : isPet
+                ? "Gọi/Zalo tiệm — spa thì báo sắp tới, trông/dắt chó thì gửi yêu cầu."
+                : "Gọi/Zalo tiệm hoặc chỉ đường — chọn dịch vụ bên dưới để báo sắp tới."}
           </p>
           <LocationContactActions
             providerPhone={location.contacts.provider.phone}
@@ -408,11 +555,11 @@ export default function LocationMenuPage() {
 
       <div className="card">
         <p className="section-title">
-          {isLaundry || isHomeService || isBeauty ? "Dịch vụ" : "Menu"}
+          {isLaundry || isHomeService || isCustomerVisit || isEducation || isSports ? "Dịch vụ" : "Menu"}
         </p>
         {items.length === 0 ? (
           <p className="stat">
-            {isLaundry || isHomeService || isBeauty
+            {isLaundry || isHomeService || isCustomerVisit || isEducation || isSports
               ? "Chưa có dịch vụ — tiệm đang cập nhật."
               : "Chưa có món — provider đang cập nhật."}
           </p>
@@ -430,11 +577,16 @@ export default function LocationMenuPage() {
                 >
                   <div style={{ flex: 1 }}>
                     <h3 style={{ margin: 0, fontSize: 16 }}>{item.name}</h3>
-                    {item.fulfillmentMode && (
+                    {item.fulfillmentMode ? (
                       <span className="badge" style={{ marginLeft: 6, fontSize: 11 }}>
-                        {fulfillmentLabel(item.fulfillmentMode)}
+                        {fulfillmentLabel(item.fulfillmentMode, location.providerType)}
                       </span>
-                    )}
+                    ) : null}
+                    {isEducation && (item.educationSubject || item.educationGrade) ? (
+                      <span className="badge" style={{ marginLeft: 6, fontSize: 11 }}>
+                        {[item.educationSubject, item.educationGrade].filter(Boolean).join(" · ")}
+                      </span>
+                    ) : null}
                     {item.description && (
                       <p className="stat" style={{ margin: "4px 0 0" }}>
                         {item.description}
@@ -457,25 +609,57 @@ export default function LocationMenuPage() {
                         {formatHomeServicePrice(item.amountVnd, item.pricingKind)}
                         {" · Liên hệ / báo giá tại nhà"}
                       </p>
-                    ) : isBeauty ? (
+                    ) : isCustomerVisit ? (
                       <p className="stat" style={{ margin: "4px 0 0" }}>
-                        {formatBeautyPrice(item.amountVnd, item.pricingKind)}
-                        {" · Liên hệ tiệm"}
+                        {item.fulfillmentMode === "CONTACT_ONLY"
+                          ? item.pricingKind === "QUOTE_REQUIRED"
+                            ? isHealth
+                              ? "Khám và báo giá tại phòng khám"
+                              : "Báo giá tại tiệm"
+                            : formatBeautyPrice(item.amountVnd, item.pricingKind)
+                          : `${formatBeautyPrice(item.amountVnd, item.pricingKind)} · Xem chờ live`}
+                      </p>
+                    ) : isEducation ? (
+                      <p className="stat" style={{ margin: "4px 0 0" }}>
+                        {formatHomeServicePrice(item.amountVnd, item.pricingKind)}
+                        {" · Học phí trao đổi trực tiếp"}
+                      </p>
+                    ) : isSports ? (
+                      <p className="stat" style={{ margin: "4px 0 0" }}>
+                        {formatHomeServicePrice(item.amountVnd, item.pricingKind)}
+                        {" · /giờ · Thanh toán tại sân"}
                       </p>
                     ) : (
                       <strong>{formatVnd(item.amountVnd)}</strong>
                     )}
                   </div>
-                  {isHomeService ? (
+                  {isEducation ||
+                  isHomeService ||
+                  isSports ||
+                  (isPet && item.fulfillmentMode === "PROVIDER_VISIT") ? (
                     <button
                       type="button"
                       className="btn provider-btn"
                       style={{ width: "auto", padding: "8px 12px", flexShrink: 0 }}
-                      onClick={() => setRequestItem(item)}
+                      onClick={() => {
+                        setVisitItem(null);
+                        setRequestItem(item);
+                      }}
                     >
-                      Gửi yêu cầu
+                      {isEducation ? "Học thử miễn phí" : isSports ? "Đặt sân" : "Gửi yêu cầu"}
                     </button>
-                  ) : isBeauty ? (
+                  ) : item.fulfillmentMode === "CONTACT_ONLY" && (isAuto || isHealth) ? (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ width: "auto", padding: "8px 12px", flexShrink: 0 }}
+                      onClick={() => {
+                        document.getElementById("location-contact")?.scrollIntoView({ behavior: "smooth" });
+                      }}
+                    >
+                      Liên hệ
+                    </button>
+                  ) : item.fulfillmentMode === "CUSTOMER_VISIT" && isCustomerVisit ? (
                     <button
                       type="button"
                       className="btn provider-btn"
@@ -485,7 +669,13 @@ export default function LocationMenuPage() {
                         setVisitItem(item);
                       }}
                     >
-                      Báo sắp tới
+                      {isPet
+                        ? "Báo pet sắp tới"
+                        : isAuto
+                          ? "Báo sắp mang xe"
+                          : isHealth
+                            ? "Báo sắp tới khám"
+                            : "Báo sắp tới"}
                     </button>
                   ) : (
                     <button
@@ -506,12 +696,26 @@ export default function LocationMenuPage() {
 
       {visitItem ? (
         <div id="visit-intent-form" className="card service-request-form" style={{ marginTop: 16 }}>
-          <p className="section-title">Báo sắp tới — {visitItem.name}</p>
+          <p className="section-title">
+            {isPet
+              ? `Báo pet sắp tới — ${visitItem.name}`
+              : isAuto
+                ? `Báo sắp mang xe — ${visitItem.name}`
+                : isHealth
+                  ? `Báo sắp tới khám — ${visitItem.name}`
+                  : `Báo sắp tới — ${visitItem.name}`}
+          </p>
           <p className="stat" style={{ margin: "0 0 12px" }}>
-            Tiệm biết bạn sắp tới để cân ca — không cam kết giờ cố định.
+            {isPet
+              ? "Tiệm biết bạn sắp mang pet tới — không cam kết giờ cố định."
+              : isAuto
+                ? "Tiệm biết bạn sắp mang xe tới — xem đông vắng, không đặt lịch cố định."
+                : isHealth
+                  ? "Phòng khám biết bạn sắp tới để cân lượt — không phải đặt lịch hẹn. Không cần ghi triệu chứng ở đây."
+                  : "Tiệm biết bạn sắp tới để cân ca — không cam kết giờ cố định."}
           </p>
           <p className="stat" style={{ margin: "0 0 8px" }}>
-            Tôi sẽ tới sau
+            {isAuto ? "Tôi sẽ mang xe tới sau" : "Tôi sẽ tới sau"}
           </p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
             {VISIT_ETA_PRESETS.map((m) => (
@@ -534,7 +738,11 @@ export default function LocationMenuPage() {
               disabled={visitSubmitting}
               onClick={() => void submitVisitIntent()}
             >
-              {visitSubmitting ? "Đang gửi…" : "Gửi thông báo cho tiệm"}
+              {visitSubmitting
+                ? "Đang gửi…"
+                : isHealth
+                  ? "Gửi thông báo cho phòng khám"
+                  : "Gửi thông báo cho tiệm"}
             </button>
             <button
               type="button"
@@ -550,28 +758,78 @@ export default function LocationMenuPage() {
 
       {requestItem ? (
         <div id="service-request-form" className="card service-request-form" style={{ marginTop: 16 }}>
-          <p className="section-title">Gửi yêu cầu — {requestItem.name}</p>
-          <label className="stat" htmlFor="req-building">
-            Tòa
-          </label>
-          <input
-            id="req-building"
-            value={requestBuilding}
-            onChange={(e) => setRequestBuilding(e.target.value)}
-            style={{ width: "100%", marginBottom: 8, padding: 10 }}
-          />
-          <label className="stat" htmlFor="req-apt">
-            Căn hộ
-          </label>
-          <input
-            id="req-apt"
-            value={requestApartment}
-            onChange={(e) => setRequestApartment(e.target.value)}
-            placeholder="VD: 1205"
-            style={{ width: "100%", marginBottom: 8, padding: 10 }}
-          />
+          <p className="section-title">
+            {isEducation
+              ? `Đặt buổi học thử — ${requestItem.name}`
+              : isSports
+                ? `Đặt sân — ${requestItem.name}`
+                : `Gửi yêu cầu — ${requestItem.name}`}
+          </p>
+          {isEducation ? (
+            <p className="stat" style={{ margin: "0 0 12px" }}>
+              Phụ trách sẽ liên hệ sắp xếp lịch theo giáo viên.
+            </p>
+          ) : null}
+          {isSports ? (
+            <p className="stat" style={{ margin: "0 0 12px" }}>
+              Gửi khung giờ mong muốn — sân xác nhận hoặc đề xuất giờ khác qua chat.
+            </p>
+          ) : null}
+          {isEducation ? (
+            <>
+              <label className="stat" htmlFor="req-home-address">
+                Địa chỉ nhà
+              </label>
+              <input
+                id="req-home-address"
+                value={homeAddress}
+                onChange={(e) => setHomeAddress(e.target.value)}
+                placeholder="VD: CT12-1205 Kim Văn hoặc 15 ngõ 123 Đại Kim"
+                style={{ width: "100%", marginBottom: 12, padding: 10 }}
+              />
+            </>
+          ) : isSports ? (
+            <>
+              <label className="stat" htmlFor="req-preferred-at">
+                Khung giờ muốn chơi
+              </label>
+              <input
+                id="req-preferred-at"
+                type="datetime-local"
+                value={preferredAtLocal}
+                onChange={(e) => setPreferredAtLocal(e.target.value)}
+                style={{ width: "100%", marginBottom: 12, padding: 10 }}
+              />
+            </>
+          ) : (
+            <>
+              <label className="stat" htmlFor="req-building">
+                Tòa
+              </label>
+              <input
+                id="req-building"
+                value={requestBuilding}
+                onChange={(e) => setRequestBuilding(e.target.value)}
+                style={{ width: "100%", marginBottom: 8, padding: 10 }}
+              />
+              <label className="stat" htmlFor="req-apt">
+                Căn hộ
+              </label>
+              <input
+                id="req-apt"
+                value={requestApartment}
+                onChange={(e) => setRequestApartment(e.target.value)}
+                placeholder="VD: 1205"
+                style={{ width: "100%", marginBottom: 8, padding: 10 }}
+              />
+            </>
+          )}
           <label className="stat" htmlFor="req-note">
-            Mô tả sự cố / yêu cầu
+            {isEducation
+              ? "Ghi chú (trình độ, mục tiêu…)"
+              : isSports
+                ? "Ghi chú (số người, thời lượng…)"
+                : "Mô tả sự cố / yêu cầu"}
           </label>
           <textarea
             id="req-note"
@@ -579,7 +837,13 @@ export default function LocationMenuPage() {
             onChange={(e) => setRequestNote(e.target.value)}
             rows={3}
             maxLength={2000}
-            placeholder="VD: Ổ cắm phòng khách chập điện…"
+            placeholder={
+              isEducation
+                ? "VD: Con đang học trường Đại kim, con yếu phần hình học, muốn ôn thi vào 10…"
+                : isSports
+                  ? "VD: 4 người, chơi 1.5 giờ, có vợt sẵn…"
+                  : "VD: Ổ cắm phòng khách chập điện…"
+            }
             style={{ width: "100%", marginBottom: 12, padding: 10 }}
           />
           <div style={{ display: "flex", gap: 8 }}>
@@ -590,7 +854,13 @@ export default function LocationMenuPage() {
               disabled={submitting}
               onClick={() => void submitRequest()}
             >
-              {submitting ? "Đang gửi…" : "Gửi yêu cầu"}
+              {submitting
+                ? "Đang gửi…"
+                : isEducation
+                  ? "Gửi đăng ký"
+                  : isSports
+                    ? "Gửi đặt sân"
+                    : "Gửi yêu cầu"}
             </button>
             <button
               type="button"
@@ -604,7 +874,7 @@ export default function LocationMenuPage() {
         </div>
       ) : null}
 
-      {count > 0 && !isHomeService && !isBeauty && (
+      {count > 0 && !isHomeService && !isCustomerVisit && !isEducation && !isSports && (
         <div
           style={{
             position: "fixed",

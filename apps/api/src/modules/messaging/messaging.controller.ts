@@ -28,6 +28,14 @@ export class MessagingController {
     return this.messaging.getOrCreateOrderConversation(userId, orderId);
   }
 
+  @Get("classifieds/:listingId")
+  classifiedConversation(
+    @CurrentUserId() userId: string,
+    @Param("listingId") listingId: string,
+  ) {
+    return this.messaging.getOrCreateClassifiedConversation(userId, listingId);
+  }
+
   @Post("conversations/:conversationId/messages")
   sendMessage(
     @CurrentUserId() userId: string,

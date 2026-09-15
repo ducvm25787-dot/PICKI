@@ -15,7 +15,11 @@ import { OutboxService } from "../outbox/outbox.service.js";
 import { loadServiceRequestContacts } from "../orders/order-enrichment.js";
 import { PICKI_DB } from "../../shared/tokens.js";
 import type { z } from "zod";
-import type { createServiceRequestSchema, providerServiceRequestActionSchema } from "./dto.js";
+import type {
+  createServiceRequestSchema,
+  providerServiceRequestActionSchema,
+  scheduleEducationTrialSchema,
+} from "./dto.js";
 
 @Injectable()
 export class ServiceRequestsService {
@@ -36,9 +40,12 @@ export class ServiceRequestsService {
       .limit(1);
 
     const row = location[0];
-    if (!row || row.provider.providerType !== "HOME_SERVICE") {
-      throw new PickiError("NOT_FOUND", "Home service provider not found");
+    if (!row || !this.isServiceRequestProvider(row.provider.providerType)) {
+      throw new PickiError("NOT_FOUND", "Service provider not found");
     }
+
+    const isEducation = this.isEducationProvider(row.provider.providerType);
+    const isSports = this.isSportsProvider(row.provider.providerType);
 
     if (input.offeringId) {
       const offering = await this.db
@@ -55,6 +62,14 @@ export class ServiceRequestsService {
       if (!offering[0]) {
         throw new PickiError("VALIDATION_ERROR", "Invalid offering");
       }
+    }
+
+    if (isEducation && !input.deliveryNote?.trim()) {
+      throw new PickiError("VALIDATION_ERROR", "Nhập địa chỉ nhà");
+    }
+
+    if (isSports && !input.preferredAt) {
+      throw new PickiError("VALIDATION_ERROR", "Chọn khung giờ muốn đặt sân");
     }
 
     const requestNumber = await this.allocateRequestNumber();
@@ -90,6 +105,7 @@ export class ServiceRequestsService {
           requestNumber: request.requestNumber,
           customerUserId: userId,
           providerLocationId: input.providerLocationId,
+          providerType: row.provider.providerType,
           offeringId: input.offeringId ?? null,
         },
       });
@@ -151,6 +167,83 @@ export class ServiceRequestsService {
     return this.applyAction(userId, requestId, input.action, input.note?.trim(), "provider");
   }
 
+  async scheduleEducationTrial(
+    userId: string,
+    requestId: string,
+    input: z.infer<typeof scheduleEducationTrialSchema>,
+  ) {
+    const row = await this.db
+      .select()
+      .from(serviceRequests)
+      .where(eq(serviceRequests.id, requestId))
+      .limit(1);
+    const request = row[0];
+    if (!request) {
+      throw new PickiError("NOT_FOUND", "Service request not found");
+    }
+
+    await this.assertLocationAccess(userId, request.providerLocationId);
+    const providerType = await this.loadProviderType(request.providerLocationId);
+    if (!this.isEducationProvider(providerType)) {
+      throw new PickiError("FORBIDDEN", "Chỉ áp dụng cho trung tâm giáo dục");
+    }
+    if (request.status !== "CONFIRMED") {
+      throw new PickiError("FORBIDDEN", "Chỉ tạo lịch khi đã xác nhận yêu cầu");
+    }
+
+    const scheduledAt = new Date(input.scheduledAt);
+    const locationDetail =
+      input.locationType === "OFFLINE"
+        ? input.offlineAddress!.trim()
+        : input.onlinePlatform === "OTHER"
+          ? input.onlineDetail!.trim()
+          : input.onlinePlatform === "ZOOM"
+            ? "Zoom"
+            : "Google Meet";
+
+    const updated = await this.db.transaction(async (tx) => {
+      const [next] = await tx
+        .update(serviceRequests)
+        .set({
+          status: "UPCOMING",
+          trialScheduledAt: scheduledAt,
+          trialLocationType: input.locationType,
+          trialLocationDetail: locationDetail,
+          trialOnlinePlatform: input.locationType === "ONLINE" ? input.onlinePlatform! : null,
+          trialTeacherName: input.teacherName.trim(),
+          updatedAt: new Date(),
+        })
+        .where(eq(serviceRequests.id, requestId))
+        .returning();
+
+      if (!next) {
+        throw new PickiError("INTERNAL_ERROR", "Failed to schedule trial");
+      }
+
+      await this.outbox.enqueue(tx, {
+        eventType: "service_request.trial_scheduled",
+        aggregateType: "service_request",
+        aggregateId: requestId,
+        payload: {
+          requestId,
+          requestNumber: next.requestNumber,
+          customerUserId: next.customerUserId,
+          providerLocationId: next.providerLocationId,
+          providerType,
+          scheduledAt: scheduledAt.toISOString(),
+          teacherName: input.teacherName.trim(),
+          locationType: input.locationType,
+          locationDetail,
+          actorUserId: userId,
+        },
+      });
+
+      return next;
+    });
+
+    return this.toDto(updated);
+  }
+
   private async applyAction(
     actorUserId: string,
     requestId: string,
@@ -179,6 +272,18 @@ export class ServiceRequestsService {
     const toStatus = serviceRequestActionToStatus(action);
     if (!toStatus) {
       throw new PickiError("VALIDATION_ERROR", "Invalid action");
+    }
+
+    const providerType = await this.loadProviderType(request.providerLocationId);
+    const isEducation = this.isEducationProvider(providerType);
+
+    if (actorRole === "provider" && action === "start") {
+      if (isEducation && request.status !== "UPCOMING") {
+        throw new PickiError("FORBIDDEN", "Tạo lịch học thử trước khi bắt đầu buổi học");
+      }
+      if (!isEducation && request.status !== "CONFIRMED") {
+        throw new PickiError("FORBIDDEN", "Không thể bắt đầu từ trạng thái hiện tại");
+      }
     }
 
     if (!canServiceRequestTransition(request.status, toStatus)) {
@@ -224,6 +329,7 @@ export class ServiceRequestsService {
           requestNumber: next.requestNumber,
           customerUserId: next.customerUserId,
           providerLocationId: next.providerLocationId,
+          providerType,
           status: toStatus,
           actorUserId,
         },
@@ -233,6 +339,16 @@ export class ServiceRequestsService {
     });
 
     return this.toDto(updated);
+  }
+
+  private async loadProviderType(locationId: string): Promise<string> {
+    const row = await this.db
+      .select({ providerType: providers.providerType })
+      .from(providerLocations)
+      .innerJoin(providers, eq(providers.id, providerLocations.providerId))
+      .where(eq(providerLocations.id, locationId))
+      .limit(1);
+    return row[0]?.providerType ?? "";
   }
 
   private async toDto(request: typeof serviceRequests.$inferSelect) {
@@ -250,6 +366,7 @@ export class ServiceRequestsService {
       .select({
         brandName: providers.brandName,
         displayName: providerLocations.displayName,
+        providerType: providers.providerType,
       })
       .from(providerLocations)
       .innerJoin(providers, eq(providers.id, providerLocations.providerId))
@@ -269,12 +386,18 @@ export class ServiceRequestsService {
       offeringName,
       providerBrandName: location[0]?.brandName ?? null,
       providerDisplayName: location[0]?.displayName ?? null,
+      providerType: location[0]?.providerType ?? null,
       customerNote: request.customerNote,
       providerNote: request.providerNote,
       preferredAt: request.preferredAt?.toISOString() ?? null,
       deliveryBuilding: request.deliveryBuilding,
       deliveryApartment: request.deliveryApartment,
       deliveryNote: request.deliveryNote,
+      trialScheduledAt: request.trialScheduledAt?.toISOString() ?? null,
+      trialLocationType: request.trialLocationType,
+      trialLocationDetail: request.trialLocationDetail,
+      trialOnlinePlatform: request.trialOnlinePlatform,
+      trialTeacherName: request.trialTeacherName,
       contacts,
       createdAt: request.createdAt.toISOString(),
       updatedAt: request.updatedAt.toISOString(),
@@ -304,6 +427,23 @@ export class ServiceRequestsService {
     if (!member[0]) {
       throw new PickiError("FORBIDDEN", "No access to this location");
     }
+  }
+
+  private isEducationProvider(providerType: string): boolean {
+    return providerType === "EDUCATION_PROVIDER" || providerType === "TUTOR";
+  }
+
+  private isSportsProvider(providerType: string): boolean {
+    return providerType === "SPORTS_FACILITY";
+  }
+
+  private isServiceRequestProvider(providerType: string): boolean {
+    return (
+      providerType === "HOME_SERVICE" ||
+      providerType === "PET_SERVICE" ||
+      this.isEducationProvider(providerType) ||
+      this.isSportsProvider(providerType)
+    );
   }
 
   private async allocateRequestNumber(): Promise<string> {

@@ -4,6 +4,7 @@ import {
   notifications,
   providerLocations,
   providerMembers,
+  providers,
   pushSubscriptions,
   runners,
   type PickiDb,
@@ -34,6 +35,8 @@ type MessagePayload = {
   senderUserId: string;
   orderId?: string;
   orderNumber?: string;
+  listingId?: string;
+  listingNumber?: string;
   preview: string;
   recipientUserIds: string[];
 };
@@ -469,7 +472,12 @@ export class NotificationService implements OnModuleInit {
       requestNumber: string;
       customerUserId: string;
       providerLocationId: string;
+      providerType?: string;
       status?: string;
+      scheduledAt?: string;
+      teacherName?: string;
+      locationType?: string;
+      locationDetail?: string;
       actorUserId?: string | null;
     },
   ): Promise<void> {
@@ -478,6 +486,19 @@ export class NotificationService implements OnModuleInit {
       requestNumber: payload.requestNumber,
     };
     const excludeActor = payload.actorUserId ?? null;
+    let providerType = payload.providerType;
+    if (!providerType) {
+      const row = await this.db
+        .select({ providerType: providers.providerType })
+        .from(providerLocations)
+        .innerJoin(providers, eq(providers.id, providerLocations.providerId))
+        .where(eq(providerLocations.id, payload.providerLocationId))
+        .limit(1);
+      providerType = row[0]?.providerType;
+    }
+    const isEducation =
+      providerType === "EDUCATION_PROVIDER" || providerType === "TUTOR";
+    const isSports = providerType === "SPORTS_FACILITY";
 
     if (eventType === "service_request.created") {
       const staff = await this.providerStaffForLocation(payload.providerLocationId);
@@ -487,8 +508,18 @@ export class NotificationService implements OnModuleInit {
           {
             eventType,
             channel: "WEB",
-            title: `${payload.requestNumber}: Yêu cầu mới`,
-            body: "Có yêu cầu dịch vụ — mở tab Yêu cầu để xử lý.",
+            title: `${payload.requestNumber}: ${
+              isEducation
+                ? "Đăng ký học thử mới"
+                : isSports
+                  ? "Yêu cầu đặt sân mới"
+                  : "Yêu cầu mới"
+            }`,
+            body: isEducation
+              ? "Có phụ huynh đăng ký học thử — mở tab Yêu cầu."
+              : isSports
+                ? "Có khách muốn đặt sân — mở tab Yêu cầu để xác nhận khung giờ."
+                : "Có yêu cầu dịch vụ — mở tab Yêu cầu để xử lý.",
             payload: basePayload,
           },
           { excludeUserId: excludeActor },
@@ -497,24 +528,89 @@ export class NotificationService implements OnModuleInit {
       return;
     }
 
-    const customerCopy: Record<string, { title: string; body: string }> = {
-      "service_request.confirmed": {
-        title: `${payload.requestNumber}: Thợ đã nhận`,
-        body: "Thợ đã nhận yêu cầu — liên hệ qua chat nếu cần.",
-      },
-      "service_request.rejected": {
-        title: `${payload.requestNumber}: Thợ từ chối`,
-        body: "Thợ không nhận yêu cầu — xem chi tiết.",
-      },
-      "service_request.completed": {
-        title: `${payload.requestNumber}: Hoàn tất`,
-        body: "Dịch vụ đã hoàn tất.",
-      },
-      "service_request.cancelled": {
-        title: `${payload.requestNumber}: Đã hủy`,
-        body: "Yêu cầu đã được hủy.",
-      },
-    };
+    if (eventType === "service_request.trial_scheduled") {
+      const when = payload.scheduledAt
+        ? new Date(payload.scheduledAt).toLocaleString("vi-VN", {
+            day: "2-digit",
+            month: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "";
+      const place =
+        payload.locationType === "ONLINE"
+          ? `Online · ${payload.locationDetail ?? ""}`
+          : (payload.locationDetail ?? "");
+      await this.deliver(
+        [payload.customerUserId],
+        {
+          eventType,
+          channel: "WEB",
+          title: `${payload.requestNumber}: Lịch học thử đã sắp`,
+          body: `Buổi học ${when}${payload.teacherName ? ` · GV ${payload.teacherName}` : ""}${place ? ` · ${place}` : ""}`,
+          payload: basePayload,
+        },
+        { excludeUserId: excludeActor },
+      );
+      return;
+    }
+
+    const customerCopy: Record<string, { title: string; body: string }> = isEducation
+      ? {
+          "service_request.confirmed": {
+            title: `${payload.requestNumber}: Phụ trách lớp đã nhận`,
+            body: "Phụ trách lớp đã nhận yêu cầu - liên hệ qua chat nếu cần.",
+          },
+          "service_request.rejected": {
+            title: `${payload.requestNumber}: Trung tâm từ chối`,
+            body: "Trung tâm không nhận đăng ký — xem chi tiết.",
+          },
+          "service_request.completed": {
+            title: `${payload.requestNumber}: Hoàn thành buổi học`,
+            body: "Buổi học thử đã hoàn thành.",
+          },
+          "service_request.cancelled": {
+            title: `${payload.requestNumber}: Đã hủy`,
+            body: "Đăng ký học thử đã được hủy.",
+          },
+        }
+      : isSports
+        ? {
+            "service_request.confirmed": {
+              title: `${payload.requestNumber}: Sân đã xác nhận`,
+              body: "Sân đã nhận yêu cầu đặt — liên hệ nếu cần đổi giờ.",
+            },
+            "service_request.rejected": {
+              title: `${payload.requestNumber}: Sân từ chối`,
+              body: "Khung giờ không còn trống — thử giờ khác hoặc chat sân.",
+            },
+            "service_request.completed": {
+              title: `${payload.requestNumber}: Hoàn tất ca sân`,
+              body: "Ca đặt sân đã hoàn tất.",
+            },
+            "service_request.cancelled": {
+              title: `${payload.requestNumber}: Đã hủy`,
+              body: "Yêu cầu đặt sân đã được hủy.",
+            },
+          }
+        : {
+          "service_request.confirmed": {
+            title: `${payload.requestNumber}: Thợ đã nhận`,
+            body: "Thợ đã nhận yêu cầu — liên hệ qua chat nếu cần.",
+          },
+          "service_request.rejected": {
+            title: `${payload.requestNumber}: Thợ từ chối`,
+            body: "Thợ không nhận yêu cầu — xem chi tiết.",
+          },
+          "service_request.completed": {
+            title: `${payload.requestNumber}: Hoàn tất`,
+            body: "Dịch vụ đã hoàn tất.",
+          },
+          "service_request.cancelled": {
+            title: `${payload.requestNumber}: Đã hủy`,
+            body: "Yêu cầu đã được hủy.",
+          },
+        };
 
     const copy = customerCopy[eventType];
     if (copy) {
@@ -537,13 +633,37 @@ export class NotificationService implements OnModuleInit {
     payload: {
       intentId: string;
       providerLocationId: string;
+      customerUserId?: string;
+      providerBrandName?: string | null;
       offeringName?: string;
       etaMinutes?: number;
       expectedAt?: string;
+      reason?: string;
       actorUserId?: string | null;
     },
   ): Promise<void> {
     const excludeActor = payload.actorUserId ?? null;
+
+    if (eventType === "visit_intent.shop_waiting") {
+      if (typeof payload.customerUserId === "string") {
+        const shop = payload.providerBrandName?.trim() || "Tiệm";
+        await this.deliver(
+          [payload.customerUserId],
+          {
+            eventType,
+            channel: "WEB",
+            title: "Tiệm đang chờ bạn",
+            body: `${shop} đang mở cửa và chờ bạn tới.`,
+            payload: {
+              intentId: payload.intentId,
+              locationId: payload.providerLocationId,
+            },
+          },
+          { excludeUserId: excludeActor },
+        );
+      }
+      return;
+    }
 
     if (eventType === "visit_intent.created") {
       const staff = await this.providerStaffForLocation(payload.providerLocationId);
@@ -580,13 +700,135 @@ export class NotificationService implements OnModuleInit {
           { excludeUserId: excludeActor },
         );
       }
+      return;
+    }
+
+    if (eventType === "visit_intent.provider_rejected") {
+      if (typeof payload.customerUserId === "string") {
+        const shop = payload.providerBrandName?.trim() || "Tiệm";
+        const reason =
+          typeof payload.reason === "string" && payload.reason.trim()
+            ? payload.reason.trim()
+            : "Tiệm không thể nhận lúc này.";
+        await this.deliver(
+          [payload.customerUserId],
+          {
+            eventType,
+            channel: "WEB",
+            title: `${shop} từ chối`,
+            body: reason,
+            payload: {
+              intentId: payload.intentId,
+              locationId: payload.providerLocationId,
+            },
+          },
+          { excludeUserId: excludeActor },
+        );
+      }
+    }
+  }
+
+  /**
+   * Nhắc tái khám — chỉ nói tên phòng khám và việc đến hẹn.
+   * Không đưa lý do y tế vào thông báo (§86).
+   */
+  async processHealthFollowup(
+    eventType: string,
+    payload: {
+      reminderId: string;
+      customerUserId: string;
+      providerLocationId: string;
+    },
+  ): Promise<void> {
+    if (eventType !== "health.followup_due") return;
+
+    const row = await this.db
+      .select({ brandName: providers.brandName })
+      .from(providerLocations)
+      .innerJoin(providers, eq(providers.id, providerLocations.providerId))
+      .where(eq(providerLocations.id, payload.providerLocationId))
+      .limit(1);
+    const clinic = row[0]?.brandName ?? "Phòng khám";
+
+    await this.deliver([payload.customerUserId], {
+      eventType,
+      channel: "WEB",
+      title: "Đến hẹn tái khám",
+      body: `${clinic} đã hẹn bạn tái khám — gọi hoặc chat nếu cần đổi lịch.`,
+      payload: {
+        reminderId: payload.reminderId,
+        locationId: payload.providerLocationId,
+      },
+    });
+  }
+
+  async processClassified(
+    eventType: string,
+    payload: {
+      listingId: string;
+      listingNumber: string;
+      zoneId: string;
+      sellerUserId: string;
+      buyerUserId?: string | null;
+      cancelledByUserId?: string | null;
+      title: string;
+      listingType?: string;
+    },
+  ): Promise<void> {
+    const basePayload = {
+      listingId: payload.listingId,
+      listingNumber: payload.listingNumber,
+    };
+
+    if (eventType === "classified.reserved" && payload.buyerUserId) {
+      await this.deliver([payload.sellerUserId], {
+        eventType,
+        channel: "WEB",
+        title: `${payload.listingNumber}: Có người giữ chỗ`,
+        body: `「${payload.title}」— mở chat để hẹn giao/lấy.`,
+        payload: basePayload,
+      });
+      return;
+    }
+
+    if (
+      (eventType === "classified.completed" || eventType === "classified.given") &&
+      payload.buyerUserId
+    ) {
+      const doneLabel = eventType === "classified.given" ? "đã tặng xong" : "giao dịch hoàn tất";
+      await this.deliver([payload.buyerUserId], {
+        eventType,
+        channel: "WEB",
+        title: `${payload.listingNumber}: ${doneLabel}`,
+        body: `「${payload.title}」— người đăng xác nhận ${doneLabel}.`,
+        payload: basePayload,
+      });
+      return;
+    }
+
+    if (eventType === "classified.reservation_cancelled") {
+      const notify =
+        payload.cancelledByUserId === payload.sellerUserId
+          ? payload.buyerUserId
+          : payload.sellerUserId;
+      if (typeof notify === "string") {
+        await this.deliver([notify], {
+          eventType,
+          channel: "WEB",
+          title: `${payload.listingNumber}: Hủy giữ chỗ`,
+          body: `「${payload.title}」— giữ chỗ đã được hủy, tin mở lại.`,
+          payload: basePayload,
+        });
+      }
     }
   }
 
   async processMessageReceived(payload: MessagePayload): Promise<void> {
     const title = payload.orderNumber
       ? `Tin nhắn đơn ${payload.orderNumber}`
-      : "Tin nhắn mới";
+      : payload.listingNumber
+        ? `Tin nhắn ${payload.listingNumber}`
+        : "Tin nhắn mới";
     const preview =
       payload.preview.length > 120 ? `${payload.preview.slice(0, 117)}…` : payload.preview;
 
@@ -601,6 +843,7 @@ export class NotificationService implements OnModuleInit {
           conversationId: payload.conversationId,
           messageId: payload.messageId,
           orderId: payload.orderId,
+          listingId: payload.listingId,
         },
       },
     );
@@ -662,6 +905,14 @@ export class NotificationService implements OnModuleInit {
     if (eventType.startsWith("service_request.")) {
       const requestId = payload.requestId;
       if (typeof requestId === "string") return `/requests/${requestId}`;
+    }
+    if (eventType.startsWith("visit_intent.") || eventType.startsWith("health.")) {
+      const locationId = payload.locationId ?? payload.providerLocationId;
+      if (typeof locationId === "string") return `/locations/${locationId}`;
+    }
+    if (eventType.startsWith("classified.")) {
+      const listingId = payload.listingId;
+      if (typeof listingId === "string") return `/classifieds/${listingId}`;
     }
     if (eventType === "message.received" || eventType.startsWith("order.") || eventType.startsWith("runner.")) {
       const orderId = payload.orderId;

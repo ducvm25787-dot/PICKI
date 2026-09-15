@@ -9,7 +9,14 @@ type NotificationItem = {
   eventType: string;
   title: string;
   body: string;
-  payload: { orderId?: string; orderNumber?: string; requestId?: string; intentId?: string };
+  payload: {
+    orderId?: string;
+    orderNumber?: string;
+    requestId?: string;
+    intentId?: string;
+    locationId?: string;
+    listingId?: string;
+  };
   read: boolean;
   createdAt: string;
 };
@@ -44,6 +51,20 @@ function orderHref(orderId: string, audience: Audience): string {
 function notificationTargetHref(n: NotificationItem, audience: Audience): string | null {
   if (n.eventType.startsWith("visit_intent.")) {
     if (audience === "provider") return "/provider/incoming";
+    if (
+      n.eventType === "visit_intent.shop_waiting" ||
+      n.eventType === "visit_intent.provider_rejected"
+    ) {
+      const locationId = n.payload?.locationId;
+      if (typeof locationId === "string") return `/locations/${locationId}`;
+    }
+    return null;
+  }
+
+  if (n.eventType.startsWith("health.")) {
+    if (audience === "provider") return "/provider/followups";
+    const locationId = n.payload?.locationId;
+    if (typeof locationId === "string") return `/locations/${locationId}`;
     return null;
   }
 
@@ -55,6 +76,17 @@ function notificationTargetHref(n: NotificationItem, audience: Audience): string
         : `/requests/${requestId}`;
     }
     return audience === "provider" ? "/provider/requests" : "/requests";
+  }
+
+  if (n.eventType.startsWith("classified.")) {
+    const listingId = n.payload?.listingId;
+    if (typeof listingId === "string") return `/classifieds/${listingId}`;
+    return "/classifieds/mine";
+  }
+
+  if (n.eventType === "message.received") {
+    const listingId = n.payload?.listingId;
+    if (typeof listingId === "string") return `/classifieds/${listingId}`;
   }
 
   const orderId = n.payload?.orderId;

@@ -20,6 +20,21 @@ type DiscoveryBlock = {
   providers: ProviderListing[];
 };
 
+type CommunityListing = {
+  id: string;
+  listingType: string;
+  title: string;
+  priceVnd: number | null;
+  status: string;
+  locationLabel: string;
+};
+
+type CommunitySummary = {
+  resaleCount: number;
+  giveAwayCount: number;
+  recentListings: CommunityListing[];
+};
+
 type MyZone = {
   zoneId: string;
   slug: string;
@@ -33,6 +48,7 @@ export default function HomePage() {
   const [me, setMe] = useState<Me | null>(null);
   const [myZones, setMyZones] = useState<MyZone[]>([]);
   const [blocks, setBlocks] = useState<DiscoveryBlock[]>([]);
+  const [community, setCommunity] = useState<CommunitySummary | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,10 +75,11 @@ export default function HomePage() {
 
         const joined = mine.zones.some((z) => z.slug === KVL_SLUG);
         if (joined) {
-          const discovery = await api<{ blocks: DiscoveryBlock[] }>(
+          const discovery = await api<{ blocks: DiscoveryBlock[]; community?: CommunitySummary }>(
             `/zones/${KVL_SLUG}/discovery`,
           );
           setBlocks(discovery.blocks);
+          setCommunity(discovery.community ?? null);
           await loadFavorites();
         }
       } catch (e) {
@@ -151,6 +168,54 @@ export default function HomePage() {
                 🔧 Yêu cầu dịch vụ
               </Link>
             </div>
+          </div>
+
+          <div className="card" style={{ marginBottom: 16 }}>
+            <p className="section-title">GÓC KHU MÌNH</p>
+            <p className="stat" style={{ marginBottom: 12 }}>
+              Cho tặng, thanh lý trong khu — không phải mạng xã hội
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+              <Link
+                href={`/zones/${KVL_SLUG}/classifieds?type=GIVE_AWAY`}
+                className="btn btn-secondary"
+                style={{ width: "auto" }}
+              >
+                🎁 Cho tặng ({community?.giveAwayCount ?? 0})
+              </Link>
+              <Link
+                href={`/zones/${KVL_SLUG}/classifieds?type=RESALE`}
+                className="btn btn-secondary"
+                style={{ width: "auto" }}
+              >
+                💰 Thanh lý ({community?.resaleCount ?? 0})
+              </Link>
+              <Link href="/classifieds/mine" className="btn btn-secondary" style={{ width: "auto" }}>
+                Tin của tôi
+              </Link>
+            </div>
+            {community && community.recentListings.length > 0 ? (
+              <div className="provider-list">
+                {community.recentListings.map((item) => (
+                  <Link key={item.id} href={`/classifieds/${item.id}`} className="provider-card">
+                    <div className="provider-card-main">
+                      <p className="provider-name">{item.title}</p>
+                      <p className="stat">
+                        {item.listingType === "GIVE_AWAY"
+                          ? "Miễn phí"
+                          : item.priceVnd != null
+                            ? `${item.priceVnd.toLocaleString("vi-VN")}đ`
+                            : "Liên hệ"}
+                        {" · "}
+                        {item.locationLabel}
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="stat">Chưa có tin — bấm đăng tin từ Thanh lý hoặc Cho tặng.</p>
+            )}
           </div>
 
           {blocks.map((block) => (

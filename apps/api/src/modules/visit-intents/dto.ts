@@ -7,6 +7,17 @@ export const createVisitIntentSchema = z.object({
   etaMinutes: z.number().int().min(5).max(240),
 });
 
-export const providerVisitIntentActionSchema = z.object({
-  action: z.enum(["arrived", "dismiss"]),
-});
+export const providerVisitIntentActionSchema = z
+  .object({
+    action: z.enum(["waiting", "arrived", "dismiss"]),
+    reason: z.string().trim().min(2).max(300).optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.action === "dismiss" && !val.reason?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Nhập lý do từ chối",
+        path: ["reason"],
+      });
+    }
+  });

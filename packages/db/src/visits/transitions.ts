@@ -5,8 +5,9 @@ export function isVisitIntentActive(status: string): boolean {
 }
 
 export function visitIntentProviderActionToStatus(
-  action: "arrived" | "dismiss",
+  action: "waiting" | "arrived" | "dismiss",
 ): VisitIntentStatus | null {
+  if (action === "waiting") return null;
   switch (action) {
     case "arrived":
       return "ARRIVED";
