@@ -1298,7 +1298,9 @@ COD
 NO_PAYMENT
 ```
 
-**Food delivery (V1 pilot):** Picki **hiển thị** phí runner trên đơn (xem §104 — split payment). Khách **thanh toán trước tiền hàng** qua Picki; **phí runner trả riêng khi nhận hàng** (không qua payment adapter Picki V1).
+**Food delivery (V1 pilot):** Khách trả **một lần** tiền hàng + phí giao (xem §104). Tiền về **merchant Provider**; provider tự trả runner theo thống kê ngày — Picki không chia payout V1.
+
+**Laundry (V1 pilot):** Khách **không** trả phí ship; lấy/giao do nhân viên tiệm; provider có thể gọi runner giao hộ (phí do tiệm, xem §81, §104).
 
 ## 60. FOOD POSITIONING
 
@@ -1649,6 +1651,14 @@ chăn
 ga
 gối
 giày
+rèm
+
+**Fulfillment & phí ship (ADR-041):**
+
+- Khách **không** trả phí ship chiều nào (`delivery_fee_vnd = 0` trên order).
+- **Lấy đồ tại nhà:** nhân viên tiệm đã xác minh — chuyên môn nhận đồ, kiểm tra tình trạng trước khi mang về (không dùng runner pool kiểu Food).
+- **Giao trả:** nhân viên tiệm; Provider có thể **gọi runner giao hộ** — phí do Provider, thống kê provider↔runner (§104).
+
 Flow:
 User
 
@@ -1656,32 +1666,27 @@ User
 ↓
 ```
 
-Request pickup
+Request pickup (home hoặc tự mang tiệm)
 
 ```
 ↓
 ```
 
-Runner
+Staff tiệm lấy / nhận tại quầy
 
 ```
 ↓
 ```
 
-Laundry
+Processing tại tiệm
 
 ```
 ↓
 ```
 
-Processing
+Giao trả (staff tiệm hoặc runner do tiệm gọi)
 
-```
-↓
-```
-
-Batch return
-Rất phù hợp batching.
+Rất phù hợp batching chặng giao.
 
 ## 82. SOFA CLEANING
 
@@ -2216,45 +2221,49 @@ Webhook:
 provider_event_id UNIQUE
 Idempotent.
 
-### Food delivery — split payment (V1 pilot)
+### Delivery fees & checkout (V1 pilot) — ADR-041
 
-Picki **tính và hiển thị** phí runner trên đơn để khách nắm **tổng chi phí** (tiền hàng + phí giao). Hai khoản **thu tách rời** — Picki **không** gom một lần qua platform cho cả hai trong V1 pilot.
+Picki **tính phí hộ**, hiển thị breakdown, ghi snapshot — **không** là trung gian thanh toán provider↔runner (§146). Một giao dịch khách↔provider; provider↔runner tự xử.
+
+#### Food
+
+Khách thấy và trả **một lần** tổng (tiền hàng + phí giao).
 
 **Hiển thị tại checkout / xác nhận đơn:**
 
 ```
 Tiền hàng (subtotal):     snapshot từ offering
-Phí giao runner:          delivery_fee_vnd — rule Zone / fulfillment
+Phí giao:                 delivery_fee_vnd — rule Zone / fulfillment
 ─────────────────
-Tổng tham chiếu:          total_vnd = subtotal + delivery_fee
+Tổng:                     total_vnd = subtotal + delivery_fee
 ```
 
-`delivery_fee_vnd` và `total_vnd` là **snapshot** lúc đặt; không đổi khi provider sửa giá catalog sau đó (§116).
+`delivery_fee_vnd` và `total_vnd` là **snapshot** lúc đặt (§116).
 
-**Thu tiền — ai nhận, khi nào:**
+| Khoản | Khách trả | Giao dịch Picki adapter | Người nhận từ khách |
+| ----- | --------- | ----------------------- | ------------------- |
+| `subtotal_vnd` + `delivery_fee_vnd` | **Một lần** lúc đặt (prepay) hoặc COD **full tổng** khi nhận | Có — PayOS về **merchant Provider** | **Provider** |
 
-| Khoản | Khách trả khi nào | Qua Picki adapter? | Người nhận (pilot) |
-| ----- | ----------------- | ------------------ | ------------------- |
-| Tiền hàng (`subtotal_vnd`) | **Trước** — lúc đặt / trước khi quán nấu | Có — `PAY_ON_PICKI` (hoặc `PAY_PROVIDER_DIRECTLY` khi cấu hình merchant quán) | **Provider** |
-| Phí runner (`delivery_fee_vnd`) | **Khi nhận hàng** — sảnh / cửa | **Không** V1 — COD trực tiếp cho runner | **Runner** |
+**Provider → Runner:** Provider tự trả runner (tiền mặt / CK) theo **thống kê ngày** trong app (số đơn, `delivery_fee_vnd` tích lũy). Picki **không** chia payout V1.
 
-**Vai trò Picki (không trung gian phí runner V1):**
+**Payment modes (§59) — Food:**
 
-- Tính phí giao theo rule Zone / fulfillment (flat pilot, mở rộng sau).
-- Ghi snapshot trên order + hiển thị breakdown cho customer / provider / runner.
-- Payment Service + adapter chỉ xử lý **phần tiền hàng** prepay — **không** thu phí runner qua webhook PayOS/VietQR V1.
-- Không wallet, không complex automatic settlement (§146). Đối soát phí runner: ledger / ops / provider–runner ngoài app nếu cần.
+- `PAY_ON_PICKI` — prepay **full total** (hàng + ship) qua adapter → merchant Provider.
+- `COD` — khách trả **full total** khi nhận hàng (một lần).
+- `PAY_PROVIDER_DIRECTLY` — khi cấu hình merchant quán; cùng logic full total về Provider.
 
-**Payment modes (§59) trong ngữ cảnh Food delivery:**
+#### Laundry (`PICKUP_AND_RETURN`)
 
-- `PAY_ON_PICKI` — prepay **tiền hàng** qua Picki; phí runner vẫn **COLLECT_ON_DELIVERY** (ngoài adapter).
-- `PAY_PROVIDER_DIRECTLY` — tiền hàng về merchant quán; phí runner vẫn thu khi nhận hàng.
-- `COD` (legacy label) — pilot Food ưu tiên split trên; tránh hiểu nhầm “COD full” khi policy Zone là prepay hàng + ship COD.
-- `PAY_ON_COMPLETION` / `NO_PAYMENT` — vertical khác; không thay split Food delivery mặc định.
+Khách **không** trả phí ship — `delivery_fee_vnd = 0`, `total_vnd = subtotal_vnd`.
 
-**Giao thành công:** runner thu phí ship khi bàn giao (lobby / cửa). **No-show / không nhận:** tiền hàng đã prepay theo policy hoàn tiền riêng; phí runner không thu qua Picki — xử lý theo ops playbook (provider / runner / customer).
+| Chặng | Ai thực hiện | Phí ship (khách) | Phí runner |
+| ----- | ------------ | ---------------- | ---------- |
+| Lấy đồ tại nhà | **Nhân viên tiệm** đã xác minh (nhận & kiểm tra đồ) | **0** | Không áp dụng runner pool Food |
+| Giao trả | Nhân viên tiệm; hoặc Provider **gọi runner giao hộ** | **0** | **Provider** trả runner — stats riêng, không trên total khách |
 
-**Monetization Picki:** không phụ thuộc giữ phí runner (§106). Picki không bắt buộc là trung gian thanh toán phí giao V1.
+Picki V1: tính năng Provider **tìm runner chặng giao** (`find_return_runner`); không hiển thị phí ship cho khách Laundry.
+
+**Monetization Picki:** không phụ thuộc giữ phí runner (§106).
 
 ## 105. BILLING
 
@@ -2659,13 +2668,14 @@ selected_options
 provider_location
 Order stores delivery snapshot.
 
-**Food delivery — split payment snapshots:**
+**Delivery fee snapshots (§104, ADR-041):**
 
 ```
-subtotal_vnd       — tiền hàng (prepay qua Picki / provider merchant)
-delivery_fee_vnd   — phí runner (hiển thị + snapshot; thu khi nhận hàng, §104)
-total_vnd          — subtotal + delivery_fee (tổng tham chiếu cho khách)
-payment_mode       — áp dụng prepay **tiền hàng**; không gồm thu phí runner qua adapter V1
+subtotal_vnd       — tiền hàng / dịch vụ
+delivery_fee_vnd   — Food: phí giao (cộng vào total khách). Laundry: 0 (provider trả runner nếu gọi ship)
+total_vnd          — Food: subtotal + delivery_fee. Laundry: subtotal only
+payment_mode       — Food: một giao dịch full total → merchant Provider. Laundry: subtotal only
+provider_runner_fee_vnd — (optional stats) phí runner do Provider trả — không trên total khách
 ```
 
 ## 117. ORDER STATE MACHINE

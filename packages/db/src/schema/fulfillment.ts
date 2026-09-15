@@ -93,6 +93,9 @@ export const zoneFulfillmentSettings = pgTable("zone_fulfillment_settings", {
   batchWaitWindowMinutes: integer("batch_wait_window_minutes").notNull().default(5),
   maxBatchOrders: integer("max_batch_orders").notNull().default(3),
   maxRouteDetourMeters: integer("max_route_detour_meters").notNull().default(500),
+  foodDeliveryFeeVnd: integer("food_delivery_fee_vnd").notNull().default(15000),
+  foodDoorDeliveryFeeVnd: integer("food_door_delivery_fee_vnd").notNull().default(20000),
+  laundryReturnRunnerFeeVnd: integer("laundry_return_runner_fee_vnd").notNull().default(15000),
   updatedAt: updatedAt(),
 });
 

@@ -58,5 +58,6 @@ export const providerLiveStatus = pgTable("provider_live_status", {
   message: text("message"),
   prepMinutes: integer("prep_minutes"),
   etaMinutes: integer("eta_minutes"),
+  estimatedWaitMinutes: integer("estimated_wait_minutes"),
   updatedAt: updatedAt(),
 });

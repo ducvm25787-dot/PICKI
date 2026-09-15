@@ -39,6 +39,7 @@ export class OutboxService {
     },
     fromStatus: string | null,
     toStatus: string,
+    actorUserId?: string | null,
   ): Promise<void> {
     return this.enqueue(tx, {
       eventType: "order.status_changed",
@@ -53,6 +54,7 @@ export class OutboxService {
         runnerUserId: order.runnerUserId,
         fromStatus,
         toStatus,
+        actorUserId: actorUserId ?? null,
       },
     });
   }

@@ -9,7 +9,10 @@ import { NotificationBell } from "./notification-bell";
 export type RunnerOrder = {
   id: string;
   orderNumber: string;
+  providerBrandName?: string | null;
   status: string;
+  serviceVertical?: string;
+  deliveryFeeVnd?: number;
   totalVnd: number;
   assignedToMe: boolean;
   estimatedReadyAt: string | null;
@@ -17,6 +20,11 @@ export type RunnerOrder = {
   runnerSoughtAt: string | null;
   routeId: string | null;
   delivery: { building: string | null; apartment: string | null };
+  contacts?: {
+    customer: { phone: string | null; displayName?: string | null };
+    provider: { phone: string | null; label?: string };
+    runner?: { phone: string | null; displayName?: string | null } | null;
+  };
 };
 
 export type LobbyHandoff = {
@@ -171,7 +179,7 @@ export function RunnerPageShell({
           <div className="logo runner-logo">Picki Runner</div>
           <div className="tagline">{title}</div>
         </div>
-        <NotificationBell desktopAlerts />
+        <NotificationBell audience="runner" desktopAlerts />
       </div>
       {children}
     </div>

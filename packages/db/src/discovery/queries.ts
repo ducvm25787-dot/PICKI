@@ -11,6 +11,7 @@ export type DiscoveryProviderRow = {
   live_status: string;
   prep_minutes: number | null;
   eta_minutes: number | null;
+  estimated_wait_minutes: number | null;
   address_line: string | null;
   lat: number | null;
   lng: number | null;
@@ -58,6 +59,7 @@ export async function listDiscoveryProviders(
       COALESCE(pls.status, 'OFFLINE') AS live_status,
       pls.prep_minutes,
       pls.eta_minutes,
+      pls.estimated_wait_minutes,
       pl.address_line,
       pl.lat,
       pl.lng,
@@ -108,6 +110,110 @@ export async function listDiscoveryProviders(
   `;
 }
 
+export async function listHomeServiceProviders(
+  sql: PickiSql,
+  zoneId: string,
+): Promise<DiscoveryProviderRow[]> {
+  return sql<DiscoveryProviderRow[]>`
+    SELECT
+      pl.id AS location_id,
+      p.id AS provider_id,
+      p.brand_name,
+      pl.display_name,
+      p.provider_type,
+      pp.tagline,
+      COALESCE(pls.status, 'OFFLINE') AS live_status,
+      pls.prep_minutes,
+      pls.eta_minutes,
+      pls.estimated_wait_minutes,
+      pl.address_line,
+      pl.lat,
+      pl.lng,
+      (
+        SELECT ROUND(AVG(lr.rating)::numeric, 1)::text
+        FROM location_reviews lr
+        WHERE lr.provider_location_id = pl.id
+      ) AS avg_rating,
+      (
+        SELECT COUNT(*)::text FROM location_reviews lr
+        WHERE lr.provider_location_id = pl.id
+      ) AS review_count,
+      (
+        SELECT o.name FROM offerings o
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        ORDER BY o.sort_order
+        LIMIT 1
+      ) AS sample_offering
+    FROM provider_zone_memberships pzm
+    INNER JOIN provider_locations pl ON pl.id = pzm.provider_location_id
+    INNER JOIN providers p ON p.id = pl.provider_id
+    LEFT JOIN provider_profiles pp ON pp.provider_id = p.id
+    LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
+    WHERE pzm.zone_id = ${zoneId}::uuid
+      AND pzm.status = 'ACTIVE'
+      AND pl.status = 'ACTIVE'
+      AND p.status = 'ACTIVE'
+      AND p.provider_type = 'HOME_SERVICE'
+    ORDER BY p.brand_name
+  `;
+}
+
+export async function listBeautyProviders(
+  sql: PickiSql,
+  zoneId: string,
+): Promise<DiscoveryProviderRow[]> {
+  return sql<DiscoveryProviderRow[]>`
+    SELECT
+      pl.id AS location_id,
+      p.id AS provider_id,
+      p.brand_name,
+      pl.display_name,
+      p.provider_type,
+      pp.tagline,
+      COALESCE(pls.status, 'OFFLINE') AS live_status,
+      pls.prep_minutes,
+      pls.eta_minutes,
+      pls.estimated_wait_minutes,
+      pl.address_line,
+      pl.lat,
+      pl.lng,
+      (
+        SELECT ROUND(AVG(lr.rating)::numeric, 1)::text
+        FROM location_reviews lr
+        WHERE lr.provider_location_id = pl.id
+      ) AS avg_rating,
+      (
+        SELECT COUNT(*)::text FROM location_reviews lr
+        WHERE lr.provider_location_id = pl.id
+      ) AS review_count,
+      (
+        SELECT o.name FROM offerings o
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        ORDER BY o.sort_order
+        LIMIT 1
+      ) AS sample_offering
+    FROM provider_zone_memberships pzm
+    INNER JOIN provider_locations pl ON pl.id = pzm.provider_location_id
+    INNER JOIN providers p ON p.id = pl.provider_id
+    LEFT JOIN provider_profiles pp ON pp.provider_id = p.id
+    LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
+    WHERE pzm.zone_id = ${zoneId}::uuid
+      AND pzm.status = 'ACTIVE'
+      AND pl.status = 'ACTIVE'
+      AND p.status = 'ACTIVE'
+      AND p.provider_type = 'BEAUTY'
+    ORDER BY
+      CASE COALESCE(pls.status, 'OFFLINE')
+        WHEN 'OPEN' THEN 0
+        WHEN 'BUSY' THEN 1
+        WHEN 'CLOSED' THEN 2
+        ELSE 3
+      END,
+      COALESCE(pls.estimated_wait_minutes, 999),
+      p.brand_name
+  `;
+}
+
 export async function listLaundryProviders(
   sql: PickiSql,
   zoneId: string,
@@ -123,6 +229,7 @@ export async function listLaundryProviders(
       COALESCE(pls.status, 'OFFLINE') AS live_status,
       pls.prep_minutes,
       pls.eta_minutes,
+      pls.estimated_wait_minutes,
       pl.address_line,
       pl.lat,
       pl.lng,
@@ -223,6 +330,7 @@ export async function listMapProviders(
       COALESCE(pls.status, 'OFFLINE') AS live_status,
       pls.prep_minutes,
       pls.eta_minutes,
+      pls.estimated_wait_minutes,
       pl.address_line,
       pl.lat,
       pl.lng,

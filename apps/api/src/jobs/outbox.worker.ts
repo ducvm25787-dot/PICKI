@@ -81,6 +81,16 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
         await this.notifications.processRunnerArrivedLobby(
           event.payload as Parameters<NotificationService["processRunnerArrivedLobby"]>[0],
         );
+      } else if (event.eventType.startsWith("service_request.")) {
+        await this.notifications.processServiceRequest(
+          event.eventType,
+          event.payload as Parameters<NotificationService["processServiceRequest"]>[1],
+        );
+      } else if (event.eventType.startsWith("visit_intent.")) {
+        await this.notifications.processVisitIntent(
+          event.eventType,
+          event.payload as Parameters<NotificationService["processVisitIntent"]>[1],
+        );
       }
 
       await this.db

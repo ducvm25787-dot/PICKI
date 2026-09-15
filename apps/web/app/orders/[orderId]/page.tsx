@@ -5,8 +5,11 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { NotificationBell } from "../../components/notification-bell";
 import { OrderChat } from "../../components/order-chat";
+import { OrderPhoneLinks } from "../../components/order-phone-links";
 import { api } from "../../../lib/api";
-import { formatVnd } from "../../../lib/money";
+import { OrderNumberHeading } from "../../components/order-number-heading";
+import { formatLaundryReferencePrice, formatOrderAmount, formatVnd } from "../../../lib/money";
+import { isLaundryVertical, orderButtonLabel } from "../../../lib/providers";
 import { OrderStatusSteps } from "../../components/order-status-steps";
 import { formatAddressLine, handoffModeLabel, isApartmentAddress } from "../../../lib/addresses";
 import { orderStatusRich } from "../../../lib/order-display";
@@ -14,12 +17,21 @@ import { orderStatusRich } from "../../../lib/order-display";
 type OrderDetail = {
   id: string;
   orderNumber: string;
+  providerBrandName?: string | null;
   status: string;
   serviceVertical?: string;
+  laundryPickupMode?: string | null;
   estimatedReadyAt: string | null;
   providerHandoffAt: string | null;
   runner: { displayName: string } | null;
+  contacts?: {
+    customer: { phone: string | null; displayName?: string | null };
+    provider: { phone: string | null; label?: string };
+    runner?: { phone: string | null; displayName?: string | null } | null;
+  };
   paymentMode: string;
+  subtotalVnd?: number;
+  deliveryFeeVnd?: number;
   totalVnd: number;
   delivery: {
     addressType?: string;
@@ -36,7 +48,9 @@ type OrderDetail = {
   items: {
     name: string;
     quantity: number;
+    unitPriceVnd?: number;
     lineTotalVnd: number;
+    estimatedDays?: number | null;
   }[];
   fulfillment: {
     nextStop: { label: string; stopType: string } | null;
@@ -97,11 +111,11 @@ export default function OrderDetailPage() {
   }
 
   async function cancelOrder() {
-    if (!window.confirm("Hủy đơn này?")) return;
+    if (!order || !window.confirm("Hủy đơn này?")) return;
     setCancelling(true);
     setCancelError(null);
     try {
-      await api(`/orders/${params.orderId}`, {
+      await api(`/orders/${order.id}`, {
         method: "PATCH",
         body: JSON.stringify({ action: "cancel" }),
       });
@@ -232,29 +246,49 @@ export default function OrderDetailPage() {
           className="card"
           style={{ marginBottom: 16, background: "#e8f8ef", borderColor: "#9fd4b5" }}
         >
-          <p style={{ margin: 0, fontWeight: 600 }}>✓ Đặt món thành công!</p>
+          <p style={{ margin: 0, fontWeight: 600 }}>
+            ✓ {orderButtonLabel(order.serviceVertical === "LAUNDRY" ? "LAUNDRY" : "FOOD")} thành công!
+          </p>
         </div>
       )}
 
       <div className="header-row" style={{ marginBottom: 8 }}>
         <div>
-          <h1 style={{ fontSize: 22, margin: "0 0 4px" }}>{order.orderNumber}</h1>
+          <OrderNumberHeading
+            orderNumber={order.orderNumber}
+            providerBrandName={order.providerBrandName}
+            as="h1"
+          />
           <p className="stat" style={{ margin: 0 }}>
             {orderStatusRich(order.status, {
               estimatedReadyAt: order.estimatedReadyAt,
               providerHandoffAt: order.providerHandoffAt,
               runner: order.runner,
+              serviceVertical: order.serviceVertical,
+              laundryPickupMode: order.laundryPickupMode,
             })}
           </p>
-          <OrderStatusSteps status={order.status} serviceVertical={order.serviceVertical} />
-          {order.runner ? (
+          <OrderStatusSteps
+            status={order.status}
+            serviceVertical={order.serviceVertical}
+            laundryPickupMode={order.laundryPickupMode}
+            audience="customer"
+          />
+          {order.runner && order.serviceVertical !== "LAUNDRY" ? (
             <p className="stat" style={{ margin: "8px 0 0" }}>
               Runner: <strong>{order.runner.displayName}</strong>
             </p>
           ) : null}
         </div>
-        <NotificationBell />
+        <NotificationBell audience="customer" />
       </div>
+
+      {order.contacts ? (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <p className="section-title">Liên hệ qua Zalo</p>
+          <OrderPhoneLinks contacts={order.contacts} hideRole="customer" />
+        </div>
+      ) : null}
 
       {showPay && order.status !== "PAID" && (
         <div className="card" style={{ margin: "16px 0" }}>
@@ -325,7 +359,9 @@ export default function OrderDetailPage() {
       ) : null}
 
       <div className="card" style={{ margin: "16px 0" }}>
-        <p className="section-title">Món đã đặt</p>
+        <p className="section-title">
+          {isLaundryVertical(order.serviceVertical) ? "Dịch vụ đã đặt" : "Món đã đặt"}
+        </p>
         {order.items.map((item) => (
           <div
             key={`${item.name}-${String(item.quantity)}`}
@@ -333,12 +369,46 @@ export default function OrderDetailPage() {
           >
             <span>
               {item.name} × {item.quantity}
+              {isLaundryVertical(order.serviceVertical) && item.estimatedDays ? (
+                <span className="stat" style={{ display: "block", fontSize: 13 }}>
+                  Dự kiến ~{String(item.estimatedDays)} ngày
+                </span>
+              ) : null}
             </span>
-            <span>{formatVnd(item.lineTotalVnd)}</span>
+            {!isLaundryVertical(order.serviceVertical) ? (
+              <span>{formatVnd(item.lineTotalVnd)}</span>
+            ) : (item.unitPriceVnd ?? 0) > 0 ? (
+              <span className="stat" style={{ fontSize: 13 }}>
+                {formatLaundryReferencePrice(item.unitPriceVnd ?? 0, "FROM")}
+              </span>
+            ) : null}
           </div>
         ))}
         <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "12px 0" }} />
-        <strong>{formatVnd(order.totalVnd)}</strong>
+        {isLaundryVertical(order.serviceVertical) ? (
+          <p className="stat" style={{ margin: 0 }}>
+            Báo giá và {formatOrderAmount(order.totalVnd, order.serviceVertical).toLowerCase()}.
+          </p>
+        ) : (
+          <>
+            {order.deliveryFeeVnd != null && order.deliveryFeeVnd > 0 ? (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span>Tiền hàng</span>
+                  <span>{formatVnd(order.subtotalVnd ?? order.totalVnd - order.deliveryFeeVnd)}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span>Phí giao</span>
+                  <span>{formatVnd(order.deliveryFeeVnd)}</span>
+                </div>
+              </>
+            ) : null}
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
+              <span>Tổng</span>
+              <strong>{formatVnd(order.totalVnd)}</strong>
+            </div>
+          </>
+        )}
       </div>
 
       {addr && (
@@ -389,7 +459,7 @@ export default function OrderDetailPage() {
           {order.fulfillment.nextStop ? (
             <p style={{ margin: 0 }}>Tiếp theo: {order.fulfillment.nextStop.label}</p>
           ) : (
-            <p style={{ margin: 0 }}>Route hoàn tất</p>
+            <p style={{ margin: 0 }}>Tiến trình giao hoàn tất</p>
           )}
         </div>
       )}
@@ -397,7 +467,7 @@ export default function OrderDetailPage() {
       {order.status !== "DELIVERED" &&
       !["CUSTOMER_CANCELLED", "SYSTEM_CANCELLED", "PROVIDER_REJECTED"].includes(order.status) ? (
         <div className="card" style={{ marginBottom: 16 }}>
-          <OrderChat orderId={order.id} />
+          <OrderChat orderId={order.id} viewerRole="CUSTOMER" />
         </div>
       ) : null}
 

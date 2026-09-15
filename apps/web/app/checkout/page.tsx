@@ -15,11 +15,18 @@ import {
 import { AddressActionsMenu } from "../components/address-actions-menu";
 import { cartTotalVnd, readCart, writeCart, type Cart } from "../../lib/cart";
 import { formatVnd } from "../../lib/money";
+import { isLaundryVertical, orderButtonLabel } from "../../lib/providers";
 
 type OrderResult = {
   id: string;
   orderNumber: string;
   status: string;
+  totalVnd: number;
+};
+
+type OrderQuote = {
+  subtotalVnd: number;
+  deliveryFeeVnd: number;
   totalVnd: number;
 };
 
@@ -54,6 +61,7 @@ export default function CheckoutPage() {
     "HOME_PICKUP",
   );
   const [addressMenuId, setAddressMenuId] = useState<string | null>(null);
+  const [quote, setQuote] = useState<OrderQuote | null>(null);
 
   useEffect(() => {
     if (!addressMenuId) return;
@@ -93,6 +101,35 @@ export default function CheckoutPage() {
       }
     })();
   }, [router]);
+
+  useEffect(() => {
+    if (!cart || cart.providerType === "LAUNDRY") {
+      setQuote(null);
+      return;
+    }
+    const selected = addresses.find((a) => a.id === selectedAddressId);
+    const isApt = selected ? isApartmentAddress(selected) : true;
+    const handoff = isApt ? handoffMode : "DOOR_DELIVERY";
+    void (async () => {
+      try {
+        const res = await api<OrderQuote>("/orders/quote", {
+          method: "POST",
+          body: JSON.stringify({
+            providerLocationId: cart.providerLocationId,
+            zoneId: cart.zoneId,
+            deliveryHandoffMode: handoff,
+            items: cart.items.map((i) => ({
+              offeringId: i.offeringId,
+              quantity: i.quantity,
+            })),
+          }),
+        });
+        setQuote(res);
+      } catch {
+        setQuote(null);
+      }
+    })();
+  }, [cart, addresses, selectedAddressId, handoffMode]);
 
   function resetAddressForm() {
     setNewBuilding("");
@@ -253,8 +290,8 @@ export default function CheckoutPage() {
           zoneId: cart.zoneId,
           addressId: selectedAddressId,
           deliveryHandoffMode: effectiveHandoff,
-          ...(isLaundry ? { laundryPickupMode } : {}),
-          paymentMode,
+          ...(isLaundry && !cartHasOnSite ? { laundryPickupMode } : {}),
+          paymentMode: isLaundry ? "PAY_ON_COMPLETION" : paymentMode,
           idempotencyKey,
           items: cart.items.map((i) => ({
             offeringId: i.offeringId,
@@ -280,11 +317,14 @@ export default function CheckoutPage() {
     );
   }
 
-  const total = cartTotalVnd(cart);
   const selected = addresses.find((a) => a.id === selectedAddressId);
-  const isLaundry = cart.providerType === "LAUNDRY";
+  const isLaundry = isLaundryVertical(cart.providerType);
+  const cartHasOnSite = cart.items.some((i) => i.fulfillmentMode === "ON_SITE");
   const selectedIsApartment = selected ? isApartmentAddress(selected) : true;
   const effectiveHandoff = isLaundry ? "DOOR_DELIVERY" : selectedIsApartment ? handoffMode : "DOOR_DELIVERY";
+  const subtotal = cartTotalVnd(cart);
+  const deliveryFee = !isLaundry && quote ? quote.deliveryFeeVnd : 0;
+  const total = !isLaundry && quote ? quote.totalVnd : subtotal;
 
   return (
     <div className="container">
@@ -473,7 +513,16 @@ export default function CheckoutPage() {
         )}
       </div>
 
-      {isLaundry ? (
+      {isLaundry && cartHasOnSite ? (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <p className="section-title">Dịch vụ tại nhà</p>
+          <p className="stat" style={{ margin: 0 }}>
+            Nhân viên tiệm đến{" "}
+            {selected ? formatAddressLine(selected) : "địa chỉ bạn"} thực hiện dịch vụ. Tiệm sẽ hẹn giờ qua
+            chat sau khi nhận đơn.
+          </p>
+        </div>
+      ) : isLaundry ? (
         <div className="card" style={{ marginBottom: 16 }}>
           <p className="section-title">Hình thức nhận đồ</p>
           <label className="field" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
@@ -485,8 +534,8 @@ export default function CheckoutPage() {
             <span>
               <strong>Đến lấy tận nhà</strong>
               <span className="stat" style={{ display: "block", fontSize: 13 }}>
-                Runner đến {selected ? formatAddressLine(selected) : "địa chỉ bạn"} lấy đồ → tiệm giặt →
-                giao lại sau khi xong
+                Nhân viên tiệm đến {selected ? formatAddressLine(selected) : "địa chỉ bạn"} lấy đồ → giặt
+                tại tiệm → giao lại
               </span>
             </span>
           </label>
@@ -499,7 +548,7 @@ export default function CheckoutPage() {
             <span>
               <strong>Tự mang tới tiệm</strong>
               <span className="stat" style={{ display: "block", fontSize: 13 }}>
-                Bạn mang quần áo/chăn màn/giày/rèm tới tiệm — chỉ cần runner giao lại khi xong
+                Bạn mang đồ tới tiệm — tiệm giao lại khi xong
               </span>
             </span>
           </label>
@@ -558,47 +607,75 @@ export default function CheckoutPage() {
           >
             <span>
               {item.name} × {item.quantity}
+              {isLaundry && item.estimatedDays ? (
+                <span className="stat" style={{ display: "block", fontSize: 13 }}>
+                  Dự kiến ~{String(item.estimatedDays)} ngày
+                </span>
+              ) : null}
             </span>
-            <span>{formatVnd(item.amountVnd * item.quantity)}</span>
+            {!isLaundry ? <span>{formatVnd(item.amountVnd * item.quantity)}</span> : null}
           </div>
         ))}
         <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "12px 0" }} />
-        <p className="section-title" style={{ marginTop: 16 }}>
-          Thanh toán tiền hàng
-        </p>
-        <label className="field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <input
-            type="radio"
-            checked={paymentMode === "COD"}
-            onChange={() => setPaymentMode("COD")}
-          />
-          COD — trả tiền hàng khi nhận
-        </label>
-        <label className="field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <input
-            type="radio"
-            checked={paymentMode === "PAY_ON_PICKI"}
-            onChange={() => setPaymentMode("PAY_ON_PICKI")}
-          />
-          Thanh toán online (demo stub)
-        </label>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            fontWeight: 700,
-            marginTop: 12,
-          }}
-        >
-          <span>Tổng tiền hàng</span>
-          <span>{formatVnd(total)}</span>
-        </div>
+        {isLaundry ? (
+          <p className="stat" style={{ margin: 0 }}>
+            Báo giá và thanh toán sau khi tiệm xác nhận / hoàn thành dịch vụ.
+          </p>
+        ) : (
+          <>
+            <p className="section-title" style={{ marginTop: 16 }}>
+              Thanh toán
+            </p>
+            <label className="field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <input
+                type="radio"
+                checked={paymentMode === "COD"}
+                onChange={() => setPaymentMode("COD")}
+              />
+              COD — trả tổng đơn khi nhận{deliveryFee > 0 ? " (hàng + phí giao)" : ""}
+            </label>
+            <label className="field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <input
+                type="radio"
+                checked={paymentMode === "PAY_ON_PICKI"}
+                onChange={() => setPaymentMode("PAY_ON_PICKI")}
+              />
+              Thanh toán online (demo stub)
+            </label>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
+              <span>Tiền hàng</span>
+              <span>{formatVnd(subtotal)}</span>
+            </div>
+            {deliveryFee > 0 ? (
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+                <span>Phí giao</span>
+                <span>{formatVnd(deliveryFee)}</span>
+              </div>
+            ) : null}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontWeight: 700,
+                marginTop: 12,
+              }}
+            >
+              <span>Tổng</span>
+              <span>{formatVnd(total)}</span>
+            </div>
+            {deliveryFee > 0 ? (
+              <p className="stat" style={{ margin: "8px 0 0", fontSize: 13 }}>
+                Quán nhận tổng đơn; tự trả runner theo thống kê ngày.
+              </p>
+            ) : null}
+          </>
+        )}
       </div>
 
       {error && <p style={{ color: "crimson" }}>{error}</p>}
 
       <button type="button" className="btn" disabled={submitting} onClick={() => void placeOrder()}>
-        {submitting ? "Đang đặt…" : "Đặt món"}
+        {submitting ? "Đang đặt…" : orderButtonLabel(cart.providerType)}
       </button>
     </div>
   );

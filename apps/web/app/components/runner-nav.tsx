@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 const tabs = [
   { href: "/runner", label: "Đơn", icon: "📦", exact: true },
-  { href: "/runner/route", label: "Route", icon: "🗺️", exact: false },
+  { href: "/runner/route", label: "Tiến trình", icon: "🗺️", exact: false },
   { href: "/runner/history", label: "Lịch sử", icon: "📋", exact: false },
   { href: "/runner/status", label: "Trạng thái", icon: "🟢", exact: false },
   { href: "/runner/settings", label: "Cài đặt", icon: "⚙️", exact: false },

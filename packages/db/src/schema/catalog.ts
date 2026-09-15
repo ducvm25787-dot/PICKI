@@ -16,6 +16,7 @@ export const offerings = pgTable("offerings", {
   foodMoment: text("food_moment"),
   fulfillmentMode: text("fulfillment_mode"),
   paymentPolicy: text("payment_policy"),
+  estimatedDays: integer("estimated_days"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

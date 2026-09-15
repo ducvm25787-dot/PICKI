@@ -3,12 +3,15 @@
 import { useEffect, useState } from "react";
 import { RunnerPageShell } from "../../../components/runner-session-context";
 import { api } from "../../../../lib/api";
+import { OrderNumberHeading } from "../../../components/order-number-heading";
 import { orderStatusRich } from "../../../../lib/order-display";
-import { formatVnd } from "../../../../lib/money";
+import { formatOrderAmount } from "../../../../lib/money";
 
 type HistoryOrder = {
   id: string;
   orderNumber: string;
+  providerBrandName?: string | null;
+  serviceVertical?: string;
   status: string;
   totalVnd: number;
   completedAt: string;
@@ -36,7 +39,11 @@ export default function RunnerHistoryPage() {
         ) : (
           orders.map((o) => (
             <article key={o.id} className="provider-card" style={{ marginBottom: 12 }}>
-              <strong>{o.orderNumber}</strong> · {formatVnd(o.totalVnd)}
+              <OrderNumberHeading
+                orderNumber={o.orderNumber}
+                providerBrandName={o.providerBrandName}
+                right={<span>{formatOrderAmount(o.totalVnd, o.serviceVertical)}</span>}
+              />
               <p className="stat">{orderStatusRich(o.status)}</p>
               <p className="stat">
                 {o.delivery.building}-{o.delivery.apartment}

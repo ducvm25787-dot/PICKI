@@ -114,7 +114,7 @@ export class OrderTransitionService {
         note: note ?? null,
       });
 
-      await this.outbox.enqueueOrderStatusChanged(tx, updated, order.status, toStatus);
+      await this.outbox.enqueueOrderStatusChanged(tx, updated, order.status, toStatus, actorUserId);
 
       const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
       return { order: updated, items };

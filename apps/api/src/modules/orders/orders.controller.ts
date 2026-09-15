@@ -3,13 +3,25 @@ import { PickiError } from "@picki/shared";
 import { z } from "zod";
 import { CurrentUserId } from "../auth/current-user.decorator.js";
 import { SessionAuthGuard } from "../auth/session-auth.guard.js";
-import { createOrderSchema } from "./dto.js";
+import { createOrderSchema, orderCheckoutSchema } from "./dto.js";
 import { OrdersService } from "./orders.service.js";
 
 @Controller("orders")
 @UseGuards(SessionAuthGuard)
 export class OrdersController {
   constructor(@Inject(OrdersService) private readonly ordersService: OrdersService) {}
+
+  @Post("quote")
+  @HttpCode(200)
+  async quote(@CurrentUserId() userId: string, @Body() body: unknown) {
+    const parsed = orderCheckoutSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Invalid quote request", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.ordersService.quote(userId, parsed.data);
+  }
 
   @Post()
   @HttpCode(201)

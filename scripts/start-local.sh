@@ -30,12 +30,7 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v pnpm >/dev/null 2>&1; then
-  echo "→ pnpm chưa có, dùng npx..."
-  PNPM="npx --yes pnpm@9.15.0"
-else
-  PNPM="pnpm"
-fi
+PNPM="bash $(dirname "$0")/pnpm.sh"
 
 echo "→ Cài dependencies (lần đầu có thể hơi lâu)..."
 $PNPM install

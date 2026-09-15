@@ -2,6 +2,8 @@ export * from "./catalog/index.js";
 export * from "./discovery/index.js";
 export * from "./fulfillment/index.js";
 export * from "./orders/index.js";
+export * from "./requests/index.js";
+export * from "./visits/index.js";
 export * from "./client.js";
 export * from "./geo/index.js";
 export * from "./geometry.js";

@@ -3,6 +3,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import {
   addresses,
   buildOrderNumber,
+  calculateCustomerDeliveryFeeVnd,
   canCustomerCancel,
   listLocationMenu,
   lobbyHandoffs,
@@ -19,17 +20,24 @@ import {
   providerLocations,
   providerZoneMemberships,
   userZoneMemberships,
+  zoneFulfillmentSettings,
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
-import { loadRunnerSummary, orderHandoffFields } from "./order-enrichment.js";
+import {
+  loadOrderContacts,
+  loadProviderBrand,
+  loadRunnerSummary,
+  orderHandoffFields,
+} from "./order-enrichment.js";
 import { OrderTransitionService } from "./order-transition.service.js";
 import { OutboxService } from "../outbox/outbox.service.js";
 import { AddressesService } from "../addresses/addresses.service.js";
 import { PICKI_DB, PICKI_SQL } from "../../shared/tokens.js";
 import type { z } from "zod";
-import type { createOrderSchema } from "./dto.js";
+import type { createOrderSchema, orderCheckoutSchema } from "./dto.js";
 
 type CreateOrderInput = z.infer<typeof createOrderSchema>;
+type OrderCheckoutInput = z.infer<typeof orderCheckoutSchema>;
 
 @Injectable()
 export class OrdersService {
@@ -40,6 +48,32 @@ export class OrdersService {
     @Inject(OrderTransitionService) private readonly transitions: OrderTransitionService,
     @Inject(AddressesService) private readonly addresses: AddressesService,
   ) {}
+
+  async quote(userId: string, input: OrderCheckoutInput) {
+    await this.assertZoneMember(userId, input.zoneId);
+    const { serviceVertical } = await this.resolveLocation(input.providerLocationId, input.zoneId);
+    const { lineItems, subtotalVnd } = await this.buildLineItems(
+      input.providerLocationId,
+      input.items,
+    );
+    const deliveryFeeVnd = await this.resolveDeliveryFeeVnd(
+      input.zoneId,
+      serviceVertical,
+      input.deliveryHandoffMode,
+    );
+    return {
+      serviceVertical,
+      subtotalVnd,
+      deliveryFeeVnd,
+      totalVnd: subtotalVnd + deliveryFeeVnd,
+      items: lineItems.map((i) => ({
+        offeringId: i.offeringId,
+        name: i.name,
+        quantity: i.quantity,
+        lineTotalVnd: i.lineTotalVnd,
+      })),
+    };
+  }
 
   async create(userId: string, input: CreateOrderInput) {
     if (input.idempotencyKey) {
@@ -53,62 +87,15 @@ export class OrdersService {
       }
     }
 
-    const membership = await this.db
-      .select()
-      .from(userZoneMemberships)
-      .where(
-        and(
-          eq(userZoneMemberships.userId, userId),
-          eq(userZoneMemberships.zoneId, input.zoneId),
-          eq(userZoneMemberships.status, "JOINED"),
-        ),
-      )
-      .limit(1);
-
-    if (!membership[0]) {
-      throw new PickiError("FORBIDDEN", "Join the Zone before ordering");
-    }
-
-    const location = await this.db
-      .select()
-      .from(providerLocations)
-      .where(eq(providerLocations.id, input.providerLocationId))
-      .limit(1);
-
-    if (!location[0] || location[0].status !== "ACTIVE") {
-      throw new PickiError("NOT_FOUND", "Provider location not available");
-    }
-
-    const providerRow = await this.db
-      .select({ providerType: providers.providerType })
-      .from(providerLocations)
-      .innerJoin(providers, eq(providerLocations.providerId, providers.id))
-      .where(eq(providerLocations.id, input.providerLocationId))
-      .limit(1);
-    const serviceVertical = providerRow[0]?.providerType === "LAUNDRY" ? "LAUNDRY" : "FOOD";
-
-    const inZone = await this.db
-      .select()
-      .from(providerZoneMemberships)
-      .where(
-        and(
-          eq(providerZoneMemberships.providerLocationId, input.providerLocationId),
-          eq(providerZoneMemberships.zoneId, input.zoneId),
-          eq(providerZoneMemberships.status, "ACTIVE"),
-        ),
-      )
-      .limit(1);
-
-    if (!inZone[0]) {
-      throw new PickiError("FORBIDDEN", "Provider does not serve this Zone");
-    }
+    await this.assertZoneMember(userId, input.zoneId);
+    const { serviceVertical } = await this.resolveLocation(input.providerLocationId, input.zoneId);
 
     const addr = await this.addresses.resolveDeliveryAddress(userId, input.zoneId, input.addressId);
 
     const isStreet = addr.addressType === "STREET_ADDRESS";
     let handoffMode = input.deliveryHandoffMode;
 
-    const laundryPickupMode =
+    let laundryPickupMode =
       serviceVertical === "LAUNDRY" ? (input.laundryPickupMode ?? "HOME_PICKUP") : null;
 
     if (serviceVertical === "LAUNDRY") {
@@ -140,30 +127,35 @@ export class OrdersService {
     const deliveryLat: number | null = null;
     const deliveryLng: number | null = null;
 
-    const menu = await listLocationMenu(this.sql, input.providerLocationId);
-    const menuById = new Map(menu.map((m) => [m.offering_id, m]));
+    const { lineItems, subtotalVnd, fulfillmentModes } = await this.buildLineItems(
+      input.providerLocationId,
+      input.items,
+    );
 
-    const lineItems = input.items.map((item) => {
-      const offering = menuById.get(item.offeringId);
-      if (!offering) {
-        throw new PickiError("VALIDATION_ERROR", "Invalid offering for this location", {
-          details: { offeringId: item.offeringId },
-        });
+    let paymentMode = input.paymentMode;
+    let deliveryFeeVnd = 0;
+    let totalVnd = subtotalVnd;
+
+    if (serviceVertical === "LAUNDRY") {
+      const hasOnSite = fulfillmentModes.has("ON_SITE");
+      const hasPickupReturn = fulfillmentModes.has("PICKUP_AND_RETURN");
+      if (hasOnSite && hasPickupReturn) {
+        throw new PickiError(
+          "VALIDATION_ERROR",
+          "Không thể đặt chung dịch vụ lấy về giặt và giặt tại nhà trong một đơn",
+        );
       }
-      const lineTotal = offering.amount_vnd * item.quantity;
-      return {
-        offeringId: item.offeringId,
-        name: offering.name,
-        description: offering.description,
-        unitPriceVnd: offering.amount_vnd,
-        quantity: item.quantity,
-        lineTotalVnd: lineTotal,
-      };
-    });
+      if (hasOnSite) {
+        laundryPickupMode = "ON_SITE";
+      }
+      paymentMode = "PAY_ON_COMPLETION";
+      deliveryFeeVnd = 0;
+      totalVnd = 0;
+    } else {
+      deliveryFeeVnd = await this.resolveDeliveryFeeVnd(input.zoneId, serviceVertical, handoffMode);
+      totalVnd = subtotalVnd + deliveryFeeVnd;
+    }
 
-    const subtotalVnd = lineItems.reduce((sum, i) => sum + i.lineTotalVnd, 0);
-    const deliveryFeeVnd = 0;
-    const totalVnd = subtotalVnd + deliveryFeeVnd;
     return this.db.transaction(async (tx) => {
       const orderNumber = await allocateOrderNumber(tx, input.providerLocationId);
       const [order] = await tx
@@ -176,8 +168,8 @@ export class OrdersService {
           status: "CREATED",
           serviceVertical,
           laundryPickupMode,
-          paymentMode: input.paymentMode,
-          subtotalVnd,
+          paymentMode,
+          subtotalVnd: serviceVertical === "LAUNDRY" ? 0 : subtotalVnd,
           deliveryFeeVnd,
           totalVnd,
           deliveryAddressId: addr.id,
@@ -212,6 +204,7 @@ export class OrdersService {
           unitPriceVnd: item.unitPriceVnd,
           quantity: item.quantity,
           lineTotalVnd: item.lineTotalVnd,
+          estimatedDays: item.estimatedDays,
         })),
       );
 
@@ -220,10 +213,10 @@ export class OrdersService {
         fromStatus: null,
         toStatus: "CREATED",
         actorUserId: userId,
-        note: "Order placed (COD pilot)",
+        note: serviceVertical === "LAUNDRY" ? "Laundry order placed" : "Order placed (COD pilot)",
       });
 
-      await this.outbox.enqueueOrderStatusChanged(tx, order, null, "CREATED");
+      await this.outbox.enqueueOrderStatusChanged(tx, order, null, "CREATED", userId);
 
       const items = await tx
         .select()
@@ -242,22 +235,60 @@ export class OrdersService {
       .orderBy(desc(orders.createdAt))
       .limit(50);
 
+    const ordersOut = [];
+    for (const o of rows) {
+      try {
+        ordersOut.push(await this.toOrderDto(o, await this.loadItems(o.id)));
+      } catch {
+        ordersOut.push(await this.toOrderDtoFallback(o, await this.loadItems(o.id)));
+      }
+    }
+
+    return { orders: ordersOut };
+  }
+
+  /** Minimal DTO if enrichment fails — still show order in list. */
+  private async toOrderDtoFallback(
+    order: typeof orders.$inferSelect,
+    items: (typeof orderItems.$inferSelect)[],
+  ) {
     return {
-      orders: await Promise.all(
-        rows.map(async (o) => await this.toOrderDto(o, await this.loadItems(o.id))),
-      ),
+      id: order.id,
+      orderNumber: order.orderNumber,
+      providerBrandName: await loadProviderBrand(this.db, order.providerLocationId),
+      status: order.status,
+      serviceVertical: order.serviceVertical,
+      totalVnd: order.totalVnd,
+      estimatedReadyAt: order.estimatedReadyAt?.toISOString() ?? null,
+      runner: await loadRunnerSummary(this.db, order.runnerUserId),
+      createdAt: order.createdAt.toISOString(),
+      items: items.map((i) => ({ name: i.name, quantity: i.quantity })),
     };
   }
 
-  async getById(userId: string, orderId: string) {
-    const row = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-    const order = row[0];
+  private async resolveCustomerOrder(userId: string, orderIdOrNumber: string) {
+    const byId = await this.db
+      .select()
+      .from(orders)
+      .where(eq(orders.id, orderIdOrNumber))
+      .limit(1);
+    let order = byId[0];
     if (!order) {
+      const byNumber = await this.db
+        .select()
+        .from(orders)
+        .where(eq(orders.orderNumber, orderIdOrNumber))
+        .limit(1);
+      order = byNumber[0];
+    }
+    if (!order || order.customerUserId !== userId) {
       throw new PickiError("NOT_FOUND", "Order not found");
     }
-    if (order.customerUserId !== userId) {
-      throw new PickiError("FORBIDDEN", "Not your order");
-    }
+    return order;
+  }
+
+  async getById(userId: string, orderIdOrNumber: string) {
+    const order = await this.resolveCustomerOrder(userId, orderIdOrNumber);
     return await this.toOrderDto(
       order,
       await this.loadItems(order.id),
@@ -266,18 +297,20 @@ export class OrdersService {
     );
   }
 
-  async customerCancel(userId: string, orderId: string) {
-    const row = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-    const order = row[0];
-    if (!order || order.customerUserId !== userId) {
-      throw new PickiError("NOT_FOUND", "Order not found");
-    }
-    if (!canCustomerCancel(order.status)) {
+  async customerCancel(userId: string, orderIdOrNumber: string) {
+    const order = await this.resolveCustomerOrder(userId, orderIdOrNumber);
+    if (
+      !canCustomerCancel(
+        order.status,
+        order.serviceVertical as "FOOD" | "LAUNDRY",
+        order.laundryPickupMode as "HOME_PICKUP" | "SHOP_DROP_OFF" | "ON_SITE" | null,
+      )
+    ) {
       throw new PickiError("FORBIDDEN", `Không thể hủy đơn ở trạng thái ${order.status}`);
     }
 
     const result = await this.transitions.transition(
-      orderId,
+      order.id,
       "CUSTOMER_CANCELLED",
       userId,
       "Customer cancelled",
@@ -370,6 +403,124 @@ export class OrdersService {
     return this.db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
   }
 
+  private async assertZoneMember(userId: string, zoneId: string) {
+    const membership = await this.db
+      .select()
+      .from(userZoneMemberships)
+      .where(
+        and(
+          eq(userZoneMemberships.userId, userId),
+          eq(userZoneMemberships.zoneId, zoneId),
+          eq(userZoneMemberships.status, "JOINED"),
+        ),
+      )
+      .limit(1);
+    if (!membership[0]) {
+      throw new PickiError("FORBIDDEN", "Join the Zone before ordering");
+    }
+  }
+
+  private async resolveLocation(providerLocationId: string, zoneId: string) {
+    const location = await this.db
+      .select()
+      .from(providerLocations)
+      .where(eq(providerLocations.id, providerLocationId))
+      .limit(1);
+
+    if (!location[0] || location[0].status !== "ACTIVE") {
+      throw new PickiError("NOT_FOUND", "Provider location not available");
+    }
+
+    const providerRow = await this.db
+      .select({ providerType: providers.providerType })
+      .from(providerLocations)
+      .innerJoin(providers, eq(providerLocations.providerId, providers.id))
+      .where(eq(providerLocations.id, providerLocationId))
+      .limit(1);
+    const serviceVertical = providerRow[0]?.providerType === "LAUNDRY" ? "LAUNDRY" : "FOOD";
+
+    const inZone = await this.db
+      .select()
+      .from(providerZoneMemberships)
+      .where(
+        and(
+          eq(providerZoneMemberships.providerLocationId, providerLocationId),
+          eq(providerZoneMemberships.zoneId, zoneId),
+          eq(providerZoneMemberships.status, "ACTIVE"),
+        ),
+      )
+      .limit(1);
+
+    if (!inZone[0]) {
+      throw new PickiError("FORBIDDEN", "Provider does not serve this Zone");
+    }
+
+    return { location: location[0], serviceVertical };
+  }
+
+  private async loadZoneDeliveryFees(zoneId: string) {
+    const row = await this.db
+      .select({
+        foodDeliveryFeeVnd: zoneFulfillmentSettings.foodDeliveryFeeVnd,
+        foodDoorDeliveryFeeVnd: zoneFulfillmentSettings.foodDoorDeliveryFeeVnd,
+      })
+      .from(zoneFulfillmentSettings)
+      .where(eq(zoneFulfillmentSettings.zoneId, zoneId))
+      .limit(1);
+    return row[0] ?? null;
+  }
+
+  private async resolveDeliveryFeeVnd(
+    zoneId: string,
+    serviceVertical: "FOOD" | "LAUNDRY",
+    handoffMode: "LOBBY_PICKUP" | "DOOR_DELIVERY",
+  ) {
+    const zoneSettings = await this.loadZoneDeliveryFees(zoneId);
+    return calculateCustomerDeliveryFeeVnd({
+      serviceVertical,
+      handoffMode,
+      zoneSettings,
+    });
+  }
+
+  private async buildLineItems(
+    providerLocationId: string,
+    items: CreateOrderInput["items"],
+  ) {
+    const menu = await listLocationMenu(this.sql, providerLocationId);
+    const menuById = new Map(menu.map((m) => [m.offering_id, m]));
+
+    const lineItems = items.map((item) => {
+      const offering = menuById.get(item.offeringId);
+      if (!offering) {
+        throw new PickiError("VALIDATION_ERROR", "Invalid offering for this location", {
+          details: { offeringId: item.offeringId },
+        });
+      }
+      const isReferenceOnly =
+        offering.pricing_kind === "QUOTE_REQUIRED" ||
+        offering.pricing_kind === "CONTACT" ||
+        offering.pricing_kind === "FROM";
+      const lineTotal = isReferenceOnly ? 0 : offering.amount_vnd * item.quantity;
+      return {
+        offeringId: item.offeringId,
+        name: offering.name,
+        description: offering.description,
+        unitPriceVnd: offering.amount_vnd,
+        quantity: item.quantity,
+        lineTotalVnd: lineTotal,
+        estimatedDays: offering.estimated_days,
+        fulfillmentMode: offering.fulfillment_mode,
+      };
+    });
+
+    const subtotalVnd = lineItems.reduce((sum, i) => sum + i.lineTotalVnd, 0);
+    const fulfillmentModes = new Set(
+      lineItems.map((i) => i.fulfillmentMode).filter(Boolean) as string[],
+    );
+    return { lineItems, subtotalVnd, fulfillmentModes };
+  }
+
   private async toOrderDto(
     order: typeof orders.$inferSelect,
     items: (typeof orderItems.$inferSelect)[],
@@ -379,6 +530,7 @@ export class OrdersService {
     return {
       id: order.id,
       orderNumber: order.orderNumber,
+      providerBrandName: await loadProviderBrand(this.db, order.providerLocationId),
       zoneId: order.zoneId,
       providerLocationId: order.providerLocationId,
       status: order.status,
@@ -407,17 +559,19 @@ export class OrdersService {
         unitPriceVnd: i.unitPriceVnd,
         quantity: i.quantity,
         lineTotalVnd: i.lineTotalVnd,
+        estimatedDays: i.estimatedDays,
       })),
       createdAt: order.createdAt.toISOString(),
       canCancel: canCustomerCancel(
         order.status,
         order.serviceVertical as "FOOD" | "LAUNDRY",
-        order.laundryPickupMode as "HOME_PICKUP" | "SHOP_DROP_OFF" | null,
+        order.laundryPickupMode as "HOME_PICKUP" | "SHOP_DROP_OFF" | "ON_SITE" | null,
       ),
       serviceVertical: order.serviceVertical,
       laundryPickupMode: order.laundryPickupMode,
       ...orderHandoffFields(order),
       runner: await loadRunnerSummary(this.db, order.runnerUserId),
+      contacts: await loadOrderContacts(this.db, order),
       fulfillment: fulfillment ?? null,
       lobby: lobby ?? null,
     };

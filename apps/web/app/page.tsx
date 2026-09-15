@@ -118,7 +118,7 @@ export default function HomePage() {
           <div className="logo">Picki</div>
           <div className="tagline">Hôm nay quanh bạn có gì?</div>
         </div>
-        <NotificationBell />
+        <NotificationBell audience="customer" />
       </div>
 
       {!joinedKvl ? (
@@ -143,6 +143,12 @@ export default function HomePage() {
               </Link>
               <Link href={`/zones/${KVL_SLUG}/map`} className="btn btn-secondary" style={{ width: "auto" }}>
                 🗺 Bản đồ live (S12)
+              </Link>
+              <Link href="/orders" className="btn btn-secondary" style={{ width: "auto" }}>
+                📋 Đơn của tôi
+              </Link>
+              <Link href="/requests" className="btn btn-secondary" style={{ width: "auto" }}>
+                🔧 Yêu cầu dịch vụ
               </Link>
             </div>
           </div>

@@ -2,20 +2,30 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useProviderLocation } from "./provider-location-context";
 
 const tabs = [
-  { href: "/provider", label: "Đơn", icon: "📋", exact: true },
-  { href: "/provider/history", label: "Lịch sử", icon: "📦", exact: false },
-  { href: "/provider/live", label: "Trạng thái", icon: "🟢", exact: false },
-  { href: "/provider/settings", label: "Cài đặt", icon: "⚙️", exact: false },
+  { href: "/provider", label: "Đơn", icon: "📋", exact: true, hideForBeauty: false, beautyOnly: false },
+  { href: "/provider/incoming", label: "Sắp tới", icon: "🚶", exact: false, hideForBeauty: false, beautyOnly: true },
+  { href: "/provider/requests", label: "Yêu cầu", icon: "🔧", exact: false, hideForBeauty: true, beautyOnly: false },
+  { href: "/provider/history", label: "Lịch sử", icon: "📦", exact: false, hideForBeauty: false, beautyOnly: false },
+  { href: "/provider/live", label: "Trạng thái", icon: "🟢", exact: false, hideForBeauty: false, beautyOnly: false },
+  { href: "/provider/settings", label: "Cài đặt", icon: "⚙️", exact: false, hideForBeauty: false, beautyOnly: false },
 ] as const;
 
 export function ProviderNav() {
   const pathname = usePathname();
+  const { activeLocation } = useProviderLocation();
+  const isBeauty = activeLocation?.providerType === "BEAUTY";
+  const visibleTabs = tabs.filter((tab) => {
+    if (isBeauty && tab.hideForBeauty) return false;
+    if (!isBeauty && tab.beautyOnly) return false;
+    return true;
+  });
 
   return (
     <nav className="provider-nav" aria-label="Điều hướng Provider">
-      {tabs.map((tab) => {
+      {visibleTabs.map((tab) => {
         const active = tab.exact ? pathname === tab.href : pathname.startsWith(tab.href);
         return (
           <Link

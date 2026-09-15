@@ -51,7 +51,7 @@ export default function LoginPage() {
     try {
       await api("/auth/otp/verify", {
         method: "POST",
-        body: JSON.stringify({ phone, code }),
+        body: JSON.stringify({ phone, code, app: "customer" }),
       });
       router.replace("/");
     } catch (e) {

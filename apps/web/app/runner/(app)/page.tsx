@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { OrderChat } from "../../components/order-chat";
+import { OrderPhoneLinks } from "../../components/order-phone-links";
 import { OrderStatusSteps } from "../../components/order-status-steps";
 import {
   RunnerPageShell,
@@ -11,8 +13,9 @@ import {
   type RunnerOrder,
 } from "../../components/runner-session-context";
 import { api } from "../../../lib/api";
+import { OrderNumberHeading } from "../../components/order-number-heading";
 import { orderStatusRich } from "../../../lib/order-display";
-import { formatVnd } from "../../../lib/money";
+import { formatOrderAmount, formatVnd } from "../../../lib/money";
 
 function pickupBlockReason(mine: RunnerOrder[]): string | null {
   const active = mine.filter(
@@ -20,10 +23,10 @@ function pickupBlockReason(mine: RunnerOrder[]): string | null {
   );
   if (active.length === 0) return null;
   if (active.some((o) => o.status === "RUNNER_ASSIGNED" || o.status === "PREPARING")) {
-    return "Chưa hết đơn sẵn sàng — chờ quán nấu và bàn giao cho runner (tất cả đơn trong route)";
+    return "Chưa hết đơn sẵn sàng — chờ quán nấu và bàn giao cho runner (tất cả đơn trong tiến trình)";
   }
   if (active.some((o) => o.status === "READY" && !o.providerHandoffAt)) {
-    return "Chờ quán bấm 'Đã giao cho runner' trên các đơn còn lại trong route";
+    return "Chờ quán bấm 'Đã giao cho runner' trên các đơn còn lại trong tiến trình";
   }
   return null;
 }
@@ -63,10 +66,10 @@ function RouteSummaryCard() {
     <div className="card" style={{ marginBottom: 16, borderLeft: "4px solid var(--runner-accent, #0d9488)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <p className="section-title" style={{ margin: 0 }}>
-          Route đang chạy · {route.orderCount} đơn
+          Tiến trình · {route.orderCount} đơn
         </p>
         <Link href="/runner/route" className="stat" style={{ fontSize: 13 }}>
-          Chi tiết →
+          Chi tiết tiến trình →
         </Link>
       </div>
       {nextStop ? (
@@ -152,37 +155,64 @@ function RunnerOrderCard({
   onAction: (orderId: string, act: string) => void;
 }) {
   const canClaim =
-    !order.assignedToMe && order.status === "PROVIDER_ACCEPTED" && order.runnerSoughtAt != null;
+    !order.assignedToMe &&
+    order.runnerSoughtAt != null &&
+    (order.serviceVertical === "LAUNDRY"
+      ? order.status === "READY_FOR_RETURN"
+      : order.status === "PROVIDER_ACCEPTED");
 
   return (
-    <article className="provider-card" style={{ marginBottom: 12 }}>
-      <strong>{order.orderNumber}</strong> · {formatVnd(order.totalVnd)}
+    <article id={`order-${order.id}`} className="provider-card" style={{ marginBottom: 12 }}>
+      <OrderNumberHeading
+        orderNumber={order.orderNumber}
+        providerBrandName={order.providerBrandName}
+        right={<span>{formatOrderAmount(order.totalVnd, order.serviceVertical)}</span>}
+      />
+      {(order.deliveryFeeVnd ?? 0) > 0 ? (
+        <p className="stat" style={{ margin: "4px 0 0", fontSize: 13 }}>
+          Phí giao (quán trả): {formatVnd(order.deliveryFeeVnd ?? 0)}
+        </p>
+      ) : null}
       <p className="stat">
         {orderStatusRich(order.status, {
           estimatedReadyAt: order.estimatedReadyAt,
           providerHandoffAt: order.providerHandoffAt,
+          serviceVertical: order.serviceVertical,
         })}
       </p>
-      <OrderStatusSteps status={order.status} />
+      <OrderStatusSteps status={order.status} serviceVertical={order.serviceVertical} />
       <p className="stat">
         {order.delivery.building}-{order.delivery.apartment}
       </p>
+      {order.contacts ? (
+        <OrderPhoneLinks contacts={order.contacts} hideRole="runner" compact />
+      ) : null}
       {order.assignedToMe && order.routeId && hasRoute ? (
         <p className="stat" style={{ marginBottom: 8, fontSize: 13 }}>
-          Route đã tạo — làm theo bước ở thẻ Route phía trên hoặc tab{" "}
-          <Link href="/runner/route">Route</Link>.
+          Tiến trình đã tạo — làm theo bước ở thẻ phía trên hoặc tab{" "}
+          <Link href="/runner/route">Tiến trình</Link>.
         </p>
       ) : null}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
         {canClaim ? (
-          <button
-            type="button"
-            className="btn runner-btn"
-            style={{ width: "auto", padding: "8px 12px" }}
-            onClick={() => onAction(order.id, "accept")}
-          >
-            Nhận giao
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn runner-btn"
+              style={{ width: "auto", padding: "8px 12px" }}
+              onClick={() => onAction(order.id, "accept")}
+            >
+              Nhận giao
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ width: "auto", padding: "8px 12px" }}
+              onClick={() => onAction(order.id, "skip")}
+            >
+              Bỏ qua
+            </button>
+          </>
         ) : null}
         {order.assignedToMe && order.status === "RUNNER_ASSIGNED" ? (
           <p className="stat" style={{ margin: 0 }}>
@@ -231,13 +261,15 @@ function RunnerOrderCard({
         ) : null}
       </div>
       {order.assignedToMe && order.status !== "DELIVERED" ? (
-        <OrderChat orderId={order.id} compact />
+        <OrderChat orderId={order.id} viewerRole="RUNNER" compact />
       ) : null}
     </article>
   );
 }
 
 export default function RunnerOrdersPage() {
+  const searchParams = useSearchParams();
+  const focusOrderId = searchParams.get("focus");
   const { pool, mine, route, refresh } = useRunnerSession();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -247,6 +279,15 @@ export default function RunnerOrdersPage() {
     }, 15000);
     return () => window.clearInterval(timer);
   }, [refresh]);
+
+  useEffect(() => {
+    if (!focusOrderId) return;
+    const el = document.getElementById(`order-${focusOrderId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("order-focus-highlight");
+    }
+  }, [focusOrderId, pool, mine]);
 
   async function action(orderId: string, act: string) {
     await api(`/runner/orders/${orderId}`, {
@@ -289,7 +330,10 @@ export default function RunnerOrdersPage() {
           </button>
         </div>
         {pool.length === 0 ? (
-          <p className="stat">Chưa có đơn — quán phải nhận đơn và bấm &quot;Tìm runner&quot; trước.</p>
+          <p className="stat">
+            Chưa có đơn — giặt là chỉ hiện khi tiệm bấm &quot;Tìm runner&quot; ở bước giao lại; food
+            khi quán bấm tìm runner sau nhận đơn.
+          </p>
         ) : (
           pool.map((o) => (
             <RunnerOrderCard

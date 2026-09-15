@@ -10,6 +10,7 @@ export type ProviderLocation = {
   providerId: string;
   providerSlug: string;
   brandName: string;
+  providerType?: string;
   locationId: string | null;
   locationName: string;
   role: string;
@@ -149,7 +150,7 @@ export function ProviderPageShell({
           <div className="logo provider-logo">Picki Provider</div>
           <div className="tagline">{activeLocation?.brandName ?? title}</div>
         </div>
-        <NotificationBell />
+        <NotificationBell audience="provider" />
       </div>
       {children}
     </div>

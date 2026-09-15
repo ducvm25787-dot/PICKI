@@ -25,6 +25,7 @@ type OrderStatusPayload = {
   runnerUserId: string | null;
   fromStatus: string | null;
   toStatus: string;
+  actorUserId?: string | null;
 };
 
 type MessagePayload = {
@@ -41,13 +42,20 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   CREATED: "Đơn mới",
   PAYMENT_PENDING: "Chờ thanh toán",
   PAID: "Đã thanh toán",
-  PROVIDER_ACCEPTED: "Quán đã nhận — đang tìm runner",
+  PROVIDER_ACCEPTED: "Quán đã nhận đơn",
   RUNNER_ASSIGNED: "Runner đã nhận — chờ quán nấu",
   PREPARING: "Đang nấu",
   READY: "Sẵn sàng giao",
   PICKED_UP: "Runner đã lấy hàng",
   DELIVERING: "Đang giao",
   DELIVERED: "Đã giao",
+  AT_SHOP: "Đồ đã về tiệm",
+  PROCESSING: "Đang giặt",
+  READY_FOR_RETURN: "Sẵn sàng giao lại",
+  RETURN_RUNNER_ASSIGNED: "Runner giao lại",
+  RETURN_PICKED_UP: "Runner lấy đồ tại tiệm",
+  RETURN_DELIVERING: "Đang giao về",
+  COMPLETED: "Hoàn tất",
   PROVIDER_REJECTED: "Quán từ chối",
   CUSTOMER_CANCELLED: "Khách hủy",
   SYSTEM_CANCELLED: "Hệ thống hủy",
@@ -110,26 +118,36 @@ export class NotificationService implements OnModuleInit {
   }
 
   async listForUser(userId: string, limit = 30) {
+    const isRunner = await this.userIsRunner(userId);
+
     const rows = await this.db
       .select()
       .from(notifications)
-      .where(eq(notifications.userId, userId))
+      .where(and(eq(notifications.userId, userId), isNull(notifications.supersededAt)))
       .orderBy(desc(notifications.createdAt))
-      .limit(limit);
+      .limit(limit * 2);
 
-    const unread = rows.filter((r) => r.readAt == null).length;
+    const visible = rows.filter((r) => {
+      if (r.eventType === "order.seeking_runner" && !isRunner) return false;
+      if (r.eventType === "order.runner_sought") return false;
+      return true;
+    });
+
+    const notificationsOut = visible.slice(0, limit).map((n) => ({
+      id: n.id,
+      eventType: n.eventType,
+      title: n.title,
+      body: n.body,
+      payload: n.payload,
+      read: n.readAt != null,
+      createdAt: n.createdAt.toISOString(),
+    }));
+
+    const unread = notificationsOut.filter((r) => !r.read).length;
 
     return {
       unreadCount: unread,
-      notifications: rows.map((n) => ({
-        id: n.id,
-        eventType: n.eventType,
-        title: n.title,
-        body: n.body,
-        payload: n.payload,
-        read: n.readAt != null,
-        createdAt: n.createdAt.toISOString(),
-      })),
+      notifications: notificationsOut,
     };
   }
 
@@ -151,65 +169,257 @@ export class NotificationService implements OnModuleInit {
 
   async processOrderStatusChanged(payload: OrderStatusPayload): Promise<void> {
     const label = ORDER_STATUS_LABELS[payload.toStatus] ?? payload.toStatus;
-    const title = `${payload.orderNumber}: ${label}`;
-    const body = `Trạng thái đơn hàng cập nhật — ${label}.`;
-    const base = {
-      eventType: "order.status_changed",
-      channel: "WEB" as const,
-      title,
-      body,
-      payload: {
-        orderId: payload.orderId,
-        orderNumber: payload.orderNumber,
-        status: payload.toStatus,
-      },
+    const eventPayload = {
+      orderId: payload.orderId,
+      orderNumber: payload.orderNumber,
+      status: payload.toStatus,
     };
 
-    const recipients = new Set<string>();
+    const excludeActor = payload.actorUserId ?? null;
 
-    if (payload.toStatus === "CREATED" || payload.toStatus === "PAID") {
+    const customerCopy = this.customerNotificationCopy(payload.toStatus, payload.orderNumber, label);
+    if (customerCopy) {
+      await this.deliver(
+        [payload.customerUserId],
+        {
+          eventType: "order.status_changed",
+          channel: "WEB",
+          title: customerCopy.title,
+          body: customerCopy.body,
+          payload: eventPayload,
+        },
+        { excludeUserId: excludeActor },
+      );
+    }
+
+    const providerCopy = this.providerNotificationCopy(payload.toStatus, payload.orderNumber, label);
+    if (providerCopy) {
       const staff = await this.providerStaffForLocation(payload.providerLocationId);
-      staff.forEach((id) => recipients.add(id));
+      if (staff.length > 0) {
+        await this.deliver(
+          staff,
+          {
+            eventType: "order.status_changed",
+            channel: "WEB",
+            title: providerCopy.title,
+            body: providerCopy.body,
+            payload: eventPayload,
+          },
+          { excludeUserId: excludeActor },
+        );
+      }
     }
 
-    if (
-      payload.toStatus !== "CREATED" &&
-      !["PAYMENT_PENDING", "PAYMENT_FAILED"].includes(payload.toStatus)
-    ) {
-      recipients.add(payload.customerUserId);
+    const runnerBody = this.runnerStatusBody(payload.toStatus, label);
+    if (runnerBody && payload.runnerUserId) {
+      await this.deliver(
+        [payload.runnerUserId],
+        {
+          eventType: "order.status_changed",
+          channel: "WEB",
+          title: `${payload.orderNumber}: ${label}`,
+          body: runnerBody,
+          payload: eventPayload,
+        },
+        { excludeUserId: excludeActor },
+      );
     }
+  }
 
-    if (payload.toStatus === "RUNNER_ASSIGNED") {
-      const staff = await this.providerStaffForLocation(payload.providerLocationId);
-      staff.forEach((id) => recipients.add(id));
-      if (payload.runnerUserId) recipients.add(payload.runnerUserId);
+  private customerNotificationCopy(
+    toStatus: string,
+    orderNumber: string,
+    label: string,
+  ): { title: string; body: string } | null {
+    switch (toStatus) {
+      case "CREATED":
+      case "PAYMENT_PENDING":
+      case "PAYMENT_FAILED":
+      case "RUNNER_ASSIGNED":
+      case "RETURN_RUNNER_ASSIGNED":
+      case "CUSTOMER_CANCELLED":
+      case "SYSTEM_CANCELLED":
+        return null;
+      case "PAID":
+        return {
+          title: `${orderNumber}: Đã thanh toán`,
+          body: "Thanh toán thành công — tiệm sẽ xác nhận đơn.",
+        };
+      case "PROVIDER_ACCEPTED":
+        return {
+          title: `${orderNumber}: Tiệm đã nhận đơn`,
+          body: "Tiệm đã nhận đơn của bạn.",
+        };
+      case "PROVIDER_REJECTED":
+        return {
+          title: `${orderNumber}: Tiệm từ chối đơn`,
+          body: "Tiệm đã từ chối đơn — xem chi tiết đơn hàng.",
+        };
+      case "PREPARING":
+        return {
+          title: `${orderNumber}: Đang chuẩn bị`,
+          body: "Quán đang chuẩn bị món.",
+        };
+      case "READY":
+        return {
+          title: `${orderNumber}: Sẵn sàng giao`,
+          body: "Món đã sẵn sàng — chờ runner lấy hàng.",
+        };
+      case "READY_FOR_RETURN":
+        return {
+          title: `${orderNumber}: Chuẩn bị giao`,
+          body: "Đồ đã sẵn sàng — tiệm chuẩn bị giao về cho bạn.",
+        };
+      case "PICKED_UP":
+        return {
+          title: `${orderNumber}: ${label}`,
+          body: "Runner đã lấy hàng tại quán.",
+        };
+      case "RETURN_PICKED_UP":
+        return {
+          title: `${orderNumber}: ${label}`,
+          body: "Runner đã lấy đồ tại tiệm.",
+        };
+      case "DELIVERING":
+      case "RETURN_DELIVERING":
+        return {
+          title: `${orderNumber}: Đang giao`,
+          body: "Đơn đang được giao.",
+        };
+      case "DELIVERED":
+        return {
+          title: `${orderNumber}: Đã giao`,
+          body: "Đã giao thành công.",
+        };
+      case "AT_SHOP":
+        return {
+          title: `${orderNumber}: ${label}`,
+          body: "Đồ đã về tiệm — đang xử lý.",
+        };
+      case "PROCESSING":
+        return {
+          title: `${orderNumber}: Đang xử lý`,
+          body: "Tiệm đang giặt / xử lý đồ của bạn.",
+        };
+      case "COMPLETED":
+        return {
+          title: `${orderNumber}: Hoàn tất`,
+          body: "Đơn giặt đã hoàn tất.",
+        };
+      default:
+        return {
+          title: `${orderNumber}: ${label}`,
+          body: `Trạng thái đơn: ${label}.`,
+        };
     }
+  }
 
-    if (payload.runnerUserId && ["PICKED_UP", "DELIVERING"].includes(payload.toStatus)) {
-      recipients.add(payload.runnerUserId);
+  /** Tiệm — đơn mới, hủy, runner tiến trình (không nhận tin gọi runner pool). */
+  private providerNotificationCopy(
+    toStatus: string,
+    orderNumber: string,
+    label: string,
+  ): { title: string; body: string } | null {
+    switch (toStatus) {
+      case "CREATED":
+      case "PAID":
+        return {
+          title: `${orderNumber}: Đơn mới`,
+          body: "Có đơn mới — mở tab Đơn để nhận.",
+        };
+      case "PROVIDER_ACCEPTED":
+      case "PROVIDER_REJECTED":
+      case "READY_FOR_RETURN":
+        return null;
+      case "CUSTOMER_CANCELLED":
+        return {
+          title: `${orderNumber}: Khách hủy đơn`,
+          body: "Khách đã hủy đơn.",
+        };
+      case "SYSTEM_CANCELLED":
+        return {
+          title: `${orderNumber}: Hệ thống hủy`,
+          body: "Đơn đã bị hủy bởi hệ thống.",
+        };
+      case "RUNNER_ASSIGNED":
+      case "RETURN_RUNNER_ASSIGNED":
+        return {
+          title: `${orderNumber}: Runner nhận đơn`,
+          body: "Runner đã nhận đơn.",
+        };
+      case "PICKED_UP":
+        return {
+          title: `${orderNumber}: ${label}`,
+          body: "Runner đã lấy hàng tại quán.",
+        };
+      case "RETURN_PICKED_UP":
+        return {
+          title: `${orderNumber}: ${label}`,
+          body: "Runner đã lấy đồ tại tiệm.",
+        };
+      case "DELIVERING":
+      case "RETURN_DELIVERING":
+        return {
+          title: `${orderNumber}: Đang giao`,
+          body: "Runner đang giao đơn.",
+        };
+      case "DELIVERED":
+        return {
+          title: `${orderNumber}: Đã giao`,
+          body: "Đơn đã giao xong.",
+        };
+      case "COMPLETED":
+        return {
+          title: `${orderNumber}: Hoàn tất`,
+          body: "Đơn giặt đã hoàn tất.",
+        };
+      default:
+        return null;
     }
+  }
 
-    if (["PROVIDER_REJECTED", "SYSTEM_CANCELLED", "CUSTOMER_CANCELLED"].includes(payload.toStatus)) {
-      const staff = await this.providerStaffForLocation(payload.providerLocationId);
-      staff.forEach((id) => recipients.add(id));
-    }
-
-    await this.deliver(Array.from(recipients), base);
+  /** Runner — không nhận thông báo tiến trình do chính mình thực hiện (chỉ pool + handoff). */
+  private runnerStatusBody(_toStatus: string, _label: string): string | null {
+    return null;
   }
 
   async processSeekingRunner(payload: {
     orderId: string;
     orderNumber: string;
     customerUserId: string;
+    providerLocationId?: string;
     zoneId: string;
+    leg?: "INBOUND" | "RETURN";
+    wave?: number;
+    runnerUserIds?: string[];
+    deliveryFeeVnd?: number;
+    actorUserId?: string | null;
   }): Promise<void> {
-    const runners = await this.runnersInZone(payload.zoneId);
-    await this.deliver([payload.customerUserId, ...runners], {
+    const runnerRecipients = payload.runnerUserIds ?? [];
+    if (runnerRecipients.length === 0) {
+      this.logger.warn(`seeking_runner skipped — no targets for ${payload.orderNumber}`);
+      return;
+    }
+
+    const feePart =
+      payload.deliveryFeeVnd && payload.deliveryFeeVnd > 0
+        ? ` Phí giao: ${payload.deliveryFeeVnd.toLocaleString("vi-VN")}đ.`
+        : "";
+
+    const basePayload = {
+      orderId: payload.orderId,
+      orderNumber: payload.orderNumber,
+      wave: payload.wave ?? 1,
+      leg: payload.leg ?? "INBOUND",
+      deliveryFeeVnd: payload.deliveryFeeVnd ?? 0,
+    };
+
+    await this.deliver(runnerRecipients, {
       eventType: "order.seeking_runner",
       channel: "WEB",
-      title: `${payload.orderNumber}: Quán đang tìm runner`,
-      body: "Runner có thể nhận giao ngay trên app Runner.",
-      payload: { orderId: payload.orderId, orderNumber: payload.orderNumber },
+      title: `${payload.orderNumber}: Đơn giao mới`,
+      body: `Mở app Runner để nhận.${feePart}`,
+      payload: basePayload,
     });
   }
 
@@ -218,28 +428,159 @@ export class NotificationService implements OnModuleInit {
     orderNumber: string;
     customerUserId: string;
     runnerUserId: string;
+    actorUserId?: string | null;
   }): Promise<void> {
-    await this.deliver([payload.customerUserId, payload.runnerUserId], {
-      eventType: "order.provider_handoff",
-      channel: "WEB",
-      title: `${payload.orderNumber}: Quán đã giao cho runner`,
-      body: "Runner có thể xác nhận đã nhận hàng tại quán.",
-      payload: { orderId: payload.orderId, orderNumber: payload.orderNumber },
-    });
+    await this.deliver(
+      [payload.customerUserId, payload.runnerUserId],
+      {
+        eventType: "order.provider_handoff",
+        channel: "WEB",
+        title: `${payload.orderNumber}: Quán đã giao cho runner`,
+        body: "Runner có thể xác nhận đã nhận hàng tại quán.",
+        payload: { orderId: payload.orderId, orderNumber: payload.orderNumber },
+      },
+      { excludeUserId: payload.actorUserId ?? null },
+    );
   }
 
   async processRunnerArrivedLobby(payload: {
     orderId: string;
     orderNumber: string;
     customerUserId: string;
+    actorUserId?: string | null;
   }): Promise<void> {
-    await this.deliver([payload.customerUserId], {
-      eventType: "runner.arrived_lobby",
-      channel: "WEB",
-      title: `${payload.orderNumber}: Runner đã đến sảnh`,
-      body: "Runner đang chờ bạn xuống nhận hàng.",
-      payload: { orderId: payload.orderId, orderNumber: payload.orderNumber },
-    });
+    await this.deliver(
+      [payload.customerUserId],
+      {
+        eventType: "runner.arrived_lobby",
+        channel: "WEB",
+        title: `${payload.orderNumber}: Runner đã đến sảnh`,
+        body: "Runner đang chờ bạn xuống nhận hàng.",
+        payload: { orderId: payload.orderId, orderNumber: payload.orderNumber },
+      },
+      { excludeUserId: payload.actorUserId ?? null },
+    );
+  }
+
+  async processServiceRequest(
+    eventType: string,
+    payload: {
+      requestId: string;
+      requestNumber: string;
+      customerUserId: string;
+      providerLocationId: string;
+      status?: string;
+      actorUserId?: string | null;
+    },
+  ): Promise<void> {
+    const basePayload = {
+      requestId: payload.requestId,
+      requestNumber: payload.requestNumber,
+    };
+    const excludeActor = payload.actorUserId ?? null;
+
+    if (eventType === "service_request.created") {
+      const staff = await this.providerStaffForLocation(payload.providerLocationId);
+      if (staff.length > 0) {
+        await this.deliver(
+          staff,
+          {
+            eventType,
+            channel: "WEB",
+            title: `${payload.requestNumber}: Yêu cầu mới`,
+            body: "Có yêu cầu dịch vụ — mở tab Yêu cầu để xử lý.",
+            payload: basePayload,
+          },
+          { excludeUserId: excludeActor },
+        );
+      }
+      return;
+    }
+
+    const customerCopy: Record<string, { title: string; body: string }> = {
+      "service_request.confirmed": {
+        title: `${payload.requestNumber}: Thợ đã nhận`,
+        body: "Thợ đã nhận yêu cầu — liên hệ qua chat nếu cần.",
+      },
+      "service_request.rejected": {
+        title: `${payload.requestNumber}: Thợ từ chối`,
+        body: "Thợ không nhận yêu cầu — xem chi tiết.",
+      },
+      "service_request.completed": {
+        title: `${payload.requestNumber}: Hoàn tất`,
+        body: "Dịch vụ đã hoàn tất.",
+      },
+      "service_request.cancelled": {
+        title: `${payload.requestNumber}: Đã hủy`,
+        body: "Yêu cầu đã được hủy.",
+      },
+    };
+
+    const copy = customerCopy[eventType];
+    if (copy) {
+      await this.deliver(
+        [payload.customerUserId],
+        {
+          eventType,
+          channel: "WEB",
+          title: copy.title,
+          body: copy.body,
+          payload: basePayload,
+        },
+        { excludeUserId: excludeActor },
+      );
+    }
+  }
+
+  async processVisitIntent(
+    eventType: string,
+    payload: {
+      intentId: string;
+      providerLocationId: string;
+      offeringName?: string;
+      etaMinutes?: number;
+      expectedAt?: string;
+      actorUserId?: string | null;
+    },
+  ): Promise<void> {
+    const excludeActor = payload.actorUserId ?? null;
+
+    if (eventType === "visit_intent.created") {
+      const staff = await this.providerStaffForLocation(payload.providerLocationId);
+      const eta = payload.etaMinutes != null ? `~${String(payload.etaMinutes)} phút` : "sắp tới";
+      const service = payload.offeringName ? ` · ${payload.offeringName}` : "";
+      if (staff.length > 0) {
+        await this.deliver(
+          staff,
+          {
+            eventType,
+            channel: "WEB",
+            title: "Khách sắp tới tiệm",
+            body: `Có khách báo tới sau ${eta}${service} — mở tab Sắp tới.`,
+            payload: { intentId: payload.intentId },
+          },
+          { excludeUserId: excludeActor },
+        );
+      }
+      return;
+    }
+
+    if (eventType === "visit_intent.cancelled") {
+      const staff = await this.providerStaffForLocation(payload.providerLocationId);
+      if (staff.length > 0) {
+        await this.deliver(
+          staff,
+          {
+            eventType,
+            channel: "WEB",
+            title: "Khách hủy báo sắp tới",
+            body: "Khách đã hủy thông báo sắp tới tiệm.",
+            payload: { intentId: payload.intentId },
+          },
+          { excludeUserId: excludeActor },
+        );
+      }
+    }
   }
 
   async processMessageReceived(payload: MessagePayload): Promise<void> {
@@ -274,8 +615,10 @@ export class NotificationService implements OnModuleInit {
       body: string;
       payload: Record<string, unknown>;
     },
+    options?: { excludeUserId?: string | null },
   ) {
-    const unique = [...new Set(userIds)].filter(Boolean);
+    const exclude = options?.excludeUserId ?? null;
+    const unique = [...new Set(userIds)].filter(Boolean).filter((id) => id !== exclude);
     if (unique.length === 0) return;
 
     await this.db.insert(notifications).values(
@@ -316,6 +659,10 @@ export class NotificationService implements OnModuleInit {
     ) {
       return "/runner";
     }
+    if (eventType.startsWith("service_request.")) {
+      const requestId = payload.requestId;
+      if (typeof requestId === "string") return `/requests/${requestId}`;
+    }
     if (eventType === "message.received" || eventType.startsWith("order.") || eventType.startsWith("runner.")) {
       const orderId = payload.orderId;
       if (typeof orderId === "string") return `/orders/${orderId}`;
@@ -335,7 +682,9 @@ export class NotificationService implements OnModuleInit {
       .where(inArray(pushSubscriptions.userId, userIds));
 
     const url = this.pushUrl(input.eventType, input.payload);
-    const tag = `${input.eventType}:${String(input.payload.orderId ?? input.payload.messageId ?? Date.now())}`;
+    const wave =
+      typeof input.payload.wave === "number" ? `:w${String(input.payload.wave)}` : "";
+    const tag = `${input.eventType}:${String(input.payload.orderId ?? input.payload.messageId ?? Date.now())}${wave}`;
 
     for (const sub of subs) {
       try {
@@ -377,11 +726,12 @@ export class NotificationService implements OnModuleInit {
     return rows.map((r) => r.userId);
   }
 
-  private async runnersInZone(zoneId: string): Promise<string[]> {
-    const rows = await this.db
+  private async userIsRunner(userId: string): Promise<boolean> {
+    const row = await this.db
       .select({ userId: runners.userId })
       .from(runners)
-      .where(and(eq(runners.zoneId, zoneId), eq(runners.status, "ACTIVE")));
-    return rows.map((r) => r.userId);
+      .where(eq(runners.userId, userId))
+      .limit(1);
+    return Boolean(row[0]);
   }
 }

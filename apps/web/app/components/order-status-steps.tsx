@@ -1,18 +1,27 @@
 "use client";
 
-import { orderFlowSteps, orderStepIndex } from "../../lib/order-display";
+import { flowStepsForOrder, orderStepIndex } from "../../lib/order-display";
 
 export function OrderStatusSteps({
   status,
   runnerSoughtAt,
   serviceVertical,
+  laundryPickupMode,
+  audience = "provider",
 }: {
   status: string;
   runnerSoughtAt?: string | null;
   serviceVertical?: string | null;
+  laundryPickupMode?: string | null;
+  audience?: "customer" | "provider" | "runner";
 }) {
-  const steps = orderFlowSteps(serviceVertical);
-  const current = orderStepIndex(status, { runnerSoughtAt, serviceVertical });
+  const steps = flowStepsForOrder({ serviceVertical, laundryPickupMode, audience });
+  const current = orderStepIndex(status, {
+    runnerSoughtAt,
+    serviceVertical,
+    laundryPickupMode,
+    audience,
+  });
   if (current < 0) return null;
 
   return (

@@ -127,7 +127,7 @@ login() {
   local otp
   otp="$(echo "$otp_resp" | py field devOtp)"
   [ -n "$otp" ] || fail "No devOtp — set AUTH_OTP_DEV_EXPOSE=true"
-  api POST "/auth/otp/verify" "{\"phone\":\"$phone\",\"code\":\"$otp\"}" "$jar" >/dev/null
+  api POST "/auth/otp/verify" "{\"phone\":\"$phone\",\"code\":\"$otp\",\"app\":\"$label\"}" "$jar" >/dev/null
   ok "$label logged in"
 }
 

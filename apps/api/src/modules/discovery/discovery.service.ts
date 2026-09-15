@@ -4,6 +4,8 @@ import {
   discoveryBlocksForNow,
   listDailySpecialsForLocation,
   listDiscoveryProviders,
+  listBeautyProviders,
+  listHomeServiceProviders,
   listLaundryProviders,
   listMapProviders,
   locationReviews,
@@ -46,6 +48,28 @@ export class DiscoveryService {
         subtitle: "Lấy đồ tận nhà — giao tiệm giặt",
         foodMoments: [],
         providers: laundry.map(mapProvider),
+      });
+    }
+
+    const homeServices = await listHomeServiceProviders(this.sql, zone.id);
+    if (homeServices.length > 0) {
+      enriched.push({
+        id: "home-services",
+        title: "DỊCH VỤ NHÀ",
+        subtitle: "Sửa điện, nước, vệ sinh — thợ đến tận nhà",
+        foodMoments: [],
+        providers: homeServices.map(mapProvider),
+      });
+    }
+
+    const beauty = await listBeautyProviders(this.sql, zone.id);
+    if (beauty.length > 0) {
+      enriched.push({
+        id: "beauty",
+        title: "LÀM ĐẸP",
+        subtitle: "Cắt tóc, nail, spa — xem thời gian chờ live",
+        foodMoments: [],
+        providers: beauty.map(mapProvider),
       });
     }
 
@@ -203,6 +227,7 @@ function mapProvider(r: {
   live_status: string;
   prep_minutes: number | null;
   eta_minutes: number | null;
+  estimated_wait_minutes: number | null;
   address_line: string | null;
   lat: number | null;
   lng: number | null;
@@ -220,6 +245,7 @@ function mapProvider(r: {
     liveStatus: r.live_status,
     prepMinutes: r.prep_minutes,
     etaMinutes: r.eta_minutes,
+    estimatedWaitMinutes: r.estimated_wait_minutes,
     addressLine: r.address_line,
     lat: r.lat,
     lng: r.lng,

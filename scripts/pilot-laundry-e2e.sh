@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pilot Laundry KVL — automated API E2E (home pickup → shop → return)
+# Pilot Laundry KVL — staff pickup → shop → return via Picki runner
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -9,7 +9,7 @@ KVL_LAT="20.9883"
 KVL_LNG="105.8414"
 
 CUSTOMER_PHONE="0901234567"
-PROVIDER_PHONE="0908888001"
+PROVIDER_PHONE="0908888004"
 RUNNER_PHONE="0908888002"
 
 COOKIE_DIR="$(mktemp -d)"
@@ -47,8 +47,13 @@ elif cmd == "laundry_location":
             break
 elif cmd == "first_offering":
     items = d.get("items") or []
-    if items:
-        print(items[0]["id"])
+    for item in items:
+        if item.get("fulfillmentMode") == "PICKUP_AND_RETURN":
+            print(item["id"])
+            break
+    else:
+        if items:
+            print(items[0]["id"])
 elif cmd == "first_address_id":
     addrs = d.get("addresses") or []
     if addrs:
@@ -73,6 +78,11 @@ elif cmd == "first_pending_stop":
             break
 elif cmd == "len_orders":
     print(len(d.get("orders", [])))
+elif cmd == "len_pool":
+    print(len(d.get("pool", [])))
+elif cmd == "pool_has_order":
+    order_id = sys.argv[2]
+    print(any(o.get("id") == order_id for o in d.get("pool", [])))
 elif cmd == "len_providers":
     print(len(d.get("providers", [])))
 PY
@@ -113,7 +123,7 @@ login() {
   local otp
   otp="$(echo "$otp_resp" | py field devOtp)"
   [ -n "$otp" ] || fail "No devOtp — set AUTH_OTP_DEV_EXPOSE=true"
-  api POST "/auth/otp/verify" "{\"phone\":\"$phone\",\"code\":\"$otp\"}" "$jar" >/dev/null
+  api POST "/auth/otp/verify" "{\"phone\":\"$phone\",\"code\":\"$otp\",\"app\":\"$label\"}" "$jar" >/dev/null
   ok "$label logged in"
 }
 
@@ -154,12 +164,17 @@ create_laundry_order() {
   local offering_id="$3"
   local address_id="$4"
   local key="e2e-laundry-$(date +%s)-$RANDOM"
-  log "Create laundry COD order (home pickup)"
-  api POST "/orders" "{\"providerLocationId\":\"$loc_id\",\"zoneId\":\"$zone_id\",\"addressId\":\"$address_id\",\"deliveryHandoffMode\":\"DOOR_DELIVERY\",\"laundryPickupMode\":\"HOME_PICKUP\",\"paymentMode\":\"COD\",\"idempotencyKey\":\"$key\",\"items\":[{\"offeringId\":\"$offering_id\",\"quantity\":1}]}" "$COOKIE_DIR/customer.cookies" | py field id
+  log "Create laundry order (staff home pickup, pay on completion)"
+  api POST "/orders" "{\"providerLocationId\":\"$loc_id\",\"zoneId\":\"$zone_id\",\"addressId\":\"$address_id\",\"deliveryHandoffMode\":\"DOOR_DELIVERY\",\"laundryPickupMode\":\"HOME_PICKUP\",\"paymentMode\":\"PAY_ON_COMPLETION\",\"idempotencyKey\":\"$key\",\"items\":[{\"offeringId\":\"$offering_id\",\"quantity\":1}]}" "$COOKIE_DIR/customer.cookies" | py field id
 }
 
 order_status() {
   api GET "/orders/$1" "" "$COOKIE_DIR/customer.cookies" | py field status
+}
+
+runner_pool_has_order() {
+  local order_id="$1"
+  api GET "/runner/orders" "" "$COOKIE_DIR/runner.cookies" | py pool_has_order "$order_id"
 }
 
 complete_all_pending_stops() {
@@ -183,21 +198,30 @@ run_laundry_flow() {
   local prov_jar="$COOKIE_DIR/provider.cookies"
   local run_jar="$COOKIE_DIR/runner.cookies"
 
-  log "Provider accept + find runner (inbound)"
+  log "Provider accept (no runner on pickup)"
   api PATCH "/provider/orders/$order_id" '{"action":"accept"}' "$prov_jar" >/dev/null
-  api PATCH "/runner/presence" '{"status":"AVAILABLE"}' "$run_jar" >/dev/null
-  api PATCH "/runner/orders/$order_id" '{"action":"accept"}' "$run_jar" >/dev/null
 
   local st
   st="$(order_status "$order_id")"
-  [ "$st" = "RUNNER_ASSIGNED" ] || fail "Expected RUNNER_ASSIGNED, got $st"
+  [ "$st" = "PROVIDER_ACCEPTED" ] || fail "Expected PROVIDER_ACCEPTED after accept, got $st"
+  ok "Provider accepted — staff schedules pickup via chat"
 
-  log "Runner inbound route (customer → shop)"
-  complete_all_pending_stops
+  if [ "$(runner_pool_has_order "$order_id")" = "True" ]; then
+    fail "Runner must not see laundry order during pickup phase"
+  fi
+  ok "Runner pool empty during pickup (accept)"
+
+  log "Provider collected items from customer"
+  api PATCH "/provider/orders/$order_id" '{"action":"collected"}' "$prov_jar" >/dev/null
 
   st="$(order_status "$order_id")"
-  [ "$st" = "AT_SHOP" ] || fail "Expected AT_SHOP after inbound, got $st"
-  ok "Inbound complete — at shop"
+  [ "$st" = "AT_SHOP" ] || fail "Expected AT_SHOP after collected, got $st"
+  ok "Items at shop — estimated delivery set"
+
+  if [ "$(runner_pool_has_order "$order_id")" = "True" ]; then
+    fail "Runner must not see laundry order while at shop / processing"
+  fi
+  ok "Runner pool empty during processing"
 
   log "Provider process laundry"
   api PATCH "/provider/orders/$order_id" '{"action":"processing"}' "$prov_jar" >/dev/null
@@ -207,7 +231,13 @@ run_laundry_flow() {
   st="$(order_status "$order_id")"
   [ "$st" = "READY_FOR_RETURN" ] || fail "Expected READY_FOR_RETURN, got $st"
 
+  if [ "$(runner_pool_has_order "$order_id")" != "True" ]; then
+    fail "Runner pool must include laundry order after find_return_runner"
+  fi
+  ok "Runner pool shows order only after Tìm runner"
+
   log "Runner accept return leg"
+  api PATCH "/runner/presence" '{"status":"AVAILABLE"}' "$run_jar" >/dev/null
   api PATCH "/runner/orders/$order_id" '{"action":"accept"}' "$run_jar" >/dev/null
   st="$(order_status "$order_id")"
   [ "$st" = "RETURN_RUNNER_ASSIGNED" ] || fail "Expected RETURN_RUNNER_ASSIGNED, got $st"
@@ -249,7 +279,7 @@ main() {
 
   echo ""
   echo "=== ALL PASS ==="
-  echo "Laundry order: $order_id (home pickup → shop → return)"
+  echo "Laundry order: $order_id (staff pickup → shop → Picki return)"
   echo ""
 }
 

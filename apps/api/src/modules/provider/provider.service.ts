@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
 import {
   orderItems,
   orders,
@@ -12,9 +12,15 @@ import {
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
 import { PICKI_DB } from "../../shared/tokens.js";
-import { loadRunnerSummary, orderHandoffFields } from "../orders/order-enrichment.js";
+import {
+  loadOrderContacts,
+  loadProviderBrand,
+  loadRunnerSummary,
+  orderHandoffFields,
+} from "../orders/order-enrichment.js";
 import { OrderTransitionService } from "../orders/order-transition.service.js";
 import { OutboxService } from "../outbox/outbox.service.js";
+import { RunnerDispatchService } from "../runner/runner-dispatch.service.js";
 import type { z } from "zod";
 import type { providerOrderActionSchema, updateLiveStatusSchema } from "./dto.js";
 
@@ -24,6 +30,7 @@ export class ProviderService {
     @Inject(PICKI_DB) private readonly db: PickiDb,
     @Inject(OrderTransitionService) private readonly transitions: OrderTransitionService,
     @Inject(OutboxService) private readonly outbox: OutboxService,
+    @Inject(RunnerDispatchService) private readonly runnerDispatch: RunnerDispatchService,
   ) {}
 
   async listMyLocations(userId: string) {
@@ -42,6 +49,7 @@ export class ProviderService {
       providerId: string;
       providerSlug: string;
       brandName: string;
+      providerType: string;
       locationId: string | null;
       locationName: string;
       role: string;
@@ -53,6 +61,7 @@ export class ProviderService {
           providerId: r.provider.id,
           providerSlug: r.provider.slug,
           brandName: r.provider.brandName,
+          providerType: r.provider.providerType,
           locationId: r.location.id,
           locationName: r.location.displayName,
           role: r.member.role,
@@ -72,6 +81,7 @@ export class ProviderService {
           providerId: r.provider.id,
           providerSlug: r.provider.slug,
           brandName: r.provider.brandName,
+          providerType: r.provider.providerType,
           locationId: loc.id,
           locationName: loc.displayName,
           role: r.member.role,
@@ -112,15 +122,25 @@ export class ProviderService {
       .orderBy(desc(orders.createdAt))
       .limit(50);
 
+    const providerBrandName = await loadProviderBrand(this.db, locationId);
+    const zoneRow = rows[0]
+      ? await this.runnerDispatch.loadZoneFees(rows[0].zoneId)
+      : null;
+
     const ordersOut = await Promise.all(
       rows.map(async (raw) => {
         const o = await this.ensureRunnerSought(raw);
+        const runnerLeg = o.serviceVertical === "LAUNDRY" ? "RETURN" : "INBOUND";
         return {
           id: o.id,
           orderNumber: o.orderNumber,
+          providerBrandName,
           status: o.status,
           serviceVertical: o.serviceVertical,
           laundryPickupMode: o.laundryPickupMode,
+          subtotalVnd: o.subtotalVnd,
+          deliveryFeeVnd: o.deliveryFeeVnd,
+          runnerFeeVnd: this.runnerDispatch.runnerFeeVnd(o, runnerLeg, zoneRow),
           totalVnd: o.totalVnd,
           paymentMode: o.paymentMode,
           delivery: {
@@ -130,6 +150,7 @@ export class ProviderService {
           createdAt: o.createdAt.toISOString(),
           ...orderHandoffFields(o),
           runner: await loadRunnerSummary(this.db, o.runnerUserId),
+          contacts: await loadOrderContacts(this.db, o),
           items: await this.db
             .select()
             .from(orderItems)
@@ -160,11 +181,16 @@ export class ProviderService {
       .orderBy(desc(orders.updatedAt))
       .limit(limit);
 
+    const providerBrandName = await loadProviderBrand(this.db, locationId);
+
     const ordersOut = await Promise.all(
       rows.map(async (o) => ({
         id: o.id,
         orderNumber: o.orderNumber,
+        providerBrandName,
         status: o.status,
+        subtotalVnd: o.subtotalVnd,
+        deliveryFeeVnd: o.deliveryFeeVnd,
         totalVnd: o.totalVnd,
         paymentMode: o.paymentMode,
         completedAt: o.updatedAt.toISOString(),
@@ -177,6 +203,82 @@ export class ProviderService {
     );
 
     return { orders: ordersOut };
+  }
+
+  async dailyRunnerStats(userId: string, locationId: string, date?: string) {
+    await this.assertLocationAccess(userId, locationId);
+
+    const { dayStart, dayEnd, dateLabel } = parseVnDayRange(date);
+
+    const delivered = await this.db
+      .select()
+      .from(orders)
+      .where(
+        and(
+          eq(orders.providerLocationId, locationId),
+          inArray(orders.status, ["DELIVERED", "COMPLETED"]),
+          gte(orders.updatedAt, dayStart),
+          lt(orders.updatedAt, dayEnd),
+        ),
+      )
+      .orderBy(desc(orders.updatedAt));
+
+    const inProgress = await this.db
+      .select()
+      .from(orders)
+      .where(
+        and(
+          eq(orders.providerLocationId, locationId),
+          or(
+            and(
+              eq(orders.serviceVertical, "FOOD"),
+              inArray(orders.status, ["RUNNER_ASSIGNED", "PICKED_UP", "DELIVERING"]),
+            ),
+            and(
+              eq(orders.serviceVertical, "LAUNDRY"),
+              inArray(orders.status, [
+                "RETURN_RUNNER_ASSIGNED",
+                "RETURN_PICKED_UP",
+                "RETURN_DELIVERING",
+              ]),
+            ),
+          ),
+          isNotNull(orders.runnerUserId),
+        ),
+      )
+      .orderBy(desc(orders.updatedAt));
+
+    const sumFee = (rows: (typeof delivered)[number][]) =>
+      rows.reduce((sum, o) => sum + o.deliveryFeeVnd, 0);
+
+    return {
+      date: dateLabel,
+      locationId,
+      deliveredOrderCount: delivered.length,
+      totalDeliveryFeeVnd: sumFee(delivered),
+      inProgressOrderCount: inProgress.length,
+      inProgressDeliveryFeeVnd: sumFee(inProgress),
+      note: "Quán tự trả runner theo số liệu này — Picki không chia payout V1.",
+      deliveredOrders: await Promise.all(
+        delivered.map(async (o) => ({
+          id: o.id,
+          orderNumber: o.orderNumber,
+          deliveryFeeVnd: o.deliveryFeeVnd,
+          totalVnd: o.totalVnd,
+          completedAt: o.updatedAt.toISOString(),
+          runner: await loadRunnerSummary(this.db, o.runnerUserId),
+        })),
+      ),
+      inProgressOrders: await Promise.all(
+        inProgress.map(async (o) => ({
+          id: o.id,
+          orderNumber: o.orderNumber,
+          deliveryFeeVnd: o.deliveryFeeVnd,
+          status: o.status,
+          runner: await loadRunnerSummary(this.db, o.runnerUserId),
+        })),
+      ),
+    };
   }
 
   async applyOrderAction(
@@ -238,7 +340,16 @@ export class ProviderService {
       throw new PickiError("VALIDATION_ERROR", "Invalid provider action");
     }
 
-    const result = await this.transitions.transition(orderId, toStatus, userId, `Provider: ${input.action}`);
+    if (input.action === "reject" && !input.rejectReason?.trim()) {
+      throw new PickiError("VALIDATION_ERROR", "Vui lòng chọn hoặc nhập lý do từ chối");
+    }
+
+    const note =
+      input.action === "reject"
+        ? `Provider rejected: ${input.rejectReason!.trim()}`
+        : `Provider: ${input.action}`;
+
+    const result = await this.transitions.transition(orderId, toStatus, userId, note);
 
     const etaPatch = providerEtaPatch(input.action);
     if (etaPatch) {
@@ -267,9 +378,6 @@ export class ProviderService {
         throw new PickiError("FORBIDDEN", "Order awaiting online payment");
       }
       if (order.status === "PROVIDER_ACCEPTED") {
-        if (order.laundryPickupMode === "HOME_PICKUP") {
-          return this.providerFindRunner(userId, order);
-        }
         return this.laundryOrderDto(order);
       }
       const result = await this.transitions.transition(
@@ -278,20 +386,66 @@ export class ProviderService {
         userId,
         "Laundry: accept",
       );
+      await this.db
+        .update(orders)
+        .set({
+          runnerUserId: null,
+          runnerSoughtAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(orders.id, order.id));
       const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
-      const latest = refreshed[0] ?? result.order;
-      if (latest.laundryPickupMode === "HOME_PICKUP") {
-        return this.providerFindRunner(userId, latest);
-      }
-      return this.laundryOrderDto(latest);
+      return this.laundryOrderDto(refreshed[0] ?? result.order);
     }
 
     if (input.action === "find_runner") {
-      return this.providerFindRunner(userId, order);
+      throw new PickiError("FORBIDDEN", "Đơn giặt không dùng runner lấy đồ — nhân viên tiệm đến lấy");
     }
 
     if (input.action === "find_return_runner") {
       return this.providerFindReturnRunner(userId, order);
+    }
+
+    if (input.action === "cancel_return_runner") {
+      if (order.status !== "READY_FOR_RETURN") {
+        throw new PickiError("FORBIDDEN", "Chỉ hủy gọi runner khi đồ đã sẵn sàng giao lại");
+      }
+      if (!order.runnerSoughtAt) {
+        throw new PickiError("FORBIDDEN", "Chưa gọi runner cho đơn này");
+      }
+      if (order.runnerUserId) {
+        throw new PickiError("FORBIDDEN", "Runner đã nhận đơn — không thể hủy gọi");
+      }
+      await this.runnerDispatch.cancelDispatch(order.id, { clearLaundryReturnFee: true });
+      const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+      return this.laundryOrderDto(refreshed[0] ?? order);
+    }
+
+    if (input.action === "collected") {
+      if (order.laundryPickupMode !== "HOME_PICKUP") {
+        throw new PickiError("FORBIDDEN", "Chỉ áp dụng khi lấy đồ tại nhà khách");
+      }
+      if (order.status !== "PROVIDER_ACCEPTED") {
+        throw new PickiError("FORBIDDEN", "Đơn chưa ở trạng thái chờ lấy đồ");
+      }
+      const estimatedReadyAt = await this.laundryEstimatedReadyAt(order.id);
+      const result = await this.transitions.transition(
+        order.id,
+        "AT_SHOP",
+        userId,
+        "Laundry: collected from customer",
+      );
+      await this.db
+        .update(orders)
+        .set({
+          estimatedReadyAt,
+          runnerUserId: null,
+          runnerSoughtAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(orders.id, order.id));
+      const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+      return this.laundryOrderDto(refreshed[0] ?? result.order);
     }
 
     if (input.action === "received") {
@@ -300,6 +454,62 @@ export class ProviderService {
       }
       if (order.status !== "PROVIDER_ACCEPTED") {
         throw new PickiError("FORBIDDEN", "Đơn chưa ở trạng thái chờ nhận đồ tại tiệm");
+      }
+      const estimatedReadyAt = await this.laundryEstimatedReadyAt(order.id);
+      const result = await this.transitions.transition(
+        order.id,
+        "AT_SHOP",
+        userId,
+        "Laundry: received at shop",
+      );
+      await this.db
+        .update(orders)
+        .set({
+          estimatedReadyAt,
+          runnerUserId: null,
+          runnerSoughtAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(orders.id, order.id));
+      const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+      return this.laundryOrderDto(refreshed[0] ?? result.order);
+    }
+
+    if (input.action === "staff_deliver") {
+      if (order.laundryPickupMode === "ON_SITE") {
+        throw new PickiError("FORBIDDEN", "Dịch vụ tại nhà dùng Hoàn thành");
+      }
+      if (order.status !== "READY_FOR_RETURN") {
+        throw new PickiError("FORBIDDEN", "Chỉ tự giao khi đồ đã sẵn sàng trả");
+      }
+      if (order.runnerSoughtAt && !order.runnerUserId) {
+        await this.runnerDispatch.cancelDispatch(order.id, { clearLaundryReturnFee: true });
+      }
+    }
+
+    if (input.action === "complete") {
+      if (order.laundryPickupMode === "ON_SITE") {
+        if (order.status !== "PROCESSING") {
+          throw new PickiError("FORBIDDEN", "Chỉ hoàn thành dịch vụ tại nhà khi đang xử lý");
+        }
+      } else if (order.status === "RETURN_DELIVERING" && !order.runnerUserId) {
+        // Staff self-deliver — confirm after handoff to customer
+      } else {
+        throw new PickiError("FORBIDDEN", "Chỉ hoàn thành sau khi đã tự giao về khách");
+      }
+    }
+
+    if (input.action === "reject" && !input.rejectReason?.trim()) {
+      throw new PickiError("VALIDATION_ERROR", "Vui lòng chọn hoặc nhập lý do từ chối");
+    }
+
+    if (input.action === "processing") {
+      if (order.laundryPickupMode === "ON_SITE") {
+        if (order.status !== "PROVIDER_ACCEPTED") {
+          throw new PickiError("FORBIDDEN", "Phải nhận đơn trước khi bắt đầu dịch vụ tại nhà");
+        }
+      } else if (order.status !== "AT_SHOP") {
+        throw new PickiError("FORBIDDEN", "Phải nhận đồ về tiệm trước khi giặt");
       }
     }
 
@@ -312,14 +522,23 @@ export class ProviderService {
       throw new PickiError("VALIDATION_ERROR", "Invalid laundry action");
     }
 
-    const result = await this.transitions.transition(
-      order.id,
-      toStatus,
-      userId,
-      `Laundry: ${input.action}`,
-    );
+    const note =
+      input.action === "reject"
+        ? `Provider rejected: ${input.rejectReason!.trim()}`
+        : `Laundry: ${input.action}`;
+
+    const result = await this.transitions.transition(order.id, toStatus, userId, note);
     const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
     return this.laundryOrderDto(refreshed[0] ?? result.order);
+  }
+
+  private async laundryEstimatedReadyAt(orderId: string): Promise<Date> {
+    const items = await this.db
+      .select({ estimatedDays: orderItems.estimatedDays })
+      .from(orderItems)
+      .where(eq(orderItems.orderId, orderId));
+    const maxDays = items.reduce((max, i) => Math.max(max, i.estimatedDays ?? 1), 1);
+    return new Date(Date.now() + maxDays * 86_400_000);
   }
 
   private async laundryOrderDto(order: typeof orders.$inferSelect) {
@@ -327,46 +546,28 @@ export class ProviderService {
       id: order.id,
       orderNumber: order.orderNumber,
       status: order.status,
+      deliveryFeeVnd: order.deliveryFeeVnd,
       ...orderHandoffFields(order),
       runner: await loadRunnerSummary(this.db, order.runnerUserId ?? null),
+      contacts: await loadOrderContacts(this.db, order),
     };
   }
 
-  private async providerFindReturnRunner(_userId: string, order: typeof orders.$inferSelect) {
+  private async providerFindReturnRunner(userId: string, order: typeof orders.$inferSelect) {
     if (order.status !== "READY_FOR_RETURN") {
       throw new PickiError("FORBIDDEN", "Chỉ tìm runner giao lại khi đồ đã sẵn sàng");
     }
+    if (order.runnerUserId) {
+      throw new PickiError("FORBIDDEN", "Runner đã nhận đơn này");
+    }
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(orders)
-        .set({
-          runnerUserId: null,
-          runnerSoughtAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(orders.id, order.id));
-
-      await this.outbox.enqueue(tx, {
-        eventType: "order.seeking_runner",
-        aggregateType: "order",
-        aggregateId: order.id,
-        payload: {
-          orderId: order.id,
-          orderNumber: order.orderNumber,
-          customerUserId: order.customerUserId,
-          providerLocationId: order.providerLocationId,
-          zoneId: order.zoneId,
-          leg: "RETURN",
-        },
-      });
-    });
+    await this.runnerDispatch.dispatch(order, "RETURN", userId);
 
     const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
     return this.laundryOrderDto(refreshed[0] ?? order);
   }
 
-  private async providerFindRunner(_userId: string, order: typeof orders.$inferSelect) {
+  private async providerFindRunner(userId: string, order: typeof orders.$inferSelect) {
     if (order.status !== "PROVIDER_ACCEPTED") {
       throw new PickiError("FORBIDDEN", "Chỉ tìm runner sau khi đã nhận đơn");
     }
@@ -374,25 +575,7 @@ export class ProviderService {
       throw new PickiError("FORBIDDEN", "Runner đã nhận đơn này");
     }
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(orders)
-        .set({ runnerSoughtAt: new Date(), updatedAt: new Date() })
-        .where(eq(orders.id, order.id));
-
-      await this.outbox.enqueue(tx, {
-        eventType: "order.seeking_runner",
-        aggregateType: "order",
-        aggregateId: order.id,
-        payload: {
-          orderId: order.id,
-          orderNumber: order.orderNumber,
-          customerUserId: order.customerUserId,
-          providerLocationId: order.providerLocationId,
-          zoneId: order.zoneId,
-        },
-      });
-    });
+    await this.runnerDispatch.dispatch(order, "INBOUND", userId);
 
     const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
 
@@ -400,6 +583,7 @@ export class ProviderService {
       id: order.id,
       orderNumber: order.orderNumber,
       status: refreshed[0]?.status ?? order.status,
+      deliveryFeeVnd: refreshed[0]?.deliveryFeeVnd ?? order.deliveryFeeVnd,
       ...orderHandoffFields(refreshed[0] ?? order),
       runner: null,
     };
@@ -433,6 +617,7 @@ export class ProviderService {
           runnerUserId: order.runnerUserId,
           providerLocationId: order.providerLocationId,
           zoneId: order.zoneId,
+          actorUserId: userId,
         },
       });
     });
@@ -461,6 +646,7 @@ export class ProviderService {
       locationId,
       status: row[0]?.status ?? "OFFLINE",
       message: row[0]?.message ?? null,
+      estimatedWaitMinutes: row[0]?.estimatedWaitMinutes ?? null,
       updatedAt: row[0]?.updatedAt?.toISOString() ?? null,
     };
   }
@@ -472,28 +658,47 @@ export class ProviderService {
   ) {
     await this.assertLocationAccess(userId, locationId);
 
+    const patch = {
+      status: input.status,
+      message: input.message ?? null,
+      estimatedWaitMinutes:
+        input.estimatedWaitMinutes !== undefined ? input.estimatedWaitMinutes : undefined,
+      updatedAt: new Date(),
+    };
+
     await this.db
       .insert(providerLiveStatus)
       .values({
         providerLocationId: locationId,
         status: input.status,
         message: input.message ?? null,
+        estimatedWaitMinutes: input.estimatedWaitMinutes ?? null,
         updatedAt: new Date(),
       })
       .onConflictDoUpdate({
         target: providerLiveStatus.providerLocationId,
         set: {
-          status: input.status,
-          message: input.message ?? null,
-          updatedAt: new Date(),
+          status: patch.status,
+          message: patch.message,
+          ...(input.estimatedWaitMinutes !== undefined
+            ? { estimatedWaitMinutes: input.estimatedWaitMinutes }
+            : {}),
+          updatedAt: patch.updatedAt,
         },
       });
 
-    return { locationId, status: input.status };
+    return {
+      locationId,
+      status: input.status,
+      estimatedWaitMinutes: input.estimatedWaitMinutes ?? null,
+    };
   }
 
-  /** Pilot: đơn đã nhận nhưng chưa tìm runner → tự bổ sung khi load list. */
+  /** Pilot food: đơn đã nhận nhưng chưa tìm runner → tự bổ sung khi load list. Laundry không dùng runner lấy đồ. */
   private async ensureRunnerSought(order: typeof orders.$inferSelect) {
+    if (order.serviceVertical === "LAUNDRY") {
+      return order;
+    }
     if (
       order.status !== "PROVIDER_ACCEPTED" ||
       order.runnerUserId ||
@@ -502,25 +707,11 @@ export class ProviderService {
       return order;
     }
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(orders)
-        .set({ runnerSoughtAt: new Date(), updatedAt: new Date() })
-        .where(eq(orders.id, order.id));
-
-      await this.outbox.enqueue(tx, {
-        eventType: "order.seeking_runner",
-        aggregateType: "order",
-        aggregateId: order.id,
-        payload: {
-          orderId: order.id,
-          orderNumber: order.orderNumber,
-          customerUserId: order.customerUserId,
-          providerLocationId: order.providerLocationId,
-          zoneId: order.zoneId,
-        },
-      });
-    });
+    try {
+      await this.runnerDispatch.dispatch(order, "INBOUND");
+    } catch {
+      return order;
+    }
 
     const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
     return refreshed[0] ?? order;
@@ -553,6 +744,19 @@ export class ProviderService {
       throw new PickiError("FORBIDDEN", "Not a staff member for this location");
     }
   }
+}
+
+/** Asia/Ho_Chi_Minh calendar day → UTC range for DB filters. */
+function parseVnDayRange(date?: string) {
+  const label =
+    date ??
+    new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(new Date());
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(label)) {
+    throw new PickiError("VALIDATION_ERROR", "date must be YYYY-MM-DD");
+  }
+  const dayStart = new Date(`${label}T00:00:00+07:00`);
+  const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+  return { dayStart, dayEnd, dateLabel: label };
 }
 
 const DEFAULT_PREP_MINUTES = 20;

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import {
+  beautyWaitDisplay,
+  isBeautyVertical,
   liveStatusClass,
   liveStatusLabel,
   type ProviderListing,
@@ -30,18 +32,26 @@ export function ProviderList({
               <h3 style={{ margin: "0 0 4px" }}>
                 {p.brandName}
                 <span className={`live-pill ${liveStatusClass(p.liveStatus)}`}>
-                  {liveStatusLabel(p.liveStatus)}
+                  {isBeautyVertical(p.providerType)
+                    ? beautyWaitDisplay(p.liveStatus, p.estimatedWaitMinutes)
+                    : liveStatusLabel(p.liveStatus, p.providerType, p.estimatedWaitMinutes)}
                 </span>
               </h3>
               <p className="stat" style={{ margin: "0 0 4px" }}>
                 {p.displayName}
               </p>
               {p.tagline && <p style={{ margin: "0 0 4px", fontSize: 14 }}>{p.tagline}</p>}
-              {(p.prepMinutes != null || p.etaMinutes != null) && (
+              {isBeautyVertical(p.providerType) && p.estimatedWaitMinutes != null ? (
+                <p className="stat" style={{ margin: "4px 0 0" }}>
+                  {beautyWaitDisplay(p.liveStatus, p.estimatedWaitMinutes)}
+                </p>
+              ) : null}
+              {!isBeautyVertical(p.providerType) &&
+              (p.prepMinutes != null || p.etaMinutes != null) ? (
                 <p className="stat" style={{ margin: "4px 0 0" }}>
                   ⏱ {p.prepMinutes ?? "?"} phút nấu · ~{p.etaMinutes ?? "?"} phút giao
                 </p>
-              )}
+              ) : null}
               {p.averageRating != null && p.averageRating > 0 && (
                 <p className="stat" style={{ margin: "4px 0 0" }}>
                   ★ {p.averageRating} ({p.reviewCount ?? 0} đánh giá)
@@ -53,7 +63,7 @@ export function ProviderList({
                 </p>
               )}
               <p className="stat" style={{ margin: "8px 0 0", fontSize: 13 }}>
-                Xem menu →
+                {isBeautyVertical(p.providerType) ? "Xem tiệm →" : "Xem menu →"}
               </p>
             </Link>
             {onToggleFavorite ? (

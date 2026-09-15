@@ -21,4 +21,4 @@ export DATABASE_URL="${DATABASE_URL:-postgresql://picki:picki@localhost:5432/pic
 export SESSION_SECRET="${SESSION_SECRET:-local-dev-secret-16chars}"
 export AUTH_OTP_DEV_EXPOSE="${AUTH_OTP_DEV_EXPOSE:-true}"
 
-exec pnpm --filter @picki/api dev
+exec bash "$(dirname "$0")/pnpm.sh" --filter @picki/api dev

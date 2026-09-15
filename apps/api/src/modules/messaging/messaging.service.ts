@@ -95,6 +95,25 @@ export class MessagingService {
       .orderBy(messages.createdAt)
       .limit(200);
 
+    const participantRows = await this.db
+      .select({
+        userId: conversationParticipants.userId,
+        role: conversationParticipants.role,
+      })
+      .from(conversationParticipants)
+      .where(eq(conversationParticipants.conversationId, conversationId));
+    const roleByUserId = new Map(participantRows.map((p) => [p.userId, p.role]));
+
+    let orderForRoles: { customerUserId: string; runnerUserId: string | null } | null = null;
+    if (conv[0].contextType === "ORDER") {
+      const orderRow = await this.db
+        .select({ customerUserId: orders.customerUserId, runnerUserId: orders.runnerUserId })
+        .from(orders)
+        .where(eq(orders.id, conv[0].contextId))
+        .limit(1);
+      orderForRoles = orderRow[0] ?? null;
+    }
+
     return {
       id: conv[0].id,
       contextType: conv[0].contextType,
@@ -105,6 +124,9 @@ export class MessagingService {
         body: m.body,
         createdAt: m.createdAt.toISOString(),
         mine: m.senderUserId === userId,
+        senderRole:
+          (roleByUserId.get(m.senderUserId) as "CUSTOMER" | "PROVIDER" | "RUNNER" | undefined) ??
+          (orderForRoles ? roleForUser(m.senderUserId, orderForRoles) : null),
       })),
     };
   }

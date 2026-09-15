@@ -1,15 +1,12 @@
-/** Laundry with runner pickup at customer home → shop → processing → return to customer. */
+/** Staff picks up at customer home → shop → processing → return (staff or Picki runner). */
 export const LAUNDRY_HOME_PICKUP_TRANSITIONS: Record<string, string[]> = {
   CREATED: ["PAYMENT_PENDING", "PROVIDER_ACCEPTED", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
   PAYMENT_PENDING: ["PAID", "PAYMENT_FAILED", "CUSTOMER_CANCELLED"],
   PAID: ["PROVIDER_ACCEPTED", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
-  PROVIDER_ACCEPTED: ["RUNNER_ASSIGNED", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
-  RUNNER_ASSIGNED: ["PICKED_UP", "CUSTOMER_CANCELLED"],
-  PICKED_UP: ["DELIVERING"],
-  DELIVERING: ["AT_SHOP"],
+  PROVIDER_ACCEPTED: ["AT_SHOP", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
   AT_SHOP: ["PROCESSING"],
   PROCESSING: ["READY_FOR_RETURN"],
-  READY_FOR_RETURN: ["RETURN_RUNNER_ASSIGNED", "CUSTOMER_CANCELLED"],
+  READY_FOR_RETURN: ["RETURN_DELIVERING", "RETURN_RUNNER_ASSIGNED", "CUSTOMER_CANCELLED"],
   RETURN_RUNNER_ASSIGNED: ["RETURN_PICKED_UP"],
   RETURN_PICKED_UP: ["RETURN_DELIVERING"],
   RETURN_DELIVERING: ["COMPLETED"],
@@ -23,7 +20,7 @@ export const LAUNDRY_HOME_PICKUP_TRANSITIONS: Record<string, string[]> = {
   COMPLETED: [],
 };
 
-/** Customer brings items to shop — skip inbound runner leg. */
+/** Customer brings items to shop — skip inbound leg. */
 export const LAUNDRY_SHOP_DROP_OFF_TRANSITIONS: Record<string, string[]> = {
   CREATED: ["PAYMENT_PENDING", "PROVIDER_ACCEPTED", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
   PAYMENT_PENDING: ["PAID", "PAYMENT_FAILED", "CUSTOMER_CANCELLED"],
@@ -31,10 +28,27 @@ export const LAUNDRY_SHOP_DROP_OFF_TRANSITIONS: Record<string, string[]> = {
   PROVIDER_ACCEPTED: ["AT_SHOP", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
   AT_SHOP: ["PROCESSING"],
   PROCESSING: ["READY_FOR_RETURN"],
-  READY_FOR_RETURN: ["RETURN_RUNNER_ASSIGNED", "CUSTOMER_CANCELLED"],
+  READY_FOR_RETURN: ["RETURN_DELIVERING", "RETURN_RUNNER_ASSIGNED", "CUSTOMER_CANCELLED"],
   RETURN_RUNNER_ASSIGNED: ["RETURN_PICKED_UP"],
   RETURN_PICKED_UP: ["RETURN_DELIVERING"],
   RETURN_DELIVERING: ["COMPLETED"],
+  PAYMENT_FAILED: [],
+  PROVIDER_REJECTED: [],
+  CUSTOMER_CANCELLED: [],
+  SYSTEM_CANCELLED: [],
+  REFUND_PENDING: ["REFUNDED"],
+  REFUNDED: [],
+  DELIVERED: [],
+  COMPLETED: [],
+};
+
+/** Sofa / thảm / đệm — provider giặt tại nhà khách. */
+export const LAUNDRY_ON_SITE_TRANSITIONS: Record<string, string[]> = {
+  CREATED: ["PAYMENT_PENDING", "PROVIDER_ACCEPTED", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
+  PAYMENT_PENDING: ["PAID", "PAYMENT_FAILED", "CUSTOMER_CANCELLED"],
+  PAID: ["PROVIDER_ACCEPTED", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
+  PROVIDER_ACCEPTED: ["PROCESSING", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
+  PROCESSING: ["COMPLETED"],
   PAYMENT_FAILED: [],
   PROVIDER_REJECTED: [],
   CUSTOMER_CANCELLED: [],
@@ -49,10 +63,21 @@ export const LAUNDRY_SHOP_DROP_OFF_TRANSITIONS: Record<string, string[]> = {
 export const LAUNDRY_INBOUND_TRANSITIONS = LAUNDRY_HOME_PICKUP_TRANSITIONS;
 
 export type ServiceVertical = "FOOD" | "LAUNDRY";
-export type LaundryPickupMode = "HOME_PICKUP" | "SHOP_DROP_OFF";
+export type LaundryPickupMode = "HOME_PICKUP" | "SHOP_DROP_OFF" | "ON_SITE";
 
 export function laundryTransitionsForMode(mode: LaundryPickupMode | null | undefined) {
-  return mode === "SHOP_DROP_OFF"
-    ? LAUNDRY_SHOP_DROP_OFF_TRANSITIONS
-    : LAUNDRY_HOME_PICKUP_TRANSITIONS;
+  if (mode === "SHOP_DROP_OFF") return LAUNDRY_SHOP_DROP_OFF_TRANSITIONS;
+  if (mode === "ON_SITE") return LAUNDRY_ON_SITE_TRANSITIONS;
+  return LAUNDRY_HOME_PICKUP_TRANSITIONS;
+}
+
+/** Khách hủy được trước khi tiệm nhận/lấy đồ (chưa AT_SHOP / chưa PROCESSING tại nhà). */
+export function canLaundryCustomerCancelBeforeCollection(
+  status: string,
+  mode?: LaundryPickupMode | null,
+): boolean {
+  if (mode === "ON_SITE") {
+    return status === "CREATED" || status === "PROVIDER_ACCEPTED";
+  }
+  return status === "CREATED" || status === "PROVIDER_ACCEPTED";
 }

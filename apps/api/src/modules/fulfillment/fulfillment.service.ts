@@ -47,7 +47,12 @@ export class FulfillmentService {
       .where(eq(providerLocations.id, order.providerLocationId))
       .limit(1);
 
-    const input = this.toRouteOrderInput(order, location[0]?.displayName ?? "Quán");
+    const input = this.toRouteOrderInput(
+      order,
+      location[0]?.displayName ?? "Quán",
+      location[0]?.lat,
+      location[0]?.lng,
+    );
 
     return this.db.transaction(async (tx) => {
       const [delivery] = await tx
@@ -72,7 +77,11 @@ export class FulfillmentService {
       if (route) {
         const existing = await this.loadRouteOrders(tx, route.id);
         const settings = await this.loadBatchSettings(tx, order.zoneId);
-        if (!canBatchOrderWithSettings(existing, input, settings)) {
+        const incompatible = await this.routeBatchIncompatible(tx, existing, order);
+        if (
+          incompatible ||
+          !canBatchOrderWithSettings(existing, input, settings)
+        ) {
           if (existing.length === 0) {
             await tx.delete(routeStops).where(eq(routeStops.routeId, route.id));
             await tx.delete(routeOrders).where(eq(routeOrders.routeId, route.id));
@@ -125,10 +134,23 @@ export class FulfillmentService {
           inArray(deliveryRoutes.status, ["PLANNED", "IN_PROGRESS"]),
         ),
       )
-      .orderBy(desc(deliveryRoutes.createdAt));
+      .orderBy(asc(deliveryRoutes.createdAt));
 
-    let active: (typeof deliveryRoutes.$inferSelect) | undefined;
-    let stops: (typeof routeStops.$inferSelect)[] = [];
+    const mergedStops: Array<{
+      id: string;
+      sequence: number;
+      stopType: string;
+      status: string;
+      orderId: string | null;
+      label: string;
+      building: string | null;
+      apartment: string | null;
+      arrivedAt: string | null;
+      handoffs?: Awaited<ReturnType<FulfillmentService["loadHandoffsForStop"]>>;
+    }> = [];
+    const mergedOrders = new Map<string, { orderId: string; orderNumber: string }>();
+    let primaryRouteId: string | undefined;
+    let primaryStatus = "PLANNED";
 
     for (const candidate of routes) {
       const linkedCount = await this.db
@@ -136,67 +158,91 @@ export class FulfillmentService {
         .from(routeOrders)
         .where(eq(routeOrders.routeId, candidate.id));
 
-      const candidateStops = await this.db
+      if (linkedCount.length === 0) {
+        continue;
+      }
+
+      let candidateStops = await this.db
         .select()
         .from(routeStops)
         .where(eq(routeStops.routeId, candidate.id))
         .orderBy(asc(routeStops.sequence));
 
-      if (linkedCount.length === 0 && candidateStops.length === 0) {
+      if (candidateStops.length === 0) {
+        await this.db.transaction(async (tx) => {
+          await this.rebuildStops(tx, candidate.id);
+        });
+        candidateStops = await this.db
+          .select()
+          .from(routeStops)
+          .where(eq(routeStops.routeId, candidate.id))
+          .orderBy(asc(routeStops.sequence));
+      }
+
+      if (candidateStops.length === 0) {
         continue;
       }
 
-      active = candidate;
-      stops = candidateStops;
-      break;
+      if (!primaryRouteId) {
+        primaryRouteId = candidate.id;
+        primaryStatus = candidate.status;
+      }
+
+      const linked = await this.db
+        .select({
+          orderId: routeOrders.orderId,
+          orderNumber: orders.orderNumber,
+        })
+        .from(routeOrders)
+        .innerJoin(orders, eq(routeOrders.orderId, orders.id))
+        .where(eq(routeOrders.routeId, candidate.id));
+
+      for (const row of linked) {
+        mergedOrders.set(row.orderId, row);
+      }
+
+      const stopPayload = await Promise.all(
+        candidateStops.map(async (s) => {
+          const base = {
+            id: s.id,
+            sequence: s.sequence,
+            stopType: s.stopType,
+            status: s.status,
+            orderId: s.orderId,
+            label: s.label,
+            building: s.building,
+            apartment: s.apartment,
+            arrivedAt: s.arrivedAt?.toISOString() ?? null,
+          };
+          if (
+            (s.stopType === "LOBBY_DROPOFF" || s.stopType === "PICKI_POINT") &&
+            s.status === "ARRIVED"
+          ) {
+            const handoffs = await this.loadHandoffsForStop(s.id);
+            return { ...base, handoffs };
+          }
+          return base;
+        }),
+      );
+
+      for (const s of stopPayload) {
+        mergedStops.push({ ...s, sequence: mergedStops.length + 1 });
+      }
     }
 
-    if (!active) {
+    if (!primaryRouteId || mergedStops.length === 0) {
       return { route: null };
     }
 
-    const route = [active];
-
-    const stopPayload = await Promise.all(
-      stops.map(async (s) => {
-        const base = {
-          id: s.id,
-          sequence: s.sequence,
-          stopType: s.stopType,
-          status: s.status,
-          orderId: s.orderId,
-          label: s.label,
-          building: s.building,
-          apartment: s.apartment,
-          arrivedAt: s.arrivedAt?.toISOString() ?? null,
-        };
-        if (
-          (s.stopType === "LOBBY_DROPOFF" || s.stopType === "PICKI_POINT") &&
-          s.status === "ARRIVED"
-        ) {
-          const handoffs = await this.loadHandoffsForStop(s.id);
-          return { ...base, handoffs };
-        }
-        return base;
-      }),
-    );
-
-    const linked = await this.db
-      .select({
-        orderId: routeOrders.orderId,
-        orderNumber: orders.orderNumber,
-      })
-      .from(routeOrders)
-      .innerJoin(orders, eq(routeOrders.orderId, orders.id))
-      .where(eq(routeOrders.routeId, route[0].id));
+    const linked = Array.from(mergedOrders.values());
 
     return {
       route: {
-        id: route[0].id,
-        status: route[0].status,
+        id: primaryRouteId,
+        status: primaryStatus,
         orderCount: linked.length,
         orders: linked,
-        stops: stopPayload,
+        stops: mergedStops,
       },
     };
   }
@@ -241,6 +287,7 @@ export class FulfillmentService {
               orderId,
               orderNumber: orderRow[0].orderNumber,
               customerUserId: orderRow[0].customerUserId,
+              actorUserId: runnerUserId,
             },
           });
         }
@@ -866,6 +913,45 @@ export class FulfillmentService {
           eq(routeStops.status, "PENDING"),
         ),
       );
+  }
+
+  private isLaundryReturnStatus(status: string) {
+    return status === "RETURN_RUNNER_ASSIGNED" || status === "RETURN_PICKED_UP" || status === "RETURN_DELIVERING";
+  }
+
+  private async routeBatchIncompatible(
+    tx: PickiTx,
+    existing: RouteOrderInput[],
+    incoming: typeof orders.$inferSelect,
+  ): Promise<boolean> {
+    if (existing.length === 0) return false;
+
+    const existingIds = existing.map((o) => o.orderId);
+    const statusRows = await tx
+      .select({ id: orders.id, status: orders.status, serviceVertical: orders.serviceVertical })
+      .from(orders)
+      .where(inArray(orders.id, existingIds));
+
+    const incomingIsLaundryReturn =
+      incoming.serviceVertical === "LAUNDRY" && this.isLaundryReturnStatus(incoming.status);
+    const existingHasFood = statusRows.some((r) => r.serviceVertical === "FOOD");
+    const existingHasLaundryReturn = statusRows.some(
+      (r) => r.serviceVertical === "LAUNDRY" && this.isLaundryReturnStatus(r.status),
+    );
+    const existingHasLaundryInbound = statusRows.some(
+      (r) =>
+        r.serviceVertical === "LAUNDRY" &&
+        !this.isLaundryReturnStatus(r.status) &&
+        r.status !== "COMPLETED",
+    );
+
+    if (incomingIsLaundryReturn && (existingHasFood || existingHasLaundryInbound)) {
+      return true;
+    }
+    if (incoming.serviceVertical === "FOOD" && existingHasLaundryReturn) {
+      return true;
+    }
+    return false;
   }
 
   private toRouteOrderInput(

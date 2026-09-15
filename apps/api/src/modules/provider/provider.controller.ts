@@ -31,6 +31,18 @@ export class ProviderController {
     return this.providerService.listLocationOrderHistory(userId, locationId);
   }
 
+  @Get("runner-stats/daily")
+  async dailyRunnerStats(
+    @CurrentUserId() userId: string,
+    @Query("locationId") locationId: string,
+    @Query("date") date?: string,
+  ) {
+    if (!locationId) {
+      throw new PickiError("VALIDATION_ERROR", "locationId is required");
+    }
+    return this.providerService.dailyRunnerStats(userId, locationId, date);
+  }
+
   @Patch("orders/:orderId")
   async orderAction(
     @CurrentUserId() userId: string,

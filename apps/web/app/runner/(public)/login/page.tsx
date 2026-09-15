@@ -38,7 +38,7 @@ export default function RunnerLoginPage() {
     try {
       await api("/auth/otp/verify", {
         method: "POST",
-        body: JSON.stringify({ phone, code }),
+        body: JSON.stringify({ phone, code, app: "runner" }),
       });
       router.replace("/runner");
     } catch (e) {

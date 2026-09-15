@@ -46,6 +46,7 @@ export const orders = pgTable("orders", {
   estimatedReadyAt: timestamp("estimated_ready_at", { withTimezone: true, mode: "date" }),
   providerHandoffAt: timestamp("provider_handoff_at", { withTimezone: true, mode: "date" }),
   runnerSoughtAt: timestamp("runner_sought_at", { withTimezone: true, mode: "date" }),
+  runnerOfferWave: integer("runner_offer_wave").notNull().default(0),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -64,6 +65,7 @@ export const orderItems = pgTable("order_items", {
   unitPriceVnd: integer("unit_price_vnd").notNull(),
   quantity: integer("quantity").notNull(),
   lineTotalVnd: integer("line_total_vnd").notNull(),
+  estimatedDays: integer("estimated_days"),
   createdAt: createdAt(),
 });
 

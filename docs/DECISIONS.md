@@ -397,19 +397,27 @@ Transactional outbox (`outbox_events`) processed by an in-process or same-deploy
 
 ---
 
-### ADR-041 — Food delivery split payment (goods prepay + runner fee on delivery)
+### ADR-041 — Delivery fees: checkout total → provider; provider settles runner (revised 2026-09-15)
 
-**Status:** ACCEPTED (Official)
+**Status:** ACCEPTED (Official) — supersedes prior “runner fee COD at delivery” wording.
 
-**Context:** Pilot Food cần minh bạch tổng chi phí nhưng tránh Picki làm trung gian thu–chia phí giao (wallet / settlement §146).
+**Context:** Pilot cần minh bạch tổng chi phí cho khách, một giao dịch thanh toán đơn giản, và tránh Picki làm trung gian thu–chia provider↔runner (wallet / complex settlement §146).
 
-**Decision:**
+**Decision — Food:**
 
-1. Picki **tính và hiển thị** `delivery_fee_vnd` trên đơn; `total_vnd = subtotal + delivery_fee` cho khách tham chiếu.
-2. Khách **prepay tiền hàng** qua Picki payment adapter (`PAY_ON_PICKI`) hoặc merchant quán (`PAY_PROVIDER_DIRECTLY`).
-3. **Phí runner** thu **khi nhận hàng** (COD trực tiếp cho runner) — **không** qua Picki payment adapter V1.
-4. Picki ghi snapshot; không wallet / complex automatic settlement cho phí runner.
+1. Picki **tính và hiển thị** `delivery_fee_vnd`; `total_vnd = subtotal_vnd + delivery_fee_vnd` trên checkout / xác nhận đơn.
+2. Khách trả **một lần** tổng (tiền hàng + phí giao) lúc đặt — prepay qua PayOS (`PAY_ON_PICKI`) hoặc COD **full tổng** khi nhận.
+3. **Một giao dịch duy nhất** với khách → tiền vào **tài khoản merchant Provider** (không qua ví Picki).
+4. Provider **tự quyết** trả runner (tiền mặt / chuyển khoản) theo **thống kê ngày** Picki cung cấp — giao dịch provider↔runner **ngoài** payment adapter Picki V1.
+5. Picki: rule tính phí + snapshot + breakdown hiển thị + stats đối soát — **không** chia payout, không wallet.
 
-**Full spec:** `PICKI_MASTER_SPEC.md` §104 (Food delivery — split payment), §116.
+**Decision — Laundry (`PICKUP_AND_RETURN`):**
+
+1. Khách **không** trả phí ship chiều nào trên đơn (`delivery_fee_vnd = 0`; `total_vnd = subtotal_vnd`).
+2. **Lấy đồ tại nhà:** người đến lấy phải là **nhân viên tiệm đã xác minh** (chuyên môn nhận & kiểm tra tình trạng đồ) — không phải runner pool chung kiểu Food.
+3. **Giao trả:** mặc định nhân viên tiệm; Provider có thể **gọi runner giao hộ** — phí runner do **Provider** chịu, thống kê riêng (không cộng vào total khách).
+4. Picki chỉ cần tính năng Provider **tìm runner cho chặng giao** (return leg); không hiển thị phí ship cho khách.
+
+**Full spec:** `PICKI_MASTER_SPEC.md` §104, §81 (Laundry), §116.
 
 ---

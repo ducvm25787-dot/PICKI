@@ -63,5 +63,6 @@ export const notifications = pgTable("notifications", {
   body: text("body").notNull(),
   payload: jsonb("payload").notNull().default({}),
   readAt: timestamp("read_at", { withTimezone: true, mode: "date" }),
+  supersededAt: timestamp("superseded_at", { withTimezone: true, mode: "date" }),
   createdAt: createdAt(),
 });

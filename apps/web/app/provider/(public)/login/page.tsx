@@ -38,7 +38,7 @@ export default function ProviderLoginPage() {
     try {
       await api("/auth/otp/verify", {
         method: "POST",
-        body: JSON.stringify({ phone, code }),
+        body: JSON.stringify({ phone, code, app: "provider" }),
       });
       router.replace("/provider");
     } catch (e) {
@@ -51,7 +51,9 @@ export default function ProviderLoginPage() {
   return (
     <div className="container">
       <div className="logo provider-logo">Picki Provider</div>
-      <p className="tagline">Đăng nhập quản lý quán (demo: 0908888001)</p>
+      <p className="tagline">
+        Đăng nhập quản lý quán — Food 0908888001 · Giặt 0908888004 · Dịch vụ nhà 0908888005
+      </p>
       <div className="card">
         {step === "phone" ? (
           <>

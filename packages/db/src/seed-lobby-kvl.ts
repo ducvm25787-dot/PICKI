@@ -30,11 +30,18 @@ async function seed() {
 
     await sql`
       INSERT INTO zone_fulfillment_settings (
-        zone_id, batch_wait_window_minutes, max_batch_orders, max_route_detour_meters
-      ) VALUES (${zone[0].id}::uuid, 5, 3, 500)
+        zone_id,
+        batch_wait_window_minutes,
+        max_batch_orders,
+        max_route_detour_meters,
+        food_delivery_fee_vnd,
+        food_door_delivery_fee_vnd
+      ) VALUES (${zone[0].id}::uuid, 5, 3, 500, 15000, 20000)
       ON CONFLICT (zone_id) DO UPDATE SET
         batch_wait_window_minutes = EXCLUDED.batch_wait_window_minutes,
         max_batch_orders = EXCLUDED.max_batch_orders,
+        food_delivery_fee_vnd = EXCLUDED.food_delivery_fee_vnd,
+        food_door_delivery_fee_vnd = EXCLUDED.food_door_delivery_fee_vnd,
         updated_at = now()
     `;
 

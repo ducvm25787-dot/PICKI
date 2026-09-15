@@ -1,15 +1,20 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, isNotNull, isNull, notInArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
 import {
+  hasPendingOffer,
+  markOfferAccepted,
   orderItems,
   orders,
   routeOrders,
   runnerActionToStatus,
+  runnerOrderOffers,
   runnerPresence,
   runners,
+  skipRunnerOffer,
   type PickiDb,
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
+import { loadOrderContacts, loadProviderBrand } from "../orders/order-enrichment.js";
 import { PICKI_DB } from "../../shared/tokens.js";
 import { FulfillmentService } from "../fulfillment/fulfillment.service.js";
 import { OrderTransitionService } from "../orders/order-transition.service.js";
@@ -68,7 +73,7 @@ export class RunnerService {
       throw new PickiError("FORBIDDEN", "Runner profile not found");
     }
 
-    const terminal = [
+    const foodTerminal = [
       "DELIVERED",
       "COMPLETED",
       "AT_SHOP",
@@ -78,32 +83,51 @@ export class RunnerService {
       "SYSTEM_CANCELLED",
       "PROVIDER_REJECTED",
     ];
+    const laundryReturnStatuses = [
+      "RETURN_RUNNER_ASSIGNED",
+      "RETURN_PICKED_UP",
+      "RETURN_DELIVERING",
+    ] as const;
 
-    const rows = await this.db
-      .select()
-      .from(orders)
+    const poolRows = await this.db
+      .select({ order: orders })
+      .from(runnerOrderOffers)
+      .innerJoin(orders, eq(orders.id, runnerOrderOffers.orderId))
       .where(
         and(
-          eq(orders.zoneId, runner[0].zoneId),
+          eq(runnerOrderOffers.runnerUserId, userId),
+          eq(runnerOrderOffers.status, "PENDING"),
+          eq(runnerOrderOffers.wave, orders.runnerOfferWave),
+          isNull(orders.runnerUserId),
           or(
-            and(
-              eq(orders.status, "PROVIDER_ACCEPTED"),
-              isNull(orders.runnerUserId),
-              isNotNull(orders.runnerSoughtAt),
-            ),
-            and(
-              eq(orders.status, "READY_FOR_RETURN"),
-              isNull(orders.runnerUserId),
-              isNotNull(orders.runnerSoughtAt),
-            ),
-            and(eq(orders.runnerUserId, userId), notInArray(orders.status, terminal)),
+            and(eq(orders.serviceVertical, "FOOD"), eq(orders.status, "PROVIDER_ACCEPTED")),
+            and(eq(orders.serviceVertical, "LAUNDRY"), eq(orders.status, "READY_FOR_RETURN")),
           ),
         ),
       )
       .orderBy(desc(orders.createdAt))
       .limit(50);
 
-    const mapOrder = async (o: (typeof rows)[0]) => {
+    const mineRows = await this.db
+      .select()
+      .from(orders)
+      .where(
+        and(
+          eq(orders.zoneId, runner[0].zoneId),
+          eq(orders.runnerUserId, userId),
+          or(
+            and(eq(orders.serviceVertical, "FOOD"), notInArray(orders.status, foodTerminal)),
+            and(
+              eq(orders.serviceVertical, "LAUNDRY"),
+              inArray(orders.status, [...laundryReturnStatuses]),
+            ),
+          ),
+        ),
+      )
+      .orderBy(desc(orders.createdAt))
+      .limit(50);
+
+    const mapOrder = async (o: typeof orders.$inferSelect) => {
       const routeLink = await this.db
         .select({ routeId: routeOrders.routeId })
         .from(routeOrders)
@@ -112,7 +136,11 @@ export class RunnerService {
       return {
         id: o.id,
         orderNumber: o.orderNumber,
+        providerBrandName: await loadProviderBrand(this.db, o.providerLocationId),
         status: o.status,
+        serviceVertical: o.serviceVertical,
+        subtotalVnd: o.subtotalVnd,
+        deliveryFeeVnd: o.deliveryFeeVnd,
         totalVnd: o.totalVnd,
         assignedToMe: o.runnerUserId === userId,
         estimatedReadyAt: o.estimatedReadyAt?.toISOString() ?? null,
@@ -124,21 +152,17 @@ export class RunnerService {
           apartment: o.deliveryApartment,
         },
         items: await this.db.select().from(orderItems).where(eq(orderItems.orderId, o.id)),
+        contacts: await loadOrderContacts(this.db, o),
       };
     };
 
-    const pool = rows.filter(
-      (o) =>
-        !o.runnerUserId &&
-        o.runnerSoughtAt != null &&
-        (o.status === "PROVIDER_ACCEPTED" || o.status === "READY_FOR_RETURN"),
-    );
-    const mine = rows.filter((o) => o.runnerUserId === userId);
+    const pool = await Promise.all(poolRows.map((r) => mapOrder(r.order)));
+    const mine = await Promise.all(mineRows.map(mapOrder));
 
     return {
-      orders: await Promise.all(rows.map(mapOrder)),
-      pool: await Promise.all(pool.map(mapOrder)),
-      mine: await Promise.all(mine.map(mapOrder)),
+      orders: [...pool, ...mine],
+      pool,
+      mine,
     };
   }
 
@@ -164,17 +188,22 @@ export class RunnerService {
       .limit(limit);
 
     return {
-      orders: rows.map((o) => ({
-        id: o.id,
-        orderNumber: o.orderNumber,
-        status: o.status,
-        totalVnd: o.totalVnd,
-        completedAt: o.updatedAt.toISOString(),
-        delivery: {
-          building: o.deliveryBuilding,
-          apartment: o.deliveryApartment,
-        },
-      })),
+      orders: await Promise.all(
+        rows.map(async (o) => ({
+          id: o.id,
+          orderNumber: o.orderNumber,
+          providerBrandName: await loadProviderBrand(this.db, o.providerLocationId),
+          status: o.status,
+          serviceVertical: o.serviceVertical,
+          deliveryFeeVnd: o.deliveryFeeVnd,
+          totalVnd: o.totalVnd,
+          completedAt: o.updatedAt.toISOString(),
+          delivery: {
+            building: o.deliveryBuilding,
+            apartment: o.deliveryApartment,
+          },
+        })),
+      ),
     };
   }
 
@@ -193,12 +222,21 @@ export class RunnerService {
       throw new PickiError("NOT_FOUND", "Order not found in your zone");
     }
 
+    if (input.action === "skip") {
+      const ok = await skipRunnerOffer(this.db, orderId, userId);
+      if (!ok) {
+        throw new PickiError("FORBIDDEN", "Không thể bỏ qua đơn này");
+      }
+      return { id: orderId, skipped: true };
+    }
+
     let toStatus = runnerActionToStatus(input.action);
 
     if (input.action === "accept") {
       const isReturn =
         order[0].serviceVertical === "LAUNDRY" && order[0].status === "READY_FOR_RETURN";
-      const isInbound = order[0].status === "PROVIDER_ACCEPTED";
+      const isInbound =
+        order[0].serviceVertical !== "LAUNDRY" && order[0].status === "PROVIDER_ACCEPTED";
 
       if (!isReturn && !isInbound) {
         throw new PickiError("FORBIDDEN", "Quán phải nhận đơn trước — runner chỉ nhận khi đang tìm runner");
@@ -206,20 +244,34 @@ export class RunnerService {
       if (!order[0].runnerSoughtAt) {
         throw new PickiError("FORBIDDEN", "Quán chưa bấm Tìm runner");
       }
+      const offered = await hasPendingOffer(
+        this.db,
+        orderId,
+        userId,
+        order[0].runnerOfferWave ?? 0,
+      );
+      if (!offered) {
+        throw new PickiError("FORBIDDEN", "Đơn không còn trong danh sách mời của bạn");
+      }
       if (order[0].runnerUserId && order[0].runnerUserId !== userId) {
         throw new PickiError("FORBIDDEN", "Another runner already claimed this order");
       }
       if (isReturn) {
         toStatus = "RETURN_RUNNER_ASSIGNED";
       }
-      const result = await this.transitions.transition(orderId, toStatus, userId, "Runner accepted", {
+
+      await this.db.transaction(async (tx) => {
+        await markOfferAccepted(tx, orderId, order[0]!.runnerOfferWave ?? 0, userId);
+      });
+
+      await this.transitions.transition(orderId, toStatus, userId, "Runner accepted", {
         runnerUserId: userId,
       });
       await this.fulfillment.assignOrderOnAccept(userId, orderId);
       return {
-        id: result.order.id,
-        orderNumber: result.order.orderNumber,
-        status: result.order.status,
+        id: order[0].id,
+        orderNumber: order[0].orderNumber,
+        status: toStatus,
         estimatedReadyAt: order[0].estimatedReadyAt?.toISOString() ?? null,
       };
     }

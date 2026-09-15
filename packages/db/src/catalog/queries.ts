@@ -10,6 +10,7 @@ export type LocationMenuRow = {
   food_moment: string | null;
   fulfillment_mode: string | null;
   payment_policy: string | null;
+  estimated_days: number | null;
 };
 
 export type LocationHeaderRow = {
@@ -22,7 +23,11 @@ export type LocationHeaderRow = {
   tagline: string | null;
   prep_minutes: number | null;
   eta_minutes: number | null;
+  estimated_wait_minutes: number | null;
   live_message: string | null;
+  address_line: string | null;
+  lat: number | null;
+  lng: number | null;
 };
 
 export async function getLocationHeader(
@@ -40,7 +45,11 @@ export async function getLocationHeader(
       pp.tagline,
       pls.prep_minutes,
       pls.eta_minutes,
-      pls.message AS live_message
+      pls.estimated_wait_minutes,
+      pls.message AS live_message,
+      pl.address_line,
+      pl.lat,
+      pl.lng
     FROM provider_locations pl
     INNER JOIN providers p ON p.id = pl.provider_id
     LEFT JOIN provider_profiles pp ON pp.provider_id = p.id
@@ -68,7 +77,8 @@ export async function listLocationMenu(
       COALESCE(loc_price.pricing_kind, master_price.pricing_kind) AS pricing_kind,
       o.food_moment,
       o.fulfillment_mode,
-      o.payment_policy
+      o.payment_policy,
+      o.estimated_days
     FROM offerings o
     INNER JOIN provider_locations pl ON pl.provider_id = o.provider_id
     LEFT JOIN offering_prices loc_price

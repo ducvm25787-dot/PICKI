@@ -12,6 +12,8 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
 import { PaymentsModule } from "./modules/payments/payments.module.js";
 import { ProviderModule } from "./modules/provider/provider.module.js";
 import { RunnerModule } from "./modules/runner/runner.module.js";
+import { ServiceRequestsModule } from "./modules/service-requests/service-requests.module.js";
+import { VisitIntentsModule } from "./modules/visit-intents/visit-intents.module.js";
 import { ZonesModule } from "./modules/zones/zones.module.js";
 
 @Module({
@@ -29,6 +31,8 @@ import { ZonesModule } from "./modules/zones/zones.module.js";
     RunnerModule,
     PaymentsModule,
     MessagingModule,
+    ServiceRequestsModule,
+    VisitIntentsModule,
   ],
   controllers: [HealthController],
 })

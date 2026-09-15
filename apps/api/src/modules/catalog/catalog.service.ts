@@ -3,14 +3,19 @@ import {
   getLocationHeader,
   listDailySpecialsForLocation,
   listLocationMenu,
+  type PickiDb,
   type PickiSql,
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
-import { PICKI_SQL } from "../../shared/tokens.js";
+import { loadProviderContactPhone, loadProviderBrand } from "../orders/order-enrichment.js";
+import { PICKI_DB, PICKI_SQL } from "../../shared/tokens.js";
 
 @Injectable()
 export class CatalogService {
-  constructor(@Inject(PICKI_SQL) private readonly sql: PickiSql) {}
+  constructor(
+    @Inject(PICKI_SQL) private readonly sql: PickiSql,
+    @Inject(PICKI_DB) private readonly db: PickiDb,
+  ) {}
 
   async getLocationMenu(locationId: string) {
     const header = await getLocationHeader(this.sql, locationId);
@@ -23,6 +28,14 @@ export class CatalogService {
       listDailySpecialsForLocation(this.sql, locationId),
     ]);
 
+    const isBeauty = header.provider_type === "BEAUTY";
+    const [providerPhone, brandName] = isBeauty
+      ? await Promise.all([
+          loadProviderContactPhone(this.db, locationId),
+          loadProviderBrand(this.db, locationId),
+        ])
+      : [null, null];
+
     return {
       location: {
         id: header.location_id,
@@ -34,7 +47,19 @@ export class CatalogService {
         tagline: header.tagline,
         prepMinutes: header.prep_minutes,
         etaMinutes: header.eta_minutes,
+        estimatedWaitMinutes: header.estimated_wait_minutes,
         liveMessage: header.live_message,
+        addressLine: header.address_line,
+        lat: header.lat,
+        lng: header.lng,
+        contacts: isBeauty
+          ? {
+              provider: {
+                phone: providerPhone,
+                label: brandName ?? header.brand_name,
+              },
+            }
+          : undefined,
       },
       items: items.map((i) => ({
         id: i.offering_id,
@@ -46,6 +71,7 @@ export class CatalogService {
         foodMoment: i.food_moment,
         fulfillmentMode: i.fulfillment_mode,
         paymentPolicy: i.payment_policy,
+        estimatedDays: i.estimated_days,
       })),
       dailySpecials: specials.map((s) => ({
         id: s.special_id,

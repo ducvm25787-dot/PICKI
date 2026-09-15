@@ -9,6 +9,7 @@ type ChatMessage = {
   body: string;
   createdAt: string;
   mine: boolean;
+  senderRole?: "CUSTOMER" | "PROVIDER" | "RUNNER" | null;
 };
 
 type ChatConversation = {
@@ -16,10 +17,49 @@ type ChatConversation = {
   messages: ChatMessage[];
 };
 
+type ViewerRole = "CUSTOMER" | "PROVIDER" | "RUNNER";
+
 type Props = {
   orderId: string;
-  /** API path prefix — customer uses /messages/orders, provider/runner same */
+  /** Dùng cho nhãn vai trò (Khách / Tiệm / Runner) */
+  viewerRole: ViewerRole;
   compact?: boolean;
+};
+
+function senderLabel(role: ChatMessage["senderRole"]): string | null {
+  switch (role) {
+    case "CUSTOMER":
+      return "Khách";
+    case "PROVIDER":
+      return "Tiệm";
+    case "RUNNER":
+      return "Runner";
+    default:
+      return null;
+  }
+}
+
+const BUBBLE_STYLE = {
+  mine: {
+    row: { justifyContent: "flex-end" as const },
+    bubble: {
+      background: "#e85d04",
+      border: "1px solid #dc2f02",
+      color: "#fff",
+      borderRadius: "14px 14px 4px 14px",
+    },
+    time: { color: "rgba(255, 255, 255, 0.78)" },
+  },
+  theirs: {
+    row: { justifyContent: "flex-start" as const },
+    bubble: {
+      background: "#e8edf3",
+      border: "1px solid #b8c4d4",
+      color: "#1a1a1a",
+      borderRadius: "14px 14px 14px 4px",
+    },
+    time: { color: "#64748b" },
+  },
 };
 
 export function OrderChat({ orderId, compact = false }: Props) {
@@ -80,20 +120,37 @@ export function OrderChat({ orderId, compact = false }: Props) {
         {!conversation || conversation.messages.length === 0 ? (
           <p className="stat">Chưa có tin nhắn. Hỏi quán hoặc runner tại đây.</p>
         ) : (
-          conversation.messages.map((m) => (
-            <div
-              key={m.id}
-              className={m.mine ? "order-chat-bubble mine" : "order-chat-bubble"}
-            >
-              <p>{m.body}</p>
-              <time dateTime={m.createdAt}>
-                {new Date(m.createdAt).toLocaleTimeString("vi-VN", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </time>
-            </div>
-          ))
+          conversation.messages.map((m) => {
+            const side = m.mine ? "mine" : "theirs";
+            const styles = BUBBLE_STYLE[side];
+            const label = side === "theirs" ? senderLabel(m.senderRole) : null;
+            return (
+              <div
+                key={m.id}
+                className={`order-chat-row ${side}`}
+                style={{ display: "flex", width: "100%", ...styles.row }}
+              >
+                <div
+                  className={`order-chat-bubble ${side}`}
+                  style={{
+                    maxWidth: "78%",
+                    padding: "8px 12px",
+                    lineHeight: 1.4,
+                    ...styles.bubble,
+                  }}
+                >
+                  {label ? <span className="order-chat-sender">{label}</span> : null}
+                  <p style={{ margin: "0 0 4px", fontSize: 14 }}>{m.body}</p>
+                  <time dateTime={m.createdAt} style={{ display: "block", fontSize: 10, textAlign: "right", ...styles.time }}>
+                    {new Date(m.createdAt).toLocaleTimeString("vi-VN", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </time>
+                </div>
+              </div>
+            );
+          })
         )}
         <div ref={bottomRef} />
       </div>

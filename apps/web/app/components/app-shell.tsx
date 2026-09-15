@@ -3,7 +3,6 @@
 import { usePathname } from "next/navigation";
 import { AdminNav } from "./admin-nav";
 import { CustomerNav } from "./customer-nav";
-import { ProviderNav } from "./provider-nav";
 import { PushSubscribe } from "./push-subscribe";
 import { PwaInstallHint } from "./pwa-install-hint";
 import { RunnerNav } from "./runner-nav";
@@ -70,7 +69,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {showAdminChrome ? <AdminNav /> : null}
       <div className={mainClass}>{children}</div>
       {showCustomerChrome ? <CustomerNav /> : null}
-      {showProviderChrome ? <ProviderNav /> : null}
       {showRunnerChrome ? <RunnerNav /> : null}
     </>
   );

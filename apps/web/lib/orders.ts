@@ -1,3 +1,16 @@
+/** Đơn đã kết thúc — hoàn tất, giao xong, hủy hoặc từ chối */
+export const ORDER_FINISHED_STATUSES = [
+  "DELIVERED",
+  "COMPLETED",
+  "PROVIDER_REJECTED",
+  "CUSTOMER_CANCELLED",
+  "SYSTEM_CANCELLED",
+] as const;
+
+export function isOrderFinished(status: string): boolean {
+  return (ORDER_FINISHED_STATUSES as readonly string[]).includes(status);
+}
+
 export function orderStatusLabel(status: string): string {
   switch (status) {
     case "CREATED":
@@ -20,6 +33,20 @@ export function orderStatusLabel(status: string): string {
       return "Đang giao";
     case "DELIVERED":
       return "Đã giao";
+    case "AT_SHOP":
+      return "Đồ đã về tiệm";
+    case "PROCESSING":
+      return "Đang giặt / xử lý";
+    case "READY_FOR_RETURN":
+      return "Sẵn sàng giao lại";
+    case "RETURN_RUNNER_ASSIGNED":
+      return "Runner đang giao lại";
+    case "RETURN_PICKED_UP":
+      return "Runner lấy đồ tại tiệm";
+    case "RETURN_DELIVERING":
+      return "Đang giao về khách";
+    case "COMPLETED":
+      return "Hoàn tất";
     case "PROVIDER_REJECTED":
       return "Quán từ chối";
     case "CUSTOMER_CANCELLED":

@@ -4,9 +4,12 @@ export const phoneOtpRequestSchema = z.object({
   phone: z.string().min(8).max(20),
 });
 
+export const pickiAppRoleSchema = z.enum(["customer", "provider", "runner", "admin"]);
+
 export const phoneOtpVerifySchema = z.object({
   phone: z.string().min(8).max(20),
   code: z.string().regex(/^\d{6}$/),
+  app: pickiAppRoleSchema.optional(),
 });
 
 export const emailOtpRequestSchema = z.object({

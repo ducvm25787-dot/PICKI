@@ -1,4 +1,5 @@
 import {
+  canLaundryCustomerCancelBeforeCollection,
   laundryTransitionsForMode,
   type LaundryPickupMode,
   type ServiceVertical,
@@ -54,6 +55,9 @@ export function canCustomerCancel(
   vertical: ServiceVertical = "FOOD",
   laundryPickupMode?: LaundryPickupMode | null,
 ): boolean {
+  if (vertical === "LAUNDRY") {
+    return canLaundryCustomerCancelBeforeCollection(from, laundryPickupMode);
+  }
   return canTransition(from, "CUSTOMER_CANCELLED", vertical, laundryPickupMode);
 }
 
@@ -80,9 +84,13 @@ export type ProviderAction =
   | "ready"
   | "handoff"
   | "received"
+  | "collected"
   | "processing"
   | "ready_for_return"
-  | "find_return_runner";
+  | "find_return_runner"
+  | "cancel_return_runner"
+  | "staff_deliver"
+  | "complete";
 
 export function providerActionToStatus(action: ProviderAction): string | null {
   switch (action) {
@@ -92,6 +100,7 @@ export function providerActionToStatus(action: ProviderAction): string | null {
       return "PROVIDER_REJECTED";
     case "find_runner":
     case "find_return_runner":
+    case "cancel_return_runner":
     case "handoff":
       return null;
     case "preparing":
@@ -99,7 +108,12 @@ export function providerActionToStatus(action: ProviderAction): string | null {
     case "ready":
       return "READY";
     case "received":
+    case "collected":
       return "AT_SHOP";
+    case "staff_deliver":
+      return "RETURN_DELIVERING";
+    case "complete":
+      return "COMPLETED";
     case "processing":
       return "PROCESSING";
     case "ready_for_return":

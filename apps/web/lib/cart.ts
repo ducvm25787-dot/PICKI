@@ -3,6 +3,9 @@ export type CartLine = {
   name: string;
   amountVnd: number;
   quantity: number;
+  fulfillmentMode?: string | null;
+  estimatedDays?: number | null;
+  pricingKind?: string | null;
 };
 
 export type Cart = {
@@ -53,6 +56,12 @@ export function addToCart(
     existing?.providerLocationId === base.providerLocationId
       ? existing
       : { ...base, items: [] };
+
+  const incomingMode = line.fulfillmentMode ?? "PICKUP_AND_RETURN";
+  const existingMode = cart.items[0]?.fulfillmentMode ?? "PICKUP_AND_RETURN";
+  if (cart.items.length > 0 && incomingMode !== existingMode) {
+    throw new Error("MIXED_FULFILLMENT");
+  }
 
   const idx = cart.items.findIndex((i) => i.offeringId === line.offeringId);
   if (idx >= 0) {

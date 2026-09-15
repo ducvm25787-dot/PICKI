@@ -72,10 +72,10 @@ export default function RunnerRoutePage() {
     nextStop?.stopType === "PICKUP" ? pickupBlockReason(mine) : null;
 
   return (
-    <RunnerPageShell title="Route · lobby handoff">
+    <RunnerPageShell title="Tiến trình giao hàng">
       <div className="card">
         {!route || route.stops.length === 0 ? (
-          <p className="stat">Chưa có route active. Nhận đơn ở tab Đơn.</p>
+          <p className="stat">Chưa có tiến trình active. Nhận đơn ở tab Đơn.</p>
         ) : (
           <>
             <p className="section-title">

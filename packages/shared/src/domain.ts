@@ -89,6 +89,8 @@ export const providerTypes = [
   "MARKET_VENDOR",
   "RETAIL_STORE",
   "LAUNDRY",
+  "HOME_SERVICE",
+  "BEAUTY",
   "CLEANER",
   "TECHNICIAN",
   "SALON",
