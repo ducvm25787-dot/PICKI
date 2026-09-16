@@ -12,6 +12,7 @@ type Patient = {
   phone: string | null;
   lastVisitAt: string;
   visitCount: number;
+  followupStatus: "SCHEDULED" | "SENT" | null;
 };
 
 type Reminder = {
@@ -30,21 +31,11 @@ type ReminderListResponse = {
 };
 
 const PRESETS = [
-  { label: "Sau 1 tuần", days: 7 },
-  { label: "Sau 1 tháng", days: 30 },
-  { label: "Sau 3 tháng", days: 90 },
-  { label: "Sau 6 tháng", days: 180 },
+  { label: "7 ngày", days: 7 },
+  { label: "14 ngày", days: 14 },
+  { label: "30 ngày", days: 30 },
+  { label: "90 ngày", days: 90 },
 ] as const;
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("vi-VN", {
@@ -54,13 +45,11 @@ function formatDate(iso: string): string {
   });
 }
 
-/** datetime-local value cho mốc "sau N ngày, 9h sáng". */
-function presetValue(days: number): string {
+/** Ngày nhắc dự kiến khi chọn N ngày (chỉ hiện ngày, không giờ). */
+function previewRemindDate(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
-  d.setHours(9, 0, 0, 0);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${String(d.getFullYear())}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return formatDate(d.toISOString());
 }
 
 function statusLabel(status: string): string {
@@ -69,13 +58,19 @@ function statusLabel(status: string): string {
   return "Đã hủy";
 }
 
+function patientLockLabel(status: Patient["followupStatus"]): string | null {
+  if (status === "SCHEDULED") return "Đã đặt nhắc";
+  if (status === "SENT") return "Đã nhắc";
+  return null;
+}
+
 export default function ProviderFollowupsPage() {
   const { locationId, activeLocation } = useProviderLocation();
   const isHealth = isHealthVertical(activeLocation?.providerType);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [data, setData] = useState<ReminderListResponse | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [remindAtLocal, setRemindAtLocal] = useState("");
+  const [days, setDays] = useState(30);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -96,8 +91,12 @@ export default function ProviderFollowupsPage() {
 
   async function createReminder() {
     if (!locationId || !selectedPatient) return;
-    if (!remindAtLocal) {
-      setError("Chọn ngày nhắc");
+    if (!Number.isFinite(days) || days < 1) {
+      setError("Nhập số ngày (≥ 1)");
+      return;
+    }
+    if (days > 365) {
+      setError("Chỉ nhắc trong vòng 1 năm");
       return;
     }
     setBusy(true);
@@ -108,12 +107,12 @@ export default function ProviderFollowupsPage() {
         body: JSON.stringify({
           locationId,
           customerUserId: selectedPatient.customerUserId,
-          remindAt: new Date(remindAtLocal).toISOString(),
+          days,
         }),
       });
       setSelectedPatient(null);
-      setRemindAtLocal("");
-      setToast("Đã đặt lời nhắc — Picki sẽ thông báo cho khách đúng hẹn");
+      setDays(30);
+      setToast(`Đã đặt nhắc sau ${String(days)} ngày — Picki gửi một lần vào ngày đó`);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Không đặt được lời nhắc");
@@ -164,8 +163,8 @@ export default function ProviderFollowupsPage() {
           <strong>{data?.summary.pendingCount ?? 0}</strong> lời nhắc đang chờ gửi
         </p>
         <p className="stat" style={{ margin: "8px 0 0", fontSize: 13 }}>
-          Picki chỉ nhắc khách &quot;đến hẹn tái khám tại phòng khám&quot; — không gửi kèm lý do
-          khám. Bệnh án và phác đồ điều trị giữ trong hệ thống của phòng khám.
+          Chỉ nhập số ngày sau lần khám. Picki nhắc khách một lần — đã nhắc thì không đặt lại
+          cho khách đó. Không gửi kèm lý do khám.
         </p>
       </div>
 
@@ -189,30 +188,36 @@ export default function ProviderFollowupsPage() {
                 <button
                   key={p.days}
                   type="button"
-                  className={
-                    remindAtLocal === presetValue(p.days) ? "btn provider-btn" : "btn btn-secondary"
-                  }
+                  className={days === p.days ? "btn provider-btn" : "btn btn-secondary"}
                   style={{ width: "auto", padding: "8px 12px" }}
                   onClick={() => {
-                    setRemindAtLocal(presetValue(p.days));
+                    setDays(p.days);
                   }}
                 >
                   {p.label}
                 </button>
               ))}
             </div>
-            <label className="stat" htmlFor="followup-at">
-              Ngày giờ nhắc
+            <label className="stat" htmlFor="followup-days">
+              Số ngày sau lần khám
             </label>
             <input
-              id="followup-at"
-              type="datetime-local"
-              value={remindAtLocal}
+              id="followup-days"
+              type="number"
+              min={1}
+              max={365}
+              value={days}
               onChange={(e) => {
-                setRemindAtLocal(e.target.value);
+                const n = Number(e.target.value);
+                setDays(Number.isFinite(n) ? n : 0);
               }}
-              style={{ width: "100%", marginBottom: 12, padding: 10 }}
+              style={{ width: "100%", marginBottom: 8, padding: 10 }}
             />
+            {days >= 1 && days <= 365 ? (
+              <p className="stat" style={{ margin: "0 0 12px" }}>
+                Sẽ nhắc khoảng ngày {previewRemindDate(days)} (một lần)
+              </p>
+            ) : null}
             {error ? (
               <p className="stat" style={{ color: "#c0392b", margin: "0 0 8px" }}>
                 {error}
@@ -235,7 +240,7 @@ export default function ProviderFollowupsPage() {
                 disabled={busy}
                 onClick={() => {
                   setSelectedPatient(null);
-                  setRemindAtLocal("");
+                  setDays(30);
                   setError(null);
                 }}
               >
@@ -245,41 +250,50 @@ export default function ProviderFollowupsPage() {
           </>
         ) : (
           <div className="provider-list">
-            {patients.map((p) => (
-              <article key={p.customerUserId} className="provider-card">
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <strong>{p.displayName}</strong>
-                  <span className="badge" style={{ fontSize: 11 }}>
-                    {String(p.visitCount)} lần khám
-                  </span>
-                </div>
-                <p className="stat" style={{ margin: "6px 0" }}>
-                  Gần nhất: {formatDate(p.lastVisitAt)}
-                </p>
-                {p.phone ? (
-                  <OrderPhoneLinks
-                    contacts={{
-                      customer: { phone: p.phone, displayName: p.displayName },
-                      provider: { phone: null },
-                    }}
-                    showOnly="customer"
-                    compact
-                  />
-                ) : null}
-                <button
-                  type="button"
-                  className="btn provider-btn"
-                  style={{ width: "auto", padding: "8px 12px", marginTop: 10 }}
-                  onClick={() => {
-                    setSelectedPatient(p);
-                    setRemindAtLocal(presetValue(30));
-                    setError(null);
-                  }}
-                >
-                  Nhắc tái khám
-                </button>
-              </article>
-            ))}
+            {patients.map((p) => {
+              const lock = patientLockLabel(p.followupStatus);
+              return (
+                <article key={p.customerUserId} className="provider-card">
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <strong>{p.displayName}</strong>
+                    <span className="badge" style={{ fontSize: 11 }}>
+                      {String(p.visitCount)} lần khám
+                    </span>
+                  </div>
+                  <p className="stat" style={{ margin: "6px 0" }}>
+                    Gần nhất: {formatDate(p.lastVisitAt)}
+                  </p>
+                  {p.phone ? (
+                    <OrderPhoneLinks
+                      contacts={{
+                        customer: { phone: p.phone, displayName: p.displayName },
+                        provider: { phone: null },
+                      }}
+                      showOnly="customer"
+                      compact
+                    />
+                  ) : null}
+                  {lock ? (
+                    <p className="stat" style={{ margin: "10px 0 0", color: "#2d6a4f" }}>
+                      {lock} — không đặt thêm
+                    </p>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn provider-btn"
+                      style={{ width: "auto", padding: "8px 12px", marginTop: 10 }}
+                      onClick={() => {
+                        setSelectedPatient(p);
+                        setDays(30);
+                        setError(null);
+                      }}
+                    >
+                      Nhắc tái khám
+                    </button>
+                  )}
+                </article>
+              );
+            })}
           </div>
         )}
       </div>
@@ -301,8 +315,8 @@ export default function ProviderFollowupsPage() {
                   </span>
                 </div>
                 <p className="stat" style={{ margin: "6px 0 0" }}>
-                  Hẹn nhắc: {formatDateTime(r.remindAt)}
-                  {r.sentAt ? ` · Đã gửi ${formatDateTime(r.sentAt)}` : ""}
+                  Hẹn nhắc: {formatDate(r.remindAt)}
+                  {r.sentAt ? ` · Đã gửi ${formatDate(r.sentAt)}` : ""}
                 </p>
                 {r.status === "SCHEDULED" ? (
                   <button

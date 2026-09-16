@@ -4,7 +4,9 @@ import {
   HEALTH_FOLLOWUP_MAX_DAYS,
   beautyVisitIntents,
   healthFollowupReminders,
+  isHealthFollowupLocked,
   isHealthFollowupPending,
+  remindAtFromDays,
   providerLocations,
   providerMembers,
   providers,
@@ -51,6 +53,11 @@ export class HealthFollowupsService {
     if (rows.length === 0) return { patients: [] };
 
     const names = await this.loadDisplayNames(rows.map((r) => r.customerUserId));
+    const lockStatus = await this.loadActiveFollowupStatus(
+      locationId,
+      rows.map((r) => r.customerUserId),
+    );
+
     const patients = await Promise.all(
       rows.map(async (r) => ({
         customerUserId: r.customerUserId,
@@ -58,6 +65,7 @@ export class HealthFollowupsService {
         phone: await loadUserPhone(this.db, r.customerUserId),
         lastVisitAt: new Date(r.lastVisitAt).toISOString(),
         visitCount: r.visitCount,
+        followupStatus: lockStatus.get(r.customerUserId) ?? null,
       })),
     );
 
@@ -97,16 +105,14 @@ export class HealthFollowupsService {
   async create(userId: string, input: z.infer<typeof createHealthFollowupSchema>) {
     await this.assertClinicAccess(userId, input.locationId);
 
-    const remindAt = new Date(input.remindAt);
-    const now = Date.now();
-    if (remindAt.getTime() <= now) {
-      throw new PickiError("VALIDATION_ERROR", "Chọn mốc thời gian trong tương lai");
-    }
-    if (remindAt.getTime() > now + HEALTH_FOLLOWUP_MAX_DAYS * 24 * 60 * 60_000) {
-      throw new PickiError("VALIDATION_ERROR", "Chỉ nhắc trong vòng 1 năm");
+    if (input.days < 1 || input.days > HEALTH_FOLLOWUP_MAX_DAYS) {
+      throw new PickiError("VALIDATION_ERROR", `Chọn từ 1 đến ${String(HEALTH_FOLLOWUP_MAX_DAYS)} ngày`);
     }
 
     await this.assertVisitedBefore(input.locationId, input.customerUserId);
+    await this.assertCanSchedule(input.locationId, input.customerUserId);
+
+    const remindAt = remindAtFromDays(input.days);
 
     try {
       const [created] = await this.db
@@ -129,10 +135,11 @@ export class HealthFollowupsService {
         status: created.status,
         customerUserId: created.customerUserId,
         remindAt: created.remindAt.toISOString(),
+        days: input.days,
       };
     } catch (err) {
       if (isUniqueViolation(err)) {
-        throw new PickiError("CONFLICT", "Đã có lời nhắc cho khách này vào thời điểm đó");
+        throw new PickiError("CONFLICT", "Khách này đã có lời nhắc — chỉ nhắc một lần");
       }
       throw err;
     }
@@ -224,6 +231,36 @@ export class HealthFollowupsService {
     return sent;
   }
 
+  private async loadActiveFollowupStatus(
+    locationId: string,
+    customerUserIds: string[],
+  ): Promise<Map<string, string>> {
+    const unique = [...new Set(customerUserIds)];
+    if (unique.length === 0) return new Map();
+
+    const rows = await this.db
+      .select({
+        customerUserId: healthFollowupReminders.customerUserId,
+        status: healthFollowupReminders.status,
+      })
+      .from(healthFollowupReminders)
+      .where(
+        and(
+          eq(healthFollowupReminders.providerLocationId, locationId),
+          inArray(healthFollowupReminders.customerUserId, unique),
+          inArray(healthFollowupReminders.status, ["SCHEDULED", "SENT"]),
+        ),
+      );
+
+    const map = new Map<string, string>();
+    for (const r of rows) {
+      if (r.status === "SENT" || !map.has(r.customerUserId)) {
+        map.set(r.customerUserId, r.status);
+      }
+    }
+    return map;
+  }
+
   private async loadDisplayNames(userIds: string[]): Promise<Map<string, string>> {
     const unique = [...new Set(userIds)];
     if (unique.length === 0) return new Map();
@@ -234,6 +271,28 @@ export class HealthFollowupsService {
       .where(inArray(users.id, unique));
 
     return new Map(rows.map((r) => [r.id, r.displayName ?? "Khách"]));
+  }
+
+  private async assertCanSchedule(locationId: string, customerUserId: string) {
+    const existing = await this.db
+      .select({ status: healthFollowupReminders.status })
+      .from(healthFollowupReminders)
+      .where(
+        and(
+          eq(healthFollowupReminders.providerLocationId, locationId),
+          eq(healthFollowupReminders.customerUserId, customerUserId),
+          inArray(healthFollowupReminders.status, ["SCHEDULED", "SENT"]),
+        ),
+      )
+      .limit(1);
+
+    const status = existing[0]?.status;
+    if (status && isHealthFollowupLocked(status)) {
+      if (status === "SENT") {
+        throw new PickiError("CONFLICT", "Đã nhắc khách này rồi — chỉ nhắc một lần");
+      }
+      throw new PickiError("CONFLICT", "Khách này đang có lời nhắc chờ gửi");
+    }
   }
 
   private async assertVisitedBefore(locationId: string, customerUserId: string) {

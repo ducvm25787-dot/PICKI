@@ -26,6 +26,8 @@ export const classifiedListings = pgTable("classified_listings", {
   }),
   reservedAt: timestamp("reserved_at", { withTimezone: true, mode: "date" }),
   completedAt: timestamp("completed_at", { withTimezone: true, mode: "date" }),
+  /** Housing (CHO_THUE / O_GHEP): auto-archive sau TTL. */
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

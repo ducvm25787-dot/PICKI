@@ -32,6 +32,10 @@ type CommunityListing = {
 type CommunitySummary = {
   resaleCount: number;
   giveAwayCount: number;
+  rentCount?: number;
+  roommateCount?: number;
+  lostFoundCount?: number;
+  petLostCount?: number;
   recentListings: CommunityListing[];
 };
 
@@ -173,7 +177,7 @@ export default function HomePage() {
           <div className="card" style={{ marginBottom: 16 }}>
             <p className="section-title">GÓC KHU MÌNH</p>
             <p className="stat" style={{ marginBottom: 12 }}>
-              Cho tặng, thanh lý trong khu — không phải mạng xã hội
+              Cho tặng, thanh lý, cho thuê, thất lạc trong khu — không phải mạng xã hội
             </p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
               <Link
@@ -181,14 +185,42 @@ export default function HomePage() {
                 className="btn btn-secondary"
                 style={{ width: "auto" }}
               >
-                🎁 Cho tặng ({community?.giveAwayCount ?? 0})
+                Cho tặng ({community?.giveAwayCount ?? 0})
               </Link>
               <Link
                 href={`/zones/${KVL_SLUG}/classifieds?type=RESALE`}
                 className="btn btn-secondary"
                 style={{ width: "auto" }}
               >
-                💰 Thanh lý ({community?.resaleCount ?? 0})
+                Thanh lý ({community?.resaleCount ?? 0})
+              </Link>
+              <Link
+                href={`/zones/${KVL_SLUG}/classifieds?type=CHO_THUE`}
+                className="btn btn-secondary"
+                style={{ width: "auto" }}
+              >
+                Cho thuê ({community?.rentCount ?? 0})
+              </Link>
+              <Link
+                href={`/zones/${KVL_SLUG}/classifieds?type=O_GHEP`}
+                className="btn btn-secondary"
+                style={{ width: "auto" }}
+              >
+                Ở ghép ({community?.roommateCount ?? 0})
+              </Link>
+              <Link
+                href={`/zones/${KVL_SLUG}/classifieds?type=LOST_FOUND`}
+                className="btn btn-secondary"
+                style={{ width: "auto" }}
+              >
+                Thất lạc ({community?.lostFoundCount ?? 0})
+              </Link>
+              <Link
+                href={`/zones/${KVL_SLUG}/classifieds?type=PET_LOST`}
+                className="btn btn-secondary"
+                style={{ width: "auto" }}
+              >
+                Thú cưng ({community?.petLostCount ?? 0})
               </Link>
               <Link href="/classifieds/mine" className="btn btn-secondary" style={{ width: "auto" }}>
                 Tin của tôi
@@ -203,8 +235,14 @@ export default function HomePage() {
                       <p className="stat">
                         {item.listingType === "GIVE_AWAY"
                           ? "Miễn phí"
+                          : item.listingType === "LOST_FOUND" || item.listingType === "PET_LOST"
+                            ? "Không mua bán"
                           : item.priceVnd != null
-                            ? `${item.priceVnd.toLocaleString("vi-VN")}đ`
+                            ? `${item.priceVnd.toLocaleString("vi-VN")}đ${
+                                item.listingType === "CHO_THUE" || item.listingType === "O_GHEP"
+                                  ? "/tháng"
+                                  : ""
+                              }`
                             : "Liên hệ"}
                         {" · "}
                         {item.locationLabel}
@@ -214,7 +252,7 @@ export default function HomePage() {
                 ))}
               </div>
             ) : (
-              <p className="stat">Chưa có tin — bấm đăng tin từ Thanh lý hoặc Cho tặng.</p>
+              <p className="stat">Chưa có tin — chọn mục trên để đăng.</p>
             )}
           </div>
 

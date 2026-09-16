@@ -36,6 +36,22 @@ export class MessagingController {
     return this.messaging.getOrCreateClassifiedConversation(userId, listingId);
   }
 
+  @Get("pharmacies/:locationId")
+  pharmacyConversation(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+  ) {
+    return this.messaging.getOrCreatePharmacyConversation(userId, locationId);
+  }
+
+  @Get("markets/:locationId")
+  marketConversation(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+  ) {
+    return this.messaging.getOrCreateMarketConversation(userId, locationId);
+  }
+
   @Post("conversations/:conversationId/messages")
   sendMessage(
     @CurrentUserId() userId: string,
@@ -48,6 +64,6 @@ export class MessagingController {
         details: { issues: parsed.error.issues },
       });
     }
-    return this.messaging.sendMessage(userId, conversationId, parsed.data.body);
+    return this.messaging.sendMessage(userId, conversationId, parsed.data);
   }
 }

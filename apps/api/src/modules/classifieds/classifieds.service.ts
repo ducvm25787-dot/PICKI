@@ -1,11 +1,20 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import {
+  HOUSING_LISTING_MONTHLY_CREATE_LIMIT,
+  LOST_LISTING_ACTIVE_LIMIT,
+  LOST_LISTING_MONTHLY_CREATE_LIMIT,
   canClassifiedTransition,
   classifiedCompleteStatus,
   classifiedListings,
   classifiedReservations,
+  housingExpiresAt,
   isClassifiedBrowsable,
+  isContactOnlyListingType,
+  isHousingListingType,
+  isLostListingType,
+  lostExpiresAt,
+  userIdentities,
   userZoneMemberships,
   users,
   type PickiDb,
@@ -15,6 +24,8 @@ import { OutboxService } from "../outbox/outbox.service.js";
 import { PICKI_DB } from "../../shared/tokens.js";
 import type { z } from "zod";
 import type { createClassifiedSchema, listClassifiedsQuerySchema } from "./dto.js";
+
+const UNIQUE_VIOLATION = "23505";
 
 @Injectable()
 export class ClassifiedsService {
@@ -26,56 +37,95 @@ export class ClassifiedsService {
   async create(userId: string, input: z.infer<typeof createClassifiedSchema>) {
     await this.assertZoneMember(userId, input.zoneId);
 
+    const housing = isHousingListingType(input.listingType);
+    const lost = isLostListingType(input.listingType);
+    const contactOnly = isContactOnlyListingType(input.listingType);
+
+    if (housing || lost) {
+      await this.assertPhoneVerified(userId, housing ? "housing" : "lost");
+    }
+    if (housing) {
+      await this.assertHousingQuota(userId);
+    }
+    if (lost) {
+      await this.assertLostQuota(userId);
+    }
+
     if (input.listingType === "GIVE_AWAY" && input.priceVnd != null && input.priceVnd > 0) {
       throw new PickiError("VALIDATION_ERROR", "Cho tặng không cần giá");
     }
     if (input.listingType === "RESALE" && (input.priceVnd == null || input.priceVnd <= 0)) {
       throw new PickiError("VALIDATION_ERROR", "Nhập giá bán");
     }
+    if (lost && input.priceVnd != null && input.priceVnd > 0) {
+      throw new PickiError("VALIDATION_ERROR", "Tin thất lạc không có giá");
+    }
+    if (housing && input.condition) {
+      throw new PickiError("VALIDATION_ERROR", "Tin cho thuê/ở ghép không dùng tình trạng đồ");
+    }
+    if (lost && input.condition) {
+      throw new PickiError("VALIDATION_ERROR", "Tin thất lạc không dùng tình trạng đồ");
+    }
+    if (input.listingType === "PET_LOST" && (input.photoUrls?.length ?? 0) < 1) {
+      throw new PickiError("VALIDATION_ERROR", "Tin thú cưng thất lạc cần ít nhất 1 ảnh");
+    }
 
-    const listingNumber = await this.allocateListingNumber();
+    const listingNumber = this.allocateListingNumber(input.listingType);
+    const expiresAt = housing ? housingExpiresAt() : lost ? lostExpiresAt() : null;
 
-    const created = await this.db.transaction(async (tx) => {
-      const [row] = await tx
-        .insert(classifiedListings)
-        .values({
-          listingNumber,
-          zoneId: input.zoneId,
-          sellerUserId: userId,
-          listingType: input.listingType,
-          status: "AVAILABLE",
-          title: input.title.trim(),
-          description: input.description?.trim() ?? null,
-          priceVnd: input.listingType === "GIVE_AWAY" ? null : (input.priceVnd ?? null),
-          condition: input.condition ?? null,
-          photoUrl: input.photoUrls?.[0] ?? null,
-          photoUrls: input.photoUrls ?? [],
-          locationLabel: input.locationLabel.trim(),
-        })
-        .returning();
+    try {
+      const created = await this.db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(classifiedListings)
+          .values({
+            listingNumber,
+            zoneId: input.zoneId,
+            sellerUserId: userId,
+            listingType: input.listingType,
+            status: "AVAILABLE",
+            title: input.title.trim(),
+            description: input.description?.trim() ?? null,
+            priceVnd:
+              input.listingType === "GIVE_AWAY" || lost ? null : (input.priceVnd ?? null),
+            condition: contactOnly ? null : (input.condition ?? null),
+            photoUrl: input.photoUrls?.[0] ?? null,
+            photoUrls: input.photoUrls ?? [],
+            locationLabel: input.locationLabel.trim(),
+            expiresAt,
+          })
+          .returning();
 
-      if (!row) {
-        throw new PickiError("INTERNAL_ERROR", "Failed to create listing");
-      }
+        if (!row) {
+          throw new PickiError("INTERNAL_ERROR", "Failed to create listing");
+        }
 
-      await this.outbox.enqueue(tx, {
-        eventType: "classified.created",
-        aggregateType: "classified_listing",
-        aggregateId: row.id,
-        payload: {
-          listingId: row.id,
-          listingNumber: row.listingNumber,
-          zoneId: row.zoneId,
-          sellerUserId: row.sellerUserId,
-          listingType: row.listingType,
-          title: row.title,
-        },
+        await this.outbox.enqueue(tx, {
+          eventType: "classified.created",
+          aggregateType: "classified_listing",
+          aggregateId: row.id,
+          payload: {
+            listingId: row.id,
+            listingNumber: row.listingNumber,
+            zoneId: row.zoneId,
+            sellerUserId: row.sellerUserId,
+            listingType: row.listingType,
+            title: row.title,
+          },
+        });
+
+        return row;
       });
 
-      return row;
-    });
-
-    return this.toDto(created);
+      return this.toDto(created);
+    } catch (err) {
+      if (housing && isUniqueViolation(err)) {
+        throw new PickiError(
+          "CONFLICT",
+          "Bạn đang có tin cho thuê/ở ghép đang mở — xóa hoặc chờ hết hạn rồi đăng tin khác",
+        );
+      }
+      throw err;
+    }
   }
 
   async listForZone(userId: string, query: z.infer<typeof listClassifiedsQuerySchema>) {
@@ -119,8 +169,7 @@ export class ClassifiedsService {
       )
       .groupBy(classifiedListings.listingType);
 
-    const resaleCount = rows.find((r) => r.listingType === "RESALE")?.count ?? 0;
-    const giveAwayCount = rows.find((r) => r.listingType === "GIVE_AWAY")?.count ?? 0;
+    const countOf = (type: string) => rows.find((r) => r.listingType === type)?.count ?? 0;
 
     const recent = await this.db
       .select()
@@ -135,8 +184,12 @@ export class ClassifiedsService {
       .limit(4);
 
     return {
-      resaleCount,
-      giveAwayCount,
+      resaleCount: countOf("RESALE"),
+      giveAwayCount: countOf("GIVE_AWAY"),
+      rentCount: countOf("CHO_THUE"),
+      roommateCount: countOf("O_GHEP"),
+      lostFoundCount: countOf("LOST_FOUND"),
+      petLostCount: countOf("PET_LOST"),
       recentListings: recent.map((r) => this.toDto(r)),
     };
   }
@@ -183,7 +236,11 @@ export class ClassifiedsService {
     const row = await this.loadListing(listingId);
     await this.assertZoneMember(userId, row.zoneId);
 
-    if (!isClassifiedBrowsable(row.status) && row.sellerUserId !== userId && row.reservedByUserId !== userId) {
+    if (
+      !isClassifiedBrowsable(row.status) &&
+      row.sellerUserId !== userId &&
+      row.reservedByUserId !== userId
+    ) {
       throw new PickiError("NOT_FOUND", "Listing not found");
     }
 
@@ -205,6 +262,15 @@ export class ClassifiedsService {
   async reserve(userId: string, listingId: string) {
     const listing = await this.loadListing(listingId);
     await this.assertZoneMember(userId, listing.zoneId);
+
+    if (isContactOnlyListingType(listing.listingType)) {
+      throw new PickiError(
+        "VALIDATION_ERROR",
+        isLostListingType(listing.listingType)
+          ? "Tin thất lạc — liên hệ trực tiếp, không giữ chỗ"
+          : "Tin cho thuê/ở ghép — liên hệ trực tiếp, không giữ chỗ",
+      );
+    }
 
     if (listing.sellerUserId === userId) {
       throw new PickiError("VALIDATION_ERROR", "Không thể giữ chỗ tin của chính mình");
@@ -261,6 +327,9 @@ export class ClassifiedsService {
 
   async complete(userId: string, listingId: string) {
     const listing = await this.loadListing(listingId);
+    if (isContactOnlyListingType(listing.listingType)) {
+      throw new PickiError("VALIDATION_ERROR", "Tin này không dùng giữ chỗ");
+    }
     if (listing.sellerUserId !== userId) {
       throw new PickiError("FORBIDDEN", "Chỉ người đăng mới xác nhận giao xong");
     }
@@ -321,6 +390,9 @@ export class ClassifiedsService {
 
   async cancelReservation(userId: string, listingId: string) {
     const listing = await this.loadListing(listingId);
+    if (isContactOnlyListingType(listing.listingType)) {
+      throw new PickiError("VALIDATION_ERROR", "Tin này không dùng giữ chỗ");
+    }
     if (listing.status !== "RESERVED") {
       throw new PickiError("VALIDATION_ERROR", "Tin không đang được giữ");
     }
@@ -393,6 +465,174 @@ export class ClassifiedsService {
     return this.get(userId, listingId);
   }
 
+  /**
+   * Worker: ẩn tin có TTL hết hạn (housing 7 ngày · thất lạc 14 ngày).
+   */
+  async expireDueHousing(limit = 20): Promise<number> {
+    const now = new Date();
+    const ttlTypes = ["CHO_THUE", "O_GHEP", "LOST_FOUND", "PET_LOST"] as const;
+    const due = await this.db
+      .select({ id: classifiedListings.id })
+      .from(classifiedListings)
+      .where(
+        and(
+          inArray(classifiedListings.listingType, [...ttlTypes]),
+          eq(classifiedListings.status, "AVAILABLE"),
+          lte(classifiedListings.expiresAt, now),
+        ),
+      )
+      .orderBy(classifiedListings.expiresAt)
+      .limit(limit);
+
+    let expired = 0;
+    for (const row of due) {
+      const claimed = await this.db.transaction(async (tx) => {
+        const [next] = await tx
+          .update(classifiedListings)
+          .set({ status: "ARCHIVED", updatedAt: new Date() })
+          .where(
+            and(
+              eq(classifiedListings.id, row.id),
+              eq(classifiedListings.status, "AVAILABLE"),
+              inArray(classifiedListings.listingType, [...ttlTypes]),
+            ),
+          )
+          .returning();
+
+        if (!next) return false;
+
+        await this.outbox.enqueue(tx, {
+          eventType: "classified.expired",
+          aggregateType: "classified_listing",
+          aggregateId: next.id,
+          payload: {
+            listingId: next.id,
+            listingNumber: next.listingNumber,
+            zoneId: next.zoneId,
+            sellerUserId: next.sellerUserId,
+            listingType: next.listingType,
+            title: next.title,
+          },
+        });
+
+        return true;
+      });
+      if (claimed) expired += 1;
+    }
+
+    return expired;
+  }
+
+  private async assertPhoneVerified(userId: string, kind: "housing" | "lost") {
+    const rows = await this.db
+      .select({ id: userIdentities.id })
+      .from(userIdentities)
+      .where(
+        and(
+          eq(userIdentities.userId, userId),
+          eq(userIdentities.provider, "PHONE"),
+          sql`${userIdentities.verifiedAt} IS NOT NULL`,
+        ),
+      )
+      .limit(1);
+    if (!rows[0]) {
+      throw new PickiError(
+        "FORBIDDEN",
+        kind === "lost"
+          ? "Xác thực số điện thoại trước khi đăng tin thất lạc"
+          : "Xác thực số điện thoại trước khi đăng tin cho thuê/ở ghép",
+      );
+    }
+  }
+
+  private async assertHousingQuota(userId: string) {
+    const active = await this.db
+      .select({ id: classifiedListings.id })
+      .from(classifiedListings)
+      .where(
+        and(
+          eq(classifiedListings.sellerUserId, userId),
+          inArray(classifiedListings.listingType, ["CHO_THUE", "O_GHEP"]),
+          eq(classifiedListings.status, "AVAILABLE"),
+        ),
+      )
+      .limit(1);
+
+    if (active[0]) {
+      throw new PickiError(
+        "CONFLICT",
+        "Bạn đang có tin cho thuê/ở ghép đang mở — xóa hoặc chờ hết hạn rồi đăng tin khác",
+      );
+    }
+
+    const start = new Date();
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+
+    const createdThisMonth = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(classifiedListings)
+      .where(
+        and(
+          eq(classifiedListings.sellerUserId, userId),
+          inArray(classifiedListings.listingType, ["CHO_THUE", "O_GHEP"]),
+          gte(classifiedListings.createdAt, start),
+        ),
+      );
+
+    const count = createdThisMonth[0]?.count ?? 0;
+    if (count >= HOUSING_LISTING_MONTHLY_CREATE_LIMIT) {
+      throw new PickiError(
+        "CONFLICT",
+        `Tháng này đã đăng ${String(HOUSING_LISTING_MONTHLY_CREATE_LIMIT)} tin cho thuê/ở ghép — thử lại tháng sau`,
+      );
+    }
+  }
+
+  private async assertLostQuota(userId: string) {
+    const active = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(classifiedListings)
+      .where(
+        and(
+          eq(classifiedListings.sellerUserId, userId),
+          inArray(classifiedListings.listingType, ["LOST_FOUND", "PET_LOST"]),
+          eq(classifiedListings.status, "AVAILABLE"),
+        ),
+      );
+
+    const activeCount = active[0]?.count ?? 0;
+    if (activeCount >= LOST_LISTING_ACTIVE_LIMIT) {
+      throw new PickiError(
+        "CONFLICT",
+        `Bạn đang có ${String(LOST_LISTING_ACTIVE_LIMIT)} tin thất lạc đang mở — ẩn tin cũ rồi đăng tiếp`,
+      );
+    }
+
+    const start = new Date();
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+
+    const createdThisMonth = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(classifiedListings)
+      .where(
+        and(
+          eq(classifiedListings.sellerUserId, userId),
+          inArray(classifiedListings.listingType, ["LOST_FOUND", "PET_LOST"]),
+          gte(classifiedListings.createdAt, start),
+        ),
+      );
+
+    const count = createdThisMonth[0]?.count ?? 0;
+    if (count >= LOST_LISTING_MONTHLY_CREATE_LIMIT) {
+      throw new PickiError(
+        "CONFLICT",
+        `Tháng này đã đăng ${String(LOST_LISTING_MONTHLY_CREATE_LIMIT)} tin thất lạc — thử lại tháng sau`,
+      );
+    }
+  }
+
   private async loadListing(listingId: string) {
     const rows = await this.db
       .select()
@@ -431,19 +671,24 @@ export class ClassifiedsService {
     }
   }
 
-  private async allocateListingNumber(): Promise<string> {
+  private allocateListingNumber(listingType: string): string {
     const now = new Date();
     const y = now.getFullYear();
     const m = String(now.getMonth() + 1).padStart(2, "0");
     const d = String(now.getDate()).padStart(2, "0");
     const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
-    return `CL-${String(y)}${m}${d}-${suffix}`;
+    const prefix = isHousingListingType(listingType)
+      ? "HS"
+      : isLostListingType(listingType)
+        ? "LF"
+        : "CL";
+    return `${prefix}-${String(y)}${m}${d}-${suffix}`;
   }
 
   private photoUrlsFromRow(row: typeof classifiedListings.$inferSelect): string[] {
     const urls = row.photoUrls;
     if (Array.isArray(urls) && urls.every((u) => typeof u === "string")) {
-      return urls as string[];
+      return urls;
     }
     return row.photoUrl ? [row.photoUrl] : [];
   }
@@ -467,7 +712,12 @@ export class ClassifiedsService {
       reservedByUserId: row.reservedByUserId,
       reservedAt: row.reservedAt?.toISOString() ?? null,
       completedAt: row.completedAt?.toISOString() ?? null,
+      expiresAt: row.expiresAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
     };
   }
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: string }).code === UNIQUE_VIOLATION;
 }

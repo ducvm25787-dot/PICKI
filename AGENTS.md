@@ -14,9 +14,17 @@ Master Spec wins on conflict. Implement **the current sprint only**.
 
 **S32 Education + Pet:** service requests cho học thử (`ONLINE`/`CUSTOMER_VISIT`) và dịch vụ pet tại nhà; seed `bash scripts/db-seed-education.sh`, `bash scripts/db-seed-pet.sh`. **S33 Classified + Give Away (GÓC KHU MÌNH):** tin thanh lý/cho tặng trong Zone + giữ chỗ + chat + ảnh (nén client, tối đa 3 ảnh < 300KB); seed `bash scripts/db-seed-classified.sh`. **S34 Auto Service:** rửa xe/bơm lốp dùng queue (`CUSTOMER_VISIT`), thay dầu/sửa chữa dùng `CONTACT_ONLY`; seed `bash scripts/db-seed-auto.sh`. **S35 Đặt sân:** service request kèm khung giờ mong muốn — không có booking engine/lịch sân (quyết định giữ lean); seed `bash scripts/db-seed-sports.sh`.
 
-**Current — S36 Phòng khám (Health):** `LISTING` + `LIVE_STATUS` + `QUEUE_STATUS` + `CONTACT` + visit intent — 9 chuyên khoa là **offering**, không phải provider type riêng. Master Spec §86: **giấy phép hoạt động phải verify** (`provider_profiles.license_verified_at`) mới hiện trên discovery. **Không đi sâu** vào hẹn tái khám có lý do, lộ trình điều trị, khám thai theo tuần — dữ liệu sức khỏe không nằm trong Picki. **Nhắc tái khám dạng nhẹ:** `health_followup_reminders` chỉ lưu khách + mốc giờ; provider tab **Tái khám**; worker phát outbox `health.followup_due`. Seed `npm run db:seed:health` — demo **Đa khoa Kim Văn** (`da-khoa-kim-van`), **Nha khoa Kim Văn** (`nha-khoa-kim-van`), **Đông y Kim Văn** (`dong-y-kim-van`).
+**Current — S40 Thất lạc / Pet Lost (ADR-045):** `LOST_FOUND` / `PET_LOST` trong GÓC KHU MÌNH — chat only, TTL 14 ngày, quota 2 ACTIVE · 5/tháng. Seed `bash scripts/db-seed-lost.sh`. Scope: `docs/S40_LOST_FOUND.md`.
 
-**Demo accounts (seed:ops):** Food provider `0908888001` (Cơm Tấm) · Laundry provider `0908888004` (Giặt Kim Văn) · Home service `0908888005` (Điện Nước) · Beauty `0908888006` (Tóc Minh) · Auto `0908888007` (Rửa Xe Kim Văn) · Sports `0908888008` (Sân CT12) · Phòng khám `0908888009` (Đa khoa) / `0908888010` (Nha khoa) / `0908888011` (Đông y) · Runner `0908888002` · Admin `0908888003` · Customer `0901234567`
+**S39 Đi chợ (ADR-044):** `MINIMART` / `MARKET_VENDOR` / `RETAIL_STORE` = `LISTING` + `LIVE_STATUS` + `CONTACT` — discovery **ĐI CHỢ**; hỏi hàng + ảnh qua Picki Chat; **không** giỏ / giao runner. Seed `bash scripts/db-seed-minimart.sh` — demo **Tạp hóa Kim Văn** (`tap-hoa-kim-van`), login `0908888013`. Scope: `docs/S39_MARKET.md`.
+
+**S38 Nhà thuốc (ADR-043):** `PHARMACY` lean — seed `bash scripts/db-seed-pharmacy.sh`, login `0908888012`.
+
+**S37 Cho thuê / Ở ghép (ADR-042):** peer listing `CHO_THUE` / `O_GHEP`. Seed `bash scripts/db-seed-housing.sh`.
+
+**S36 Phòng khám (Health):** visit intent + nhắc tái khám nhẹ. Seed `npm run db:seed:health`. Demo phòng khám `0908888009`–`011`.
+
+**Demo accounts (seed:ops):** Food `0908888001` · Laundry `0908888004` · Home `0908888005` · Beauty `0908888006` · Auto `0908888007` · Sports `0908888008` · Phòng khám `0908888009`–`011` · Nhà thuốc `0908888012` · Tạp hóa `0908888013` · Runner `0908888002` · Admin `0908888003` · Customer `0901234567`
 
 **Pilot Zone 1:** Kim Văn – Kim Lũ (`kim-van-kim-lu`) — see `docs/pilot/KIM_VAN_KIM_LU.md`. **E2E:** `pnpm pilot:e2e` · manual checklist `docs/pilot/FOOD_E2E_CHECKLIST.md`.
 

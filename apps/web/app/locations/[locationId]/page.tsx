@@ -13,6 +13,8 @@ import {
 } from "../../../lib/cart";
 import { LocationContactActions } from "../../components/location-contact-actions";
 import { OrderPhoneLinks } from "../../components/order-phone-links";
+import { PharmacyInquiry } from "../../components/pharmacy-inquiry";
+import { MarketInquiry } from "../../components/market-inquiry";
 import {
   formatBeautyPrice,
   formatHomeServicePrice,
@@ -29,6 +31,8 @@ import {
   isHealthVertical,
   isHomeServiceVertical,
   isPetVertical,
+  isPharmacyVertical,
+  isMarketVertical,
   isSportsVertical,
   isLaundryVertical,
   laundryPriceUnit,
@@ -320,6 +324,8 @@ export default function LocationMenuPage() {
   const isPet = isPetVertical(location.providerType);
   const isAuto = isAutoVertical(location.providerType);
   const isHealth = isHealthVertical(location.providerType);
+  const isPharmacy = isPharmacyVertical(location.providerType);
+  const isMarket = isMarketVertical(location.providerType);
   const isCustomerVisit = isCustomerVisitVertical(location.providerType);
   const isEducation = isEducationVertical(location.providerType);
   const isSports = isSportsVertical(location.providerType);
@@ -385,6 +391,16 @@ export default function LocationMenuPage() {
             với phòng khám — Picki không lưu thông tin bệnh án.
           </p>
         ) : null}
+        {isPharmacy ? (
+          <p className="stat" style={{ marginTop: 8 }}>
+            Gọi/Zalo hỏi còn hàng rồi qua lấy — Picki không bán thuốc online và không giao thuốc V1.
+          </p>
+        ) : null}
+        {isMarket ? (
+          <p className="stat" style={{ marginTop: 8 }}>
+            Gọi/Zalo hỏi còn hàng rồi qua lấy — Picki chưa bán tạp hóa online và chưa giao hàng V1.
+          </p>
+        ) : null}
         {isPet ? (
           <p className="stat" style={{ marginTop: 8 }}>
             Spa tại tiệm — báo sắp tới · Trông pet / dắt chó — gửi yêu cầu tại nhà.
@@ -405,7 +421,14 @@ export default function LocationMenuPage() {
             Chọn sân và gửi khung giờ mong muốn — sân xác nhận qua yêu cầu, không thanh toán qua Picki V1.
           </p>
         ) : null}
-        {!isLaundry && !isHomeService && !isCustomerVisit && !isEducation && !isSports && (location.prepMinutes != null || location.etaMinutes != null) && (
+        {!isLaundry &&
+          !isHomeService &&
+          !isCustomerVisit &&
+          !isEducation &&
+          !isSports &&
+          !isPharmacy &&
+          !isMarket &&
+          (location.prepMinutes != null || location.etaMinutes != null) && (
           <p className="stat" style={{ marginTop: 8 }}>
             ⏱ {location.prepMinutes ?? "?"} phút nấu · ~{location.etaMinutes ?? "?"} phút giao
           </p>
@@ -512,7 +535,8 @@ export default function LocationMenuPage() {
         </div>
       ) : null}
 
-      {(isCustomerVisit || isEducation || isSports) && location.contacts?.provider ? (
+      {(isCustomerVisit || isEducation || isSports || isPharmacy || isMarket) &&
+      location.contacts?.provider ? (
         <div id="location-contact" className="card" style={{ marginBottom: 16 }}>
           <p className="section-title">Liên hệ</p>
           <p className="stat" style={{ margin: "0 0 10px" }}>
@@ -520,6 +544,10 @@ export default function LocationMenuPage() {
               ? "Gọi/Zalo trung tâm hoặc đặt buổi học thử bên dưới."
               : isSports
                 ? "Gọi/Zalo sân hoặc gửi yêu cầu khung giờ bên dưới."
+              : isPharmacy
+                ? "Gọi/Zalo hỏi còn hàng / giá — rồi qua lấy tại hiệu. Không đặt hàng thuốc trên Picki."
+              : isMarket
+                ? "Gọi/Zalo hỏi còn hàng / giá — rồi qua lấy tại quán. Không đặt hàng tạp hóa trên Picki V1."
               : isAuto
                 ? "Thay dầu, sửa chữa — gọi/Zalo trực tiếp. Rửa xe/bơm lốp có thể báo sắp mang xe bên dưới."
               : isHealth
@@ -553,9 +581,16 @@ export default function LocationMenuPage() {
         </div>
       )}
 
+      {isPharmacy ? (
+        <PharmacyInquiry locationId={location.id} />
+      ) : isMarket ? (
+        <MarketInquiry locationId={location.id} />
+      ) : (
       <div className="card">
         <p className="section-title">
-          {isLaundry || isHomeService || isCustomerVisit || isEducation || isSports ? "Dịch vụ" : "Menu"}
+          {isLaundry || isHomeService || isCustomerVisit || isEducation || isSports
+            ? "Dịch vụ"
+            : "Menu"}
         </p>
         {items.length === 0 ? (
           <p className="stat">
@@ -629,6 +664,12 @@ export default function LocationMenuPage() {
                         {formatHomeServicePrice(item.amountVnd, item.pricingKind)}
                         {" · /giờ · Thanh toán tại sân"}
                       </p>
+                    ) : isPharmacy ? (
+                      <p className="stat" style={{ margin: "4px 0 0" }}>
+                        {item.pricingKind === "QUOTE_REQUIRED" || item.amountVnd <= 0
+                          ? "Gọi hỏi còn hàng / giá"
+                          : `Tham khảo từ ${formatVnd(item.amountVnd)} · Gọi trước khi qua`}
+                      </p>
                     ) : (
                       <strong>{formatVnd(item.amountVnd)}</strong>
                     )}
@@ -648,13 +689,16 @@ export default function LocationMenuPage() {
                     >
                       {isEducation ? "Học thử miễn phí" : isSports ? "Đặt sân" : "Gửi yêu cầu"}
                     </button>
-                  ) : item.fulfillmentMode === "CONTACT_ONLY" && (isAuto || isHealth) ? (
+                  ) : item.fulfillmentMode === "CONTACT_ONLY" &&
+                    (isAuto || isHealth || isPharmacy) ? (
                     <button
                       type="button"
                       className="btn btn-secondary"
                       style={{ width: "auto", padding: "8px 12px", flexShrink: 0 }}
                       onClick={() => {
-                        document.getElementById("location-contact")?.scrollIntoView({ behavior: "smooth" });
+                        document
+                          .getElementById("location-contact")
+                          ?.scrollIntoView({ behavior: "smooth" });
                       }}
                     >
                       Liên hệ
@@ -693,6 +737,7 @@ export default function LocationMenuPage() {
           </div>
         )}
       </div>
+      )}
 
       {visitItem ? (
         <div id="visit-intent-form" className="card service-request-form" style={{ marginTop: 16 }}>

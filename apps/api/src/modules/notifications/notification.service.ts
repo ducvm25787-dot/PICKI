@@ -37,6 +37,8 @@ type MessagePayload = {
   orderNumber?: string;
   listingId?: string;
   listingNumber?: string;
+  locationId?: string;
+  inquiryKind?: "PHARMACY" | "MARKET";
   preview: string;
   recipientUserIds: string[];
 };
@@ -820,6 +822,17 @@ export class NotificationService implements OnModuleInit {
           payload: basePayload,
         });
       }
+      return;
+    }
+
+    if (eventType === "classified.expired") {
+      await this.deliver([payload.sellerUserId], {
+        eventType,
+        channel: "WEB",
+        title: `${payload.listingNumber}: Tin hết hạn`,
+        body: `「${payload.title}」đã hết hạn và được ẩn. Bạn có thể đăng tin mới nếu còn lượt trong tháng.`,
+        payload: basePayload,
+      });
     }
   }
 
@@ -828,7 +841,11 @@ export class NotificationService implements OnModuleInit {
       ? `Tin nhắn đơn ${payload.orderNumber}`
       : payload.listingNumber
         ? `Tin nhắn ${payload.listingNumber}`
-        : "Tin nhắn mới";
+        : payload.locationId
+          ? payload.inquiryKind === "MARKET"
+            ? "Khách hỏi hàng"
+            : "Khách hỏi thuốc"
+          : "Tin nhắn mới";
     const preview =
       payload.preview.length > 120 ? `${payload.preview.slice(0, 117)}…` : payload.preview;
 
@@ -844,6 +861,7 @@ export class NotificationService implements OnModuleInit {
           messageId: payload.messageId,
           orderId: payload.orderId,
           listingId: payload.listingId,
+          locationId: payload.locationId,
         },
       },
     );

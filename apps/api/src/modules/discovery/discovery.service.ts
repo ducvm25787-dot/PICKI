@@ -9,6 +9,8 @@ import {
   listBeautyProviders,
   listEducationProviders,
   listHealthProviders,
+  listPharmacyProviders,
+  listMarketProviders,
   listPetProviders,
   listSportsProviders,
   listHomeServiceProviders,
@@ -123,6 +125,28 @@ export class DiscoveryService {
       });
     }
 
+    const pharmacies = await listPharmacyProviders(this.sql, zone.id);
+    if (pharmacies.length > 0) {
+      enriched.push({
+        id: "pharmacy",
+        title: "NHÀ THUỐC",
+        subtitle: "Hiệu gần bạn đang mở — gọi hỏi còn hàng rồi qua lấy (đặc biệt hữu ích đêm muộn)",
+        foodMoments: [],
+        providers: pharmacies.map(mapProvider),
+      });
+    }
+
+    const markets = await listMarketProviders(this.sql, zone.id);
+    if (markets.length > 0) {
+      enriched.push({
+        id: "market",
+        title: "ĐI CHỢ",
+        subtitle: "Tạp hóa, minimart, sạp gần nhà — hỏi còn hàng rồi qua lấy",
+        foodMoments: [],
+        providers: markets.map(mapProvider),
+      });
+    }
+
     const sports = await listSportsProviders(this.sql, zone.id);
     if (sports.length > 0) {
       enriched.push({
@@ -156,6 +180,10 @@ export class DiscoveryService {
 
     const resaleCount = counts.find((r) => r.listingType === "RESALE")?.count ?? 0;
     const giveAwayCount = counts.find((r) => r.listingType === "GIVE_AWAY")?.count ?? 0;
+    const rentCount = counts.find((r) => r.listingType === "CHO_THUE")?.count ?? 0;
+    const roommateCount = counts.find((r) => r.listingType === "O_GHEP")?.count ?? 0;
+    const lostFoundCount = counts.find((r) => r.listingType === "LOST_FOUND")?.count ?? 0;
+    const petLostCount = counts.find((r) => r.listingType === "PET_LOST")?.count ?? 0;
 
     const recent = await this.db
       .select({
@@ -181,6 +209,10 @@ export class DiscoveryService {
     return {
       resaleCount,
       giveAwayCount,
+      rentCount,
+      roommateCount,
+      lostFoundCount,
+      petLostCount,
       recentListings: recent.map((r) => {
         const photoUrls = Array.isArray(r.photoUrls)
           ? (r.photoUrls as string[]).filter((u) => typeof u === "string")

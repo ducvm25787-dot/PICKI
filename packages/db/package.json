@@ -24,7 +24,11 @@
     "seed:auto": "tsx src/seed-auto-kvl.ts",
     "seed:sports": "tsx src/seed-sports-kvl.ts",
     "seed:health": "tsx src/seed-health-kvl.ts",
-    "test:integration": "vitest run src/**/*.integration.test.ts"
+    "test:integration": "vitest run src/**/*.integration.test.ts",
+    "seed:housing": "tsx src/seed-housing-kvl.ts",
+    "seed:pharmacy": "tsx src/seed-pharmacy-kvl.ts",
+    "seed:minimart": "tsx src/seed-minimart-kvl.ts",
+    "seed:lost": "tsx src/seed-lost-kvl.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.40.0",

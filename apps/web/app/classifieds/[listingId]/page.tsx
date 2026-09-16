@@ -13,6 +13,9 @@ import {
   classifiedStatusLabel,
   classifiedTypeLabel,
   formatPriceVnd,
+  isHousingListingType,
+  isLostListingType,
+  isContactOnlyListingType,
 } from "../../../lib/classifieds";
 
 export default function ClassifiedDetailPage() {
@@ -41,10 +44,10 @@ export default function ClassifiedDetailPage() {
     void load();
   }, [load]);
 
-  async function runAction(path: string) {
+  async function runAction(path: string, method: "PATCH" | "POST" = "PATCH") {
     setActing(true);
     try {
-      await api(path, { method: "PATCH" });
+      await api(path, { method });
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Thao tác thất bại");
@@ -76,13 +79,16 @@ export default function ClassifiedDetailPage() {
 
   if (!listing) return null;
 
+  const housing = isHousingListingType(listing.listingType);
+  const lost = isLostListingType(listing.listingType);
+  const contactOnly = isContactOnlyListingType(listing.listingType);
   const isAvailable = listing.status === "AVAILABLE";
   const isReserved = listing.status === "RESERVED";
-  const canReserve = isAvailable && !listing.mine;
-  const canComplete = isReserved && listing.mine;
+  const canReserve = !contactOnly && isAvailable && !listing.mine;
+  const canComplete = !contactOnly && isReserved && listing.mine;
   const canCancelReservation =
-    isReserved && (listing.mine || listing.reservedByMe);
-  const showChat = !listing.mine;
+    !contactOnly && isReserved && (listing.mine || listing.reservedByMe);
+  const showChat = !listing.mine && (contactOnly ? isAvailable : true);
 
   return (
     <div className="container">
@@ -109,8 +115,28 @@ export default function ClassifiedDetailPage() {
           {listing.condition ? ` · ${classifiedConditionLabel(listing.condition)}` : ""}
         </p>
         <p className="stat">📍 {listing.locationLabel}</p>
+        {listing.expiresAt ? (
+          <p className="stat">
+            Hết hạn:{" "}
+            {new Date(listing.expiresAt).toLocaleDateString("vi-VN", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+            })}
+          </p>
+        ) : null}
         {listing.sellerDisplayName ? (
           <p className="stat">Người đăng: {listing.sellerDisplayName}</p>
+        ) : null}
+        {housing ? (
+          <p className="stat" style={{ marginTop: 8 }}>
+            Liên hệ trực tiếp qua chat — Picki không đặt lịch xem nhà hay nhận cọc.
+          </p>
+        ) : null}
+        {lost ? (
+          <p className="stat" style={{ marginTop: 8 }}>
+            Chat để liên hệ — khi đã tìm thấy / đã trả, người đăng hãy ẩn tin.
+          </p>
         ) : null}
         {listing.reservedByDisplayName ? (
           <p className="stat">Đang giữ: {listing.reservedByDisplayName}</p>
@@ -133,7 +159,7 @@ export default function ClassifiedDetailPage() {
             type="button"
             className="btn"
             disabled={acting}
-            onClick={() => void runAction(`/classifieds/${listingId}/reserve`)}
+            onClick={() => void runAction(`/classifieds/${listingId}/reserve`, "POST")}
           >
             Giữ chỗ
           </button>
@@ -159,7 +185,10 @@ export default function ClassifiedDetailPage() {
             Hủy giữ chỗ
           </button>
         ) : null}
-        {listing.mine && (listing.status === "AVAILABLE" || listing.status === "COMPLETED" || listing.status === "GIVEN") ? (
+        {listing.mine &&
+        (listing.status === "AVAILABLE" ||
+          listing.status === "COMPLETED" ||
+          listing.status === "GIVEN") ? (
           <button
             type="button"
             className="btn btn-secondary"
@@ -167,10 +196,15 @@ export default function ClassifiedDetailPage() {
             style={{ marginTop: 8 }}
             onClick={() => void runAction(`/classifieds/${listingId}/archive`)}
           >
-            Ẩn tin
+            {contactOnly ? "Xóa tin" : "Ẩn tin"}
           </button>
         ) : null}
-        {!canReserve && !canComplete && !canCancelReservation && !listing.mine ? (
+        {contactOnly && !listing.mine && isAvailable ? (
+          <p className="stat">
+            {lost ? "Chat bên dưới để hỏi / báo tin." : "Chat bên dưới để hỏi phòng / ở ghép."}
+          </p>
+        ) : null}
+        {!contactOnly && !canReserve && !canComplete && !canCancelReservation && !listing.mine ? (
           <p className="stat">
             {isReserved
               ? "Tin đã được giữ — thử tin khác hoặc chat nếu bạn là người giữ."

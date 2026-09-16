@@ -37,6 +37,18 @@ export function isHealthVertical(providerType?: string | null) {
   return providerType === "HEALTH_PROVIDER";
 }
 
+export function isPharmacyVertical(providerType?: string | null) {
+  return providerType === "PHARMACY";
+}
+
+export function isMarketVertical(providerType?: string | null) {
+  return (
+    providerType === "MINIMART" ||
+    providerType === "MARKET_VENDOR" ||
+    providerType === "RETAIL_STORE"
+  );
+}
+
 export function isCustomerVisitVertical(providerType?: string | null) {
   return (
     isBeautyVertical(providerType) ||
@@ -49,6 +61,11 @@ export function isCustomerVisitVertical(providerType?: string | null) {
 /** Tiệm chỉ queue (beauty/auto/phòng khám) — không tab Yêu cầu dịch vụ */
 export function isQueueOnlyShop(providerType?: string | null) {
   return isBeautyVertical(providerType) || isAutoVertical(providerType) || isHealthVertical(providerType);
+}
+
+/** Nhà thuốc / tạp hóa: chỉ live + liên hệ — không đơn / queue / yêu cầu */
+export function isContactLiveOnlyShop(providerType?: string | null) {
+  return isPharmacyVertical(providerType) || isMarketVertical(providerType);
 }
 
 export function isEducationVertical(providerType?: string | null) {
@@ -88,6 +105,18 @@ export function liveStatusLabel(
 ): string {
   if (isEducationVertical(providerType)) {
     return "Đang mở";
+  }
+  if (isPharmacyVertical(providerType) || isMarketVertical(providerType)) {
+    switch (status) {
+      case "OPEN":
+        return "Đang mở";
+      case "BUSY":
+        return "Đông khách";
+      case "CLOSED":
+        return "Đã đóng";
+      default:
+        return "Chưa cập nhật";
+    }
   }
   if (isCustomerVisitVertical(providerType)) {
     return beautyWaitLabel(status, estimatedWaitMinutes, providerType);
@@ -154,7 +183,9 @@ export function fulfillmentLabel(
       if (isHealthVertical(providerType)) return "Tới phòng khám";
       return "Tại tiệm";
     case "CONTACT_ONLY":
-      return isHealthVertical(providerType) ? "Liên hệ phòng khám" : "Liên hệ tiệm";
+      if (isHealthVertical(providerType)) return "Liên hệ phòng khám";
+      if (isPharmacyVertical(providerType) || isMarketVertical(providerType)) return "Gọi hỏi / qua lấy";
+      return "Liên hệ tiệm";
     case "ONLINE":
       return "Học online";
     default:

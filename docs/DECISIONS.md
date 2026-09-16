@@ -421,3 +421,75 @@ Transactional outbox (`outbox_events`) processed by an in-process or same-deploy
 **Full spec:** `PICKI_MASTER_SPEC.md` §104, §81 (Laundry), §116.
 
 ---
+
+### ADR-042 — Cho thuê / ở ghép = tin peer trong Zone (không Provider BĐS)
+
+**Status:** ACCEPTED (2026-09-16)
+
+**Context:** Chung cư Demand Core có nhu cầu phòng cho thuê và ở ghép. Đặc thù BĐS khác nhu cầu hàng ngày (Food, Laundry, Health) — không onboard sale/môi giới thành Provider.
+
+**Decision:**
+
+1. Chỉ **đăng tin** trong GÓC KHU MÌNH (extend Classified / capability `CLASSIFIED` + `CONTACT`). Hai bên **liên hệ trực tiếp** (chat / SĐT / Zalo).
+2. **Không** Provider type BĐS; **không** đặt lịch xem nhà; **không** cọc / thanh toán thuê trên Picki.
+3. Mỗi tài khoản **đã xác thực SĐT**: tối đa **1 tin đang ACTIVE**; tối đa **2 lần đăng / tháng lịch**.
+4. Xóa tay hoặc **auto-expire (TTL 7 ngày)** → hết tin ACTIVE → mới được đăng tin khác (vẫn trong quota tháng). Quota tính theo lần **tạo** tin; xóa/hết hạn **không** hoàn lượt.
+5. `CHO_THUÊ` và `Ở_GHÉP` **chung** quota (1 ACTIVE + 2/tháng).
+
+**Full scope:** `docs/S37_HOUSING_LISTINGS.md`.
+
+---
+
+### ADR-043 — Nhà thuốc lean: LISTING + LIVE + CONTACT (không giỏ thuốc)
+
+**Status:** ACCEPTED (2026-09-16)
+
+**Context:** Spec §86 gồm Nhà thuốc. Chuỗi Long Châu / Pharmacity đã thắng ở app + catalog + lịch sử mua. Picki không đối đầu đó.
+
+**Decision:**
+
+1. Provider type `PHARMACY` — peer Zone / hiệu độc lập, không Classified C2C thuốc.
+2. Capabilities V1: `LISTING` + `LIVE_STATUS` + `CONTACT` only.
+3. Discovery chỉ hiện khi `provider_profiles.license_verified_at IS NOT NULL` (cùng cột giấy phép phòng khám).
+4. **Không** giỏ thuốc, thanh toán thuốc, giao thuốc runner, visit intent, queue.
+5. Offering chỉ mang tính danh mục hỏi hàng (`CONTACT_ONLY` / báo giá) — khách gọi rồi qua lấy.
+
+**Full scope:** `docs/S38_PHARMACY.md`.
+
+---
+
+### ADR-044 — Đi chợ lean: MINIMART / MARKET_VENDOR / RETAIL (không giỏ)
+
+**Status:** ACCEPTED (2026-09-16)
+
+**Context:** Homepage Spec §94 có **Đi chợ**; §76 late-night gồm minimart / sữa-bỉm. Types `MINIMART`, `MARKET_VENDOR`, `RETAIL_STORE`, `SUPERMARKET` đã có trong domain — chưa có product surface.
+
+**Decision:**
+
+1. Discovery block **ĐI CHỢ** gồm `MINIMART` + `MARKET_VENDOR` + `RETAIL_STORE` (không bắt buộc `SUPERMARKET` chuỗi V1).
+2. Capabilities V1: `LISTING` + `LIVE_STATUS` + `CONTACT` — mirror nhà thuốc lean.
+3. **Không** gate `license_verified_at` (không phải ngành thuốc).
+4. **Không** cart/checkout/giao runner tạp hóa V1.
+5. Hỏi hàng + ảnh qua Picki Chat (`contextType = MARKET`).
+
+**Full scope:** `docs/S39_MARKET.md`.
+
+---
+
+### ADR-045 — Thất lạc / Pet Lost = tin peer Classified (không giữ chỗ)
+
+**Status:** ACCEPTED (2026-09-16)
+
+**Context:** Master Spec §91 GÓC KHU MÌNH gồm Lost & Found và Pet Lost — chưa có surface.
+
+**Decision:**
+
+1. Extend Classified: `LOST_FOUND`, `PET_LOST` — không module mới.
+2. Phone verified để đăng; **không** giá / điều kiện đồ / giữ chỗ.
+3. Quota: 2 AVAILABLE / user (chung 2 type) · 5 tạo / tháng lịch.
+4. TTL 14 ngày → auto ARCHIVED (reuse `expires_at` + expire worker).
+5. PET_LOST bắt buộc ≥1 ảnh. REUSE deferred.
+
+**Full scope:** `docs/S40_LOST_FOUND.md`.
+
+---

@@ -102,6 +102,7 @@ export const providerTypes = [
   "AUTO_SERVICE",
   "SPORTS_FACILITY",
   "HEALTH_PROVIDER",
+  "PHARMACY",
   "INDIVIDUAL",
   "COMPANY",
 ] as const;

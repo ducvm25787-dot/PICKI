@@ -87,6 +87,16 @@ function notificationTargetHref(n: NotificationItem, audience: Audience): string
   if (n.eventType === "message.received") {
     const listingId = n.payload?.listingId;
     if (typeof listingId === "string") return `/classifieds/${listingId}`;
+    const locationId = n.payload?.locationId;
+    const conversationId = n.payload?.conversationId;
+    if (typeof locationId === "string") {
+      if (audience === "provider") {
+        return typeof conversationId === "string"
+          ? `/provider/chats?id=${conversationId}`
+          : "/provider/chats";
+      }
+      return `/locations/${locationId}`;
+    }
   }
 
   const orderId = n.payload?.orderId;

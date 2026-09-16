@@ -2,9 +2,12 @@ import Link from "next/link";
 import {
   beautyWaitDisplay,
   isBeautyVertical,
+  isContactLiveOnlyShop,
   isCustomerVisitVertical,
   isEducationVertical,
   isHealthVertical,
+  isMarketVertical,
+  isPharmacyVertical,
   isPetVertical,
   liveStatusClass,
   liveStatusLabel,
@@ -55,6 +58,7 @@ export function ProviderList({
                 </p>
               ) : null}
               {!isCustomerVisitVertical(p.providerType) &&
+              !isContactLiveOnlyShop(p.providerType) &&
               (p.prepMinutes != null || p.etaMinutes != null) ? (
                 <p className="stat" style={{ margin: "4px 0 0" }}>
                   ⏱ {p.prepMinutes ?? "?"} phút nấu · ~{p.etaMinutes ?? "?"} phút giao
@@ -71,13 +75,17 @@ export function ProviderList({
                 </p>
               )}
               <p className="stat" style={{ margin: "8px 0 0", fontSize: 13 }}>
-                {isHealthVertical(p.providerType)
-                  ? "Xem phòng khám →"
-                  : isBeautyVertical(p.providerType) || isPetVertical(p.providerType)
-                    ? "Xem tiệm →"
-                    : isEducationVertical(p.providerType)
-                      ? "Xem chi tiết →"
-                      : "Xem menu →"}
+                {isPharmacyVertical(p.providerType)
+                  ? "Xem nhà thuốc →"
+                  : isMarketVertical(p.providerType)
+                    ? "Xem cửa hàng →"
+                  : isHealthVertical(p.providerType)
+                    ? "Xem phòng khám →"
+                    : isBeautyVertical(p.providerType) || isPetVertical(p.providerType)
+                      ? "Xem tiệm →"
+                      : isEducationVertical(p.providerType)
+                        ? "Xem chi tiết →"
+                        : "Xem menu →"}
               </p>
             </Link>
             {onToggleFavorite ? (

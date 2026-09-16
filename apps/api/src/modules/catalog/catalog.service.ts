@@ -33,9 +33,22 @@ export class CatalogService {
     const isAuto = header.provider_type === "AUTO_SERVICE";
     const isSports = header.provider_type === "SPORTS_FACILITY";
     const isHealth = header.provider_type === "HEALTH_PROVIDER";
+    const isPharmacy = header.provider_type === "PHARMACY";
+    const isMarket =
+      header.provider_type === "MINIMART" ||
+      header.provider_type === "MARKET_VENDOR" ||
+      header.provider_type === "RETAIL_STORE";
     const isEducation =
       header.provider_type === "EDUCATION_PROVIDER" || header.provider_type === "TUTOR";
-    const withContacts = isBeauty || isPet || isAuto || isSports || isEducation || isHealth;
+    const withContacts =
+      isBeauty ||
+      isPet ||
+      isAuto ||
+      isSports ||
+      isEducation ||
+      isHealth ||
+      isPharmacy ||
+      isMarket;
     const [providerPhone, brandName] = withContacts
       ? await Promise.all([
           loadProviderContactPhone(this.db, locationId),

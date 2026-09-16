@@ -11,6 +11,8 @@ import {
   classifiedStatusLabel,
   classifiedTypeLabel,
   formatPriceVnd,
+  isHousingListingType,
+  isLostListingType,
 } from "../../../../lib/classifieds";
 
 type ZoneInfo = {
@@ -18,11 +20,43 @@ type ZoneInfo = {
   slug: string;
 };
 
+type ListingTypeFilter =
+  | "RESALE"
+  | "GIVE_AWAY"
+  | "CHO_THUE"
+  | "O_GHEP"
+  | "LOST_FOUND"
+  | "PET_LOST";
+
+function parseListingType(raw: string | null): ListingTypeFilter {
+  if (
+    raw === "GIVE_AWAY" ||
+    raw === "CHO_THUE" ||
+    raw === "O_GHEP" ||
+    raw === "LOST_FOUND" ||
+    raw === "PET_LOST"
+  ) {
+    return raw;
+  }
+  return "RESALE";
+}
+
+const TITLES: Record<ListingTypeFilter, string> = {
+  RESALE: "Thanh lý",
+  GIVE_AWAY: "Cho tặng",
+  CHO_THUE: "Cho thuê",
+  O_GHEP: "Ở ghép",
+  LOST_FOUND: "Thất lạc",
+  PET_LOST: "Thú cưng thất lạc",
+};
+
 export default function ZoneClassifiedsPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const slug = String(params.slug);
-  const listingType = searchParams.get("type") === "GIVE_AWAY" ? "GIVE_AWAY" : "RESALE";
+  const listingType = parseListingType(searchParams.get("type"));
+  const housing = isHousingListingType(listingType);
+  const lost = isLostListingType(listingType);
 
   const [zone, setZone] = useState<ZoneInfo | null>(null);
   const [listings, setListings] = useState<ClassifiedListing[]>([]);
@@ -47,7 +81,7 @@ export default function ZoneClassifiedsPage() {
     })();
   }, [slug, listingType]);
 
-  const pageTitle = listingType === "GIVE_AWAY" ? "Cho tặng" : "Thanh lý";
+  const pageTitle = TITLES[listingType];
 
   if (loading) {
     return (
@@ -72,27 +106,36 @@ export default function ZoneClassifiedsPage() {
       <div className="header-row">
         <div>
           <h1 style={{ margin: 0, fontSize: 22 }}>{pageTitle}</h1>
-          <p className="stat">GÓC KHU MÌNH · {classifiedTypeLabel(listingType)}</p>
+          <p className="stat">
+            GÓC KHU MÌNH · {classifiedTypeLabel(listingType)}
+            {housing ? " · liên hệ trực tiếp · tin hết hạn sau 7 ngày" : ""}
+            {lost ? " · chat liên hệ · tin hết hạn sau 14 ngày" : ""}
+          </p>
         </div>
         <NotificationBell audience="customer" />
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Link
-            href={`/zones/${slug}/classifieds?type=RESALE`}
-            className={listingType === "RESALE" ? "btn" : "btn btn-secondary"}
-            style={{ width: "auto" }}
-          >
-            💰 Thanh lý
-          </Link>
-          <Link
-            href={`/zones/${slug}/classifieds?type=GIVE_AWAY`}
-            className={listingType === "GIVE_AWAY" ? "btn" : "btn btn-secondary"}
-            style={{ width: "auto" }}
-          >
-            🎁 Cho tặng
-          </Link>
+          {(
+            [
+              ["RESALE", "Thanh lý"],
+              ["GIVE_AWAY", "Cho tặng"],
+              ["CHO_THUE", "Cho thuê"],
+              ["O_GHEP", "Ở ghép"],
+              ["LOST_FOUND", "Thất lạc"],
+              ["PET_LOST", "Thú cưng"],
+            ] as const
+          ).map(([type, label]) => (
+            <Link
+              key={type}
+              href={`/zones/${slug}/classifieds?type=${type}`}
+              className={listingType === type ? "btn" : "btn btn-secondary"}
+              style={{ width: "auto" }}
+            >
+              {label}
+            </Link>
+          ))}
           <Link href="/classifieds/mine" className="btn btn-secondary" style={{ width: "auto" }}>
             Tin của tôi
           </Link>
@@ -112,7 +155,11 @@ export default function ZoneClassifiedsPage() {
         <div className="card">
           <p className="stat">Chưa có tin {pageTitle.toLowerCase()} nào trong khu.</p>
           {zone ? (
-            <Link href={`/classifieds/new?zoneId=${zone.zoneId}&type=${listingType}`} className="btn" style={{ marginTop: 12 }}>
+            <Link
+              href={`/classifieds/new?zoneId=${zone.zoneId}&type=${listingType}`}
+              className="btn"
+              style={{ marginTop: 12 }}
+            >
               Đăng tin đầu tiên
             </Link>
           ) : null}
@@ -120,16 +167,22 @@ export default function ZoneClassifiedsPage() {
       ) : (
         <div className="provider-list">
           {listings.map((item) => (
-            <Link key={item.id} href={`/classifieds/${item.id}`} className="provider-card classified-list-card">
-              {item.photoUrls?.[0] ? (
-                // eslint-disable-next-line @next/next/no-img-element
+            <Link
+              key={item.id}
+              href={`/classifieds/${item.id}`}
+              className="provider-card classified-list-card"
+            >
+              {item.photoUrls[0] ? (
+                // eslint-disable-next-line @next/next/no-img-element -- static upload thumb
                 <img src={item.photoUrls[0]} alt="" className="classified-list-thumb" />
               ) : null}
               <div className="provider-card-main">
                 <p className="provider-name">{item.title}</p>
                 <p className="stat">
                   {formatPriceVnd(item.priceVnd, item.listingType)}
-                  {item.condition ? ` · ${classifiedConditionLabel(item.condition)}` : ""}
+                  {item.condition
+                    ? ` · ${classifiedConditionLabel(item.condition) ?? ""}`
+                    : ""}
                 </p>
                 <p className="stat">
                   📍 {item.locationLabel} · {classifiedStatusLabel(item.status, item.listingType)}

@@ -33,6 +33,7 @@ export const messages = pgTable("messages", {
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),
   body: text("body").notNull(),
+  attachmentUrls: jsonb("attachment_urls").notNull().default([]),
   createdAt: createdAt(),
 });
 

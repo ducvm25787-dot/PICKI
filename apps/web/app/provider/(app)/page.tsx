@@ -458,6 +458,40 @@ export default function ProviderOrdersPage() {
                 . Xác nhận hoặc từ chối, không thu phí qua Picki V1.
               </p>
             </div>
+          ) : activeLocation?.providerType === "PHARMACY" ? (
+            <div className="card">
+              <p className="stat" style={{ margin: 0 }}>
+                Nhà thuốc trên Picki chỉ hiện <strong>đang mở</strong> và nhận{" "}
+                <strong>gọi / Zalo</strong> — không bán thuốc qua giỏ hàng. Cập nhật trạng thái ở
+                tab{" "}
+                <a href="/provider/live" style={{ color: "var(--accent-dark)" }}>
+                  Trạng thái
+                </a>
+                . Câu hỏi kèm ảnh của khách ở tab{" "}
+                <a href="/provider/chats" style={{ color: "var(--accent-dark)" }}>
+                  Hỏi hàng
+                </a>
+                .
+              </p>
+            </div>
+          ) : activeLocation?.providerType === "MINIMART" ||
+            activeLocation?.providerType === "MARKET_VENDOR" ||
+            activeLocation?.providerType === "RETAIL_STORE" ? (
+            <div className="card">
+              <p className="stat" style={{ margin: 0 }}>
+                Tạp hóa / minimart trên Picki hiện <strong>đang mở</strong>, nhận{" "}
+                <strong>gọi / Zalo</strong> và câu hỏi kèm ảnh — chưa bán qua giỏ hàng V1. Cập nhật
+                trạng thái ở tab{" "}
+                <a href="/provider/live" style={{ color: "var(--accent-dark)" }}>
+                  Trạng thái
+                </a>
+                ; tin hỏi hàng ở tab{" "}
+                <a href="/provider/chats" style={{ color: "var(--accent-dark)" }}>
+                  Hỏi hàng
+                </a>
+                .
+              </p>
+            </div>
           ) : (
             <p className="stat">Chưa có đơn mới.</p>
           )

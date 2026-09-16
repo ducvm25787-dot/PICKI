@@ -31,7 +31,11 @@
     "dev": "concurrently -k -n api,web -c blue,magenta \"pnpm api:dev\" \"pnpm web:dev\"",
     "start:local": "bash scripts/start-local.sh",
     "pilot:e2e": "bash scripts/pilot-food-e2e.sh",
-    "pilot:laundry:e2e": "bash scripts/pilot-laundry-e2e.sh"
+    "pilot:laundry:e2e": "bash scripts/pilot-laundry-e2e.sh",
+    "db:seed:housing": "bash scripts/db-seed-housing.sh",
+    "db:seed:pharmacy": "bash scripts/db-seed-pharmacy.sh",
+    "db:seed:minimart": "bash scripts/db-seed-minimart.sh",
+    "db:seed:lost": "bash scripts/db-seed-lost.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",
