@@ -1,7 +1,8 @@
-import { doublePrecision, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { doublePrecision, integer, pgTable, text, timestamp, uuid, date } from "drizzle-orm/pg-core";
 import { createdAt, updatedAt } from "./helpers.js";
 import { addresses } from "./addresses.js";
 import { offerings } from "./catalog.js";
+import { familyDinnerDeliveryWindows, familyDinnerMenuItems } from "./family-dinner.js";
 import { users } from "./identity.js";
 import { providerLocations } from "./providers.js";
 import { zones } from "./zones.js";
@@ -20,6 +21,13 @@ export const orders = pgTable("orders", {
     .references(() => providerLocations.id, { onDelete: "restrict" }),
   status: text("status").notNull().default("CREATED"),
   serviceVertical: text("service_vertical").notNull().default("FOOD"),
+  orderKind: text("order_kind").notNull().default("STANDARD"),
+  serviceDate: date("service_date"),
+  deliveryWindowId: uuid("delivery_window_id").references(() => familyDinnerDeliveryWindows.id, {
+    onDelete: "set null",
+  }),
+  lateDinnerOfferId: uuid("late_dinner_offer_id"),
+  productionLockedAt: timestamp("production_locked_at", { withTimezone: true, mode: "date" }),
   laundryPickupMode: text("laundry_pickup_mode"),
   paymentMode: text("payment_mode").notNull().default("COD"),
   subtotalVnd: integer("subtotal_vnd").notNull(),
@@ -57,6 +65,12 @@ export const orderItems = pgTable("order_items", {
     .notNull()
     .references(() => orders.id, { onDelete: "cascade" }),
   offeringId: uuid("offering_id").references(() => offerings.id, { onDelete: "set null" }),
+  familyDinnerMenuItemId: uuid("family_dinner_menu_item_id").references(
+    () => familyDinnerMenuItems.id,
+    { onDelete: "set null" },
+  ),
+  familyDinnerCategory: text("family_dinner_category"),
+  recipeVersionId: uuid("recipe_version_id"),
   providerLocationId: uuid("provider_location_id")
     .notNull()
     .references(() => providerLocations.id, { onDelete: "restrict" }),

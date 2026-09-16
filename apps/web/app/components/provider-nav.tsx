@@ -7,20 +7,22 @@ import {
   isCustomerVisitVertical,
   isEducationVertical,
   isHealthVertical,
+  isHomeCookVertical,
   isQueueOnlyShop,
   isSportsVertical,
 } from "../../lib/providers";
 import { useProviderLocation } from "./provider-location-context";
 
 const tabs = [
-  { href: "/provider", label: "Đơn", icon: "📋", exact: true, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: false },
-  { href: "/provider/incoming", label: "Sắp tới", icon: "🚶", exact: false, hideForBeauty: false, beautyOnly: true, hideForEducation: true, healthOnly: false, pharmacyOnly: false },
-  { href: "/provider/followups", label: "Tái khám", icon: "🔔", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: true, pharmacyOnly: false },
-  { href: "/provider/chats", label: "Hỏi hàng", icon: "💬", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: true },
-  { href: "/provider/requests", label: "Yêu cầu", icon: "🔧", exact: false, hideForBeauty: true, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: false },
-  { href: "/provider/history", label: "Lịch sử", icon: "📦", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: false },
-  { href: "/provider/live", label: "Trạng thái", icon: "🟢", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: true, healthOnly: false, pharmacyOnly: false },
-  { href: "/provider/settings", label: "Cài đặt", icon: "⚙️", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: false },
+  { href: "/provider", label: "Đơn", icon: "📋", exact: true, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: false, homeCookOnly: false },
+  { href: "/provider/family-dinner", label: "Bữa tối", icon: "🍲", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: false, homeCookOnly: true },
+  { href: "/provider/incoming", label: "Sắp tới", icon: "🚶", exact: false, hideForBeauty: false, beautyOnly: true, hideForEducation: true, healthOnly: false, pharmacyOnly: false, homeCookOnly: false },
+  { href: "/provider/followups", label: "Tái khám", icon: "🔔", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: true, pharmacyOnly: false, homeCookOnly: false },
+  { href: "/provider/chats", label: "Hỏi hàng", icon: "💬", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: true, homeCookOnly: false },
+  { href: "/provider/requests", label: "Yêu cầu", icon: "🔧", exact: false, hideForBeauty: true, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: false, homeCookOnly: false },
+  { href: "/provider/history", label: "Lịch sử", icon: "📦", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: false, homeCookOnly: false },
+  { href: "/provider/live", label: "Trạng thái", icon: "🟢", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: true, healthOnly: false, pharmacyOnly: false, homeCookOnly: false },
+  { href: "/provider/settings", label: "Cài đặt", icon: "⚙️", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: false, homeCookOnly: false },
 ] as const;
 
 export function ProviderNav() {
@@ -30,6 +32,7 @@ export function ProviderNav() {
   const isCustomerVisit = isCustomerVisitVertical(providerType);
   const hideServiceRequests = isQueueOnlyShop(providerType);
   const isHealth = isHealthVertical(providerType);
+  const isHomeCook = isHomeCookVertical(providerType);
   const contactLiveOnly = isContactLiveOnlyShop(providerType);
   const hideQueueTabs = isEducationVertical(providerType) || isSportsVertical(providerType);
   const visibleTabs = tabs.filter((tab) => {
@@ -40,8 +43,8 @@ export function ProviderNav() {
         tab.href === "/provider/chats"
       );
     }
-    // pharmacyOnly tabs are only for contact-live shops (handled above)
     if (tab.pharmacyOnly) return false;
+    if (tab.homeCookOnly && !isHomeCook) return false;
     if (tab.healthOnly && !isHealth) return false;
     if (hideServiceRequests && tab.hideForBeauty) return false;
     if (hideQueueTabs && tab.hideForEducation) return false;

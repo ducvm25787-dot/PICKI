@@ -1,10 +1,16 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
-  addresses,
   buildOrderNumber,
   calculateCustomerDeliveryFeeVnd,
   canCustomerCancel,
+  familyDinnerDeliveryWindows,
+  familyDinnerMenuItems,
+  familyDinnerProductionBatches,
+  familyDinnerProductionItemTotals,
+  familyDinnerProviderSettings,
+  lateDinnerOfferItems,
+  lateDinnerOffers,
   listLocationMenu,
   lobbyHandoffs,
   orderItems,
@@ -20,6 +26,7 @@ import {
   providerLocations,
   providerZoneMemberships,
   userZoneMemberships,
+  validateFamilyDinnerBaseMeal,
   zoneFulfillmentSettings,
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
@@ -32,6 +39,7 @@ import {
 import { OrderTransitionService } from "./order-transition.service.js";
 import { OutboxService } from "../outbox/outbox.service.js";
 import { AddressesService } from "../addresses/addresses.service.js";
+import { formatTime, isPastCutoff } from "../family-dinner/family-dinner.service.js";
 import { PICKI_DB, PICKI_SQL } from "../../shared/tokens.js";
 import type { z } from "zod";
 import type { createOrderSchema, orderCheckoutSchema } from "./dto.js";
@@ -52,17 +60,71 @@ export class OrdersService {
   async quote(userId: string, input: OrderCheckoutInput) {
     await this.assertZoneMember(userId, input.zoneId);
     const { serviceVertical } = await this.resolveLocation(input.providerLocationId, input.zoneId);
+
+    if (input.orderKind === "FAMILY_DINNER") {
+      const built = await this.buildFamilyDinnerLineItems(input);
+      const deliveryFeeVnd = await this.resolveDeliveryFeeVnd(
+        input.zoneId,
+        "FOOD",
+        input.deliveryHandoffMode,
+      );
+      return {
+        serviceVertical: "FOOD",
+        orderKind: "FAMILY_DINNER",
+        subtotalVnd: built.subtotalVnd,
+        deliveryFeeVnd,
+        totalVnd: built.subtotalVnd + deliveryFeeVnd,
+        items: built.lineItems.map((i) => ({
+          menuItemId: i.menuItemId,
+          name: i.name,
+          quantity: i.quantity,
+          lineTotalVnd: i.lineTotalVnd,
+          category: i.category,
+        })),
+        softWarning:
+          built.portionCount > 10
+            ? "Mâm của bạn đang có khá nhiều món. Hãy kiểm tra lại trước khi đặt."
+            : null,
+      };
+    }
+
+    if (input.orderKind === "LATE_DINNER") {
+      const built = await this.buildLateDinnerQuote(input);
+      const deliveryFeeVnd = await this.resolveDeliveryFeeVnd(
+        input.zoneId,
+        "FOOD",
+        input.deliveryHandoffMode,
+      );
+      return {
+        serviceVertical: "FOOD",
+        orderKind: "LATE_DINNER",
+        subtotalVnd: built.subtotalVnd,
+        deliveryFeeVnd,
+        totalVnd: built.subtotalVnd + deliveryFeeVnd,
+        items: [
+          {
+            lateDinnerOfferId: built.offerId,
+            name: built.title,
+            quantity: built.quantity,
+            lineTotalVnd: built.subtotalVnd,
+          },
+        ],
+        softWarning: null,
+      };
+    }
+
     const { lineItems, subtotalVnd } = await this.buildLineItems(
       input.providerLocationId,
       input.items,
     );
     const deliveryFeeVnd = await this.resolveDeliveryFeeVnd(
       input.zoneId,
-      serviceVertical,
+      serviceVertical as "FOOD" | "LAUNDRY",
       input.deliveryHandoffMode,
     );
     return {
       serviceVertical,
+      orderKind: "STANDARD",
       subtotalVnd,
       deliveryFeeVnd,
       totalVnd: subtotalVnd + deliveryFeeVnd,
@@ -89,6 +151,12 @@ export class OrdersService {
 
     await this.assertZoneMember(userId, input.zoneId);
     const { serviceVertical } = await this.resolveLocation(input.providerLocationId, input.zoneId);
+
+    const isFamilyDinner = input.orderKind === "FAMILY_DINNER";
+    const isLateDinner = input.orderKind === "LATE_DINNER";
+    if ((isFamilyDinner || isLateDinner) && serviceVertical !== "FOOD") {
+      throw new PickiError("VALIDATION_ERROR", "Family Dinner chỉ áp dụng cho Food");
+    }
 
     const addr = await this.addresses.resolveDeliveryAddress(userId, input.zoneId, input.addressId);
 
@@ -127,36 +195,79 @@ export class OrdersService {
     const deliveryLat: number | null = null;
     const deliveryLng: number | null = null;
 
-    const { lineItems, subtotalVnd, fulfillmentModes } = await this.buildLineItems(
-      input.providerLocationId,
-      input.items,
-    );
-
     let paymentMode = input.paymentMode;
     let deliveryFeeVnd = 0;
-    let totalVnd = subtotalVnd;
+    let totalVnd = 0;
+    let subtotalVnd = 0;
+    let lineItemsStandard: Awaited<ReturnType<OrdersService["buildLineItems"]>>["lineItems"] = [];
+    let lineItemsDinner: Awaited<
+      ReturnType<OrdersService["buildFamilyDinnerLineItems"]>
+    >["lineItems"] = [];
+    let lateQuote: Awaited<ReturnType<OrdersService["buildLateDinnerQuote"]>> | null = null;
+    let fulfillmentModes = new Set<string>();
+    let serviceDate: string | null = null;
+    let deliveryWindowId: string | null = null;
+    let lateDinnerOfferId: string | null = null;
 
-    if (serviceVertical === "LAUNDRY") {
-      const hasOnSite = fulfillmentModes.has("ON_SITE");
-      const hasPickupReturn = fulfillmentModes.has("PICKUP_AND_RETURN");
-      if (hasOnSite && hasPickupReturn) {
-        throw new PickiError(
-          "VALIDATION_ERROR",
-          "Không thể đặt chung dịch vụ lấy về giặt và giặt tại nhà trong một đơn",
-        );
+    if (isFamilyDinner) {
+      if (!input.serviceDate || !input.deliveryWindowId) {
+        throw new PickiError("VALIDATION_ERROR", "Chọn ngày giao và khung giờ");
       }
-      if (hasOnSite) {
-        laundryPickupMode = "ON_SITE";
-      }
-      paymentMode = "PAY_ON_COMPLETION";
-      deliveryFeeVnd = 0;
-      totalVnd = 0;
-    } else {
-      deliveryFeeVnd = await this.resolveDeliveryFeeVnd(input.zoneId, serviceVertical, handoffMode);
+      const built = await this.buildFamilyDinnerLineItems(input);
+      lineItemsDinner = built.lineItems;
+      subtotalVnd = built.subtotalVnd;
+      serviceDate = input.serviceDate;
+      deliveryWindowId = input.deliveryWindowId;
+      paymentMode = "PAY_ON_PICKI";
+      deliveryFeeVnd = await this.resolveDeliveryFeeVnd(input.zoneId, "FOOD", handoffMode);
       totalVnd = subtotalVnd + deliveryFeeVnd;
+    } else if (isLateDinner) {
+      lateQuote = await this.buildLateDinnerQuote(input);
+      subtotalVnd = lateQuote.subtotalVnd;
+      serviceDate = lateQuote.serviceDate;
+      lateDinnerOfferId = lateQuote.offerId;
+      paymentMode = "PAY_ON_PICKI";
+      deliveryFeeVnd = await this.resolveDeliveryFeeVnd(input.zoneId, "FOOD", handoffMode);
+      totalVnd = subtotalVnd + deliveryFeeVnd;
+    } else {
+      const built = await this.buildLineItems(input.providerLocationId, input.items);
+      lineItemsStandard = built.lineItems;
+      subtotalVnd = built.subtotalVnd;
+      fulfillmentModes = built.fulfillmentModes;
+
+      if (serviceVertical === "LAUNDRY") {
+        const hasOnSite = fulfillmentModes.has("ON_SITE");
+        const hasPickupReturn = fulfillmentModes.has("PICKUP_AND_RETURN");
+        if (hasOnSite && hasPickupReturn) {
+          throw new PickiError(
+            "VALIDATION_ERROR",
+            "Không thể đặt chung dịch vụ lấy về giặt và giặt tại nhà trong một đơn",
+          );
+        }
+        if (hasOnSite) {
+          laundryPickupMode = "ON_SITE";
+        }
+        paymentMode = "PAY_ON_COMPLETION";
+        deliveryFeeVnd = 0;
+        totalVnd = 0;
+      } else {
+        deliveryFeeVnd = await this.resolveDeliveryFeeVnd(
+          input.zoneId,
+          serviceVertical as "FOOD" | "LAUNDRY",
+          handoffMode,
+        );
+        totalVnd = subtotalVnd + deliveryFeeVnd;
+      }
     }
 
     return this.db.transaction(async (tx) => {
+      if (isFamilyDinner && deliveryWindowId) {
+        await this.reserveFamilyDinnerCapacity(tx, deliveryWindowId, lineItemsDinner);
+      }
+      if (isLateDinner && lateQuote) {
+        await this.reserveLateDinnerCapacity(tx, lateQuote);
+      }
+
       const orderNumber = await allocateOrderNumber(tx, input.providerLocationId);
       const [order] = await tx
         .insert(orders)
@@ -166,10 +277,15 @@ export class OrdersService {
           zoneId: input.zoneId,
           providerLocationId: input.providerLocationId,
           status: "CREATED",
-          serviceVertical,
+          serviceVertical: isFamilyDinner || isLateDinner ? "FOOD" : serviceVertical,
+          orderKind: isLateDinner ? "LATE_DINNER" : isFamilyDinner ? "FAMILY_DINNER" : "STANDARD",
+          serviceDate,
+          deliveryWindowId,
+          lateDinnerOfferId,
           laundryPickupMode,
           paymentMode,
-          subtotalVnd: serviceVertical === "LAUNDRY" ? 0 : subtotalVnd,
+          subtotalVnd:
+            serviceVertical === "LAUNDRY" && !isFamilyDinner && !isLateDinner ? 0 : subtotalVnd,
           deliveryFeeVnd,
           totalVnd,
           deliveryAddressId: addr.id,
@@ -194,34 +310,66 @@ export class OrdersService {
         throw new PickiError("INTERNAL_ERROR", "Failed to create order");
       }
 
-      await tx.insert(orderItems).values(
-        lineItems.map((item) => ({
+      if (isFamilyDinner) {
+        await tx.insert(orderItems).values(
+          lineItemsDinner.map((item) => ({
+            orderId: order.id,
+            offeringId: null,
+            familyDinnerMenuItemId: item.menuItemId,
+            familyDinnerCategory: item.category,
+            recipeVersionId: item.recipeVersionId,
+            providerLocationId: input.providerLocationId,
+            name: item.name,
+            description: item.description,
+            unitPriceVnd: item.unitPriceVnd,
+            quantity: item.quantity,
+            lineTotalVnd: item.lineTotalVnd,
+          })),
+        );
+      } else if (isLateDinner && lateQuote) {
+        await tx.insert(orderItems).values({
           orderId: order.id,
-          offeringId: item.offeringId,
+          offeringId: null,
           providerLocationId: input.providerLocationId,
-          name: item.name,
-          description: item.description,
-          unitPriceVnd: item.unitPriceVnd,
-          quantity: item.quantity,
-          lineTotalVnd: item.lineTotalVnd,
-          estimatedDays: item.estimatedDays,
-        })),
-      );
+          name: lateQuote.title,
+          description: "Bữa tối muộn",
+          unitPriceVnd: lateQuote.unitPriceVnd,
+          quantity: lateQuote.quantity,
+          lineTotalVnd: lateQuote.subtotalVnd,
+        });
+      } else {
+        await tx.insert(orderItems).values(
+          lineItemsStandard.map((item) => ({
+            orderId: order.id,
+            offeringId: item.offeringId,
+            providerLocationId: input.providerLocationId,
+            name: item.name,
+            description: item.description,
+            unitPriceVnd: item.unitPriceVnd,
+            quantity: item.quantity,
+            lineTotalVnd: item.lineTotalVnd,
+            estimatedDays: item.estimatedDays,
+          })),
+        );
+      }
 
       await tx.insert(orderStatusHistory).values({
         orderId: order.id,
         fromStatus: null,
         toStatus: "CREATED",
         actorUserId: userId,
-        note: serviceVertical === "LAUNDRY" ? "Laundry order placed" : "Order placed (COD pilot)",
+        note: isLateDinner
+          ? "Late Dinner — cần thanh toán trước"
+          : isFamilyDinner
+            ? "Family Dinner preorder — cần thanh toán trước"
+            : serviceVertical === "LAUNDRY"
+              ? "Laundry order placed"
+              : "Order placed (COD pilot)",
       });
 
       await this.outbox.enqueueOrderStatusChanged(tx, order, null, "CREATED", userId);
 
-      const items = await tx
-        .select()
-        .from(orderItems)
-        .where(eq(orderItems.orderId, order.id));
+      const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, order.id));
 
       return await this.toOrderDto(order, items);
     });
@@ -299,6 +447,31 @@ export class OrdersService {
 
   async customerCancel(userId: string, orderIdOrNumber: string) {
     const order = await this.resolveCustomerOrder(userId, orderIdOrNumber);
+    if (order.productionLockedAt) {
+      throw new PickiError(
+        "FORBIDDEN",
+        "Đơn đã khóa sản xuất — không hủy tự phục vụ; liên hệ Ops nếu cần",
+      );
+    }
+    // Preorders only: late dinner is created after lock and may still cancel (restore trays).
+    if (order.orderKind === "FAMILY_DINNER" && order.serviceDate) {
+      const batch = await this.db
+        .select({ status: familyDinnerProductionBatches.status })
+        .from(familyDinnerProductionBatches)
+        .where(
+          and(
+            eq(familyDinnerProductionBatches.providerLocationId, order.providerLocationId),
+            eq(familyDinnerProductionBatches.serviceDate, order.serviceDate),
+          ),
+        )
+        .limit(1);
+      if (batch[0]?.status === "LOCKED") {
+        throw new PickiError(
+          "FORBIDDEN",
+          "Bếp đã chốt nấu — không hủy tự phục vụ",
+        );
+      }
+    }
     if (
       !canCustomerCancel(
         order.status,
@@ -315,6 +488,17 @@ export class OrdersService {
       userId,
       "Customer cancelled",
     );
+
+    if (order.orderKind === "FAMILY_DINNER" || order.orderKind === "LATE_DINNER") {
+      await this.db.transaction(async (tx) => {
+        if (order.orderKind === "FAMILY_DINNER") {
+          await this.restoreFamilyDinnerCapacity(tx, order);
+        }
+        if (order.orderKind === "LATE_DINNER" && order.lateDinnerOfferId) {
+          await this.restoreLateDinnerCapacity(tx, order);
+        }
+      });
+    }
 
     return {
       id: result.order.id,
@@ -483,6 +667,323 @@ export class OrdersService {
     });
   }
 
+  private async buildFamilyDinnerLineItems(input: OrderCheckoutInput) {
+    if (!input.serviceDate || !input.deliveryWindowId) {
+      throw new PickiError("VALIDATION_ERROR", "Chọn ngày giao và khung giờ");
+    }
+
+    const settings = await this.db
+      .select()
+      .from(familyDinnerProviderSettings)
+      .where(eq(familyDinnerProviderSettings.providerLocationId, input.providerLocationId))
+      .limit(1);
+    if (!settings[0]?.enabled) {
+      throw new PickiError("FORBIDDEN", "Bếp chưa nhận Bữa tối ấm cúng");
+    }
+    const cutoff = formatTime(settings[0].cutoffTime);
+    if (isPastCutoff(input.serviceDate, cutoff)) {
+      throw new PickiError(
+        "CONFLICT",
+        `Đã qua giờ chốt đơn (${cutoff}) — thử bếp khác hoặc ngày khác`,
+      );
+    }
+
+    const window = await this.db
+      .select()
+      .from(familyDinnerDeliveryWindows)
+      .where(eq(familyDinnerDeliveryWindows.id, input.deliveryWindowId))
+      .limit(1);
+    const w = window[0];
+    if (
+      !w ||
+      w.providerLocationId !== input.providerLocationId ||
+      w.serviceDate !== input.serviceDate
+    ) {
+      throw new PickiError("VALIDATION_ERROR", "Khung giờ giao không hợp lệ");
+    }
+    if (w.status !== "OPEN" || w.remainingCapacity < 1) {
+      throw new PickiError("CONFLICT", "Khung giờ giao đã đầy");
+    }
+
+    const menuItemIds = input.items.map((i) => i.menuItemId).filter(Boolean) as string[];
+    if (menuItemIds.length !== input.items.length) {
+      throw new PickiError("VALIDATION_ERROR", "Family Dinner cần menuItemId");
+    }
+
+    const rows = await this.db
+      .select()
+      .from(familyDinnerMenuItems)
+      .where(
+        sql`${familyDinnerMenuItems.id} IN (${sql.join(
+          menuItemIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})`,
+      );
+    const byId = new Map(rows.map((r) => [r.id, r]));
+
+    const lineItems = input.items.map((item) => {
+      const row = byId.get(item.menuItemId!);
+      if (!row || row.status !== "ACTIVE") {
+        throw new PickiError("VALIDATION_ERROR", "Món không còn trên menu", {
+          details: { menuItemId: item.menuItemId },
+        });
+      }
+      if (row.remainingCapacity != null && row.remainingCapacity < item.quantity) {
+        throw new PickiError("CONFLICT", `Hết suất: ${row.name}`);
+      }
+      return {
+        menuItemId: row.id,
+        category: row.category,
+        name: row.name,
+        description: row.description,
+        unitPriceVnd: row.priceVnd,
+        quantity: item.quantity,
+        lineTotalVnd: row.priceVnd * item.quantity,
+        recipeVersionId: row.recipeVersionId,
+      };
+    });
+
+    const meal = validateFamilyDinnerBaseMeal(
+      lineItems.map((l) => ({ category: l.category, quantity: l.quantity })),
+    );
+    if (!meal.ok) {
+      throw new PickiError(
+        "VALIDATION_ERROR",
+        `Mâm chưa đủ nhóm: ${meal.missing.join(", ")} (cần MAIN, SIDE, VEGETABLE, SOUP)`,
+      );
+    }
+
+    const subtotalVnd = lineItems.reduce((s, i) => s + i.lineTotalVnd, 0);
+    const portionCount = lineItems.reduce((s, i) => s + i.quantity, 0);
+    return { lineItems, subtotalVnd, portionCount };
+  }
+
+  private async reserveFamilyDinnerCapacity(
+    tx: Parameters<Parameters<PickiDb["transaction"]>[0]>[0],
+    deliveryWindowId: string,
+    lineItems: { menuItemId: string; quantity: number; name: string }[],
+  ) {
+    const [win] = await tx
+      .update(familyDinnerDeliveryWindows)
+      .set({
+        remainingCapacity: sql`${familyDinnerDeliveryWindows.remainingCapacity} - 1`,
+        status: sql`CASE WHEN ${familyDinnerDeliveryWindows.remainingCapacity} - 1 <= 0 THEN 'FULL' ELSE ${familyDinnerDeliveryWindows.status} END`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(familyDinnerDeliveryWindows.id, deliveryWindowId),
+          eq(familyDinnerDeliveryWindows.status, "OPEN"),
+          sql`${familyDinnerDeliveryWindows.remainingCapacity} >= 1`,
+        ),
+      )
+      .returning();
+    if (!win) {
+      throw new PickiError("CONFLICT", "Khung giờ giao vừa hết chỗ");
+    }
+
+    for (const item of lineItems) {
+      const [updated] = await tx
+        .update(familyDinnerMenuItems)
+        .set({
+          remainingCapacity: sql`CASE
+            WHEN ${familyDinnerMenuItems.remainingCapacity} IS NULL THEN NULL
+            ELSE ${familyDinnerMenuItems.remainingCapacity} - ${item.quantity}
+          END`,
+          status: sql`CASE
+            WHEN ${familyDinnerMenuItems.remainingCapacity} IS NOT NULL
+              AND ${familyDinnerMenuItems.remainingCapacity} - ${item.quantity} <= 0
+            THEN 'SOLD_OUT'
+            ELSE ${familyDinnerMenuItems.status}
+          END`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(familyDinnerMenuItems.id, item.menuItemId),
+            eq(familyDinnerMenuItems.status, "ACTIVE"),
+            sql`(
+              ${familyDinnerMenuItems.remainingCapacity} IS NULL
+              OR ${familyDinnerMenuItems.remainingCapacity} >= ${item.quantity}
+            )`,
+          ),
+        )
+        .returning();
+      if (!updated) {
+        throw new PickiError("CONFLICT", `Hết suất: ${item.name}`);
+      }
+    }
+  }
+
+  private async buildLateDinnerQuote(input: OrderCheckoutInput) {
+    if (!input.lateDinnerOfferId) {
+      throw new PickiError("VALIDATION_ERROR", "Thiếu lateDinnerOfferId");
+    }
+    const quantity = input.items.reduce((s, i) => s + i.quantity, 0);
+    if (quantity < 1) {
+      throw new PickiError("VALIDATION_ERROR", "Số mâm phải ≥ 1");
+    }
+
+    const offerRows = await this.db
+      .select()
+      .from(lateDinnerOffers)
+      .where(eq(lateDinnerOffers.id, input.lateDinnerOfferId))
+      .limit(1);
+    const offer = offerRows[0];
+    if (!offer || offer.providerLocationId !== input.providerLocationId) {
+      throw new PickiError("NOT_FOUND", "Mâm tối muộn không tồn tại");
+    }
+    if (offer.status !== "ACTIVE" || offer.remainingCapacity < quantity) {
+      throw new PickiError("CONFLICT", "Mâm tối muộn đã hết");
+    }
+
+    return {
+      offerId: offer.id,
+      title: offer.title,
+      serviceDate: offer.serviceDate,
+      unitPriceVnd: offer.priceVnd,
+      quantity,
+      subtotalVnd: offer.priceVnd * quantity,
+      productionBatchId: offer.productionBatchId,
+    };
+  }
+
+  private async reserveLateDinnerCapacity(
+    tx: Parameters<Parameters<PickiDb["transaction"]>[0]>[0],
+    quote: Awaited<ReturnType<OrdersService["buildLateDinnerQuote"]>>,
+  ) {
+    const [offer] = await tx
+      .update(lateDinnerOffers)
+      .set({
+        remainingCapacity: sql`${lateDinnerOffers.remainingCapacity} - ${quote.quantity}`,
+        status: sql`CASE WHEN ${lateDinnerOffers.remainingCapacity} - ${quote.quantity} <= 0 THEN 'SOLD_OUT' ELSE ${lateDinnerOffers.status} END`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(lateDinnerOffers.id, quote.offerId),
+          eq(lateDinnerOffers.status, "ACTIVE"),
+          sql`${lateDinnerOffers.remainingCapacity} >= ${quote.quantity}`,
+        ),
+      )
+      .returning();
+    if (!offer) {
+      throw new PickiError("CONFLICT", "Mâm tối muộn vừa hết chỗ");
+    }
+
+    // Track sold late portions; remaining was soft-reserved at offer create.
+    if (quote.productionBatchId) {
+      const lines = await tx
+        .select()
+        .from(lateDinnerOfferItems)
+        .where(eq(lateDinnerOfferItems.offerId, quote.offerId));
+      for (const line of lines) {
+        const sold = line.quantityPerTray * quote.quantity;
+        await tx
+          .update(familyDinnerProductionItemTotals)
+          .set({
+            lateQuantity: sql`${familyDinnerProductionItemTotals.lateQuantity} + ${sold}`,
+          })
+          .where(
+            and(
+              eq(familyDinnerProductionItemTotals.productionBatchId, quote.productionBatchId),
+              eq(familyDinnerProductionItemTotals.menuItemId, line.menuItemId),
+            ),
+          );
+      }
+    }
+  }
+
+  private async restoreFamilyDinnerCapacity(
+    tx: Parameters<Parameters<PickiDb["transaction"]>[0]>[0],
+    order: typeof orders.$inferSelect,
+  ) {
+    if (order.deliveryWindowId) {
+      await tx
+        .update(familyDinnerDeliveryWindows)
+        .set({
+          remainingCapacity: sql`${familyDinnerDeliveryWindows.remainingCapacity} + 1`,
+          status: sql`CASE WHEN ${familyDinnerDeliveryWindows.status} = 'FULL' THEN 'OPEN' ELSE ${familyDinnerDeliveryWindows.status} END`,
+          updatedAt: new Date(),
+        })
+        .where(eq(familyDinnerDeliveryWindows.id, order.deliveryWindowId));
+    }
+
+    const lines = await tx
+      .select({
+        menuItemId: orderItems.familyDinnerMenuItemId,
+        quantity: orderItems.quantity,
+      })
+      .from(orderItems)
+      .where(eq(orderItems.orderId, order.id));
+
+    for (const line of lines) {
+      if (!line.menuItemId) continue;
+      await tx
+        .update(familyDinnerMenuItems)
+        .set({
+          remainingCapacity: sql`CASE
+            WHEN ${familyDinnerMenuItems.remainingCapacity} IS NULL THEN NULL
+            ELSE ${familyDinnerMenuItems.remainingCapacity} + ${line.quantity}
+          END`,
+          status: sql`CASE
+            WHEN ${familyDinnerMenuItems.status} = 'SOLD_OUT' THEN 'ACTIVE'
+            ELSE ${familyDinnerMenuItems.status}
+          END`,
+          updatedAt: new Date(),
+        })
+        .where(eq(familyDinnerMenuItems.id, line.menuItemId));
+    }
+  }
+
+  private async restoreLateDinnerCapacity(
+    tx: Parameters<Parameters<PickiDb["transaction"]>[0]>[0],
+    order: typeof orders.$inferSelect,
+  ) {
+    if (!order.lateDinnerOfferId) return;
+    const qty =
+      (
+        await tx
+          .select({ quantity: orderItems.quantity })
+          .from(orderItems)
+          .where(eq(orderItems.orderId, order.id))
+          .limit(1)
+      )[0]?.quantity ?? 0;
+    if (qty < 1) return;
+
+    const [offer] = await tx
+      .update(lateDinnerOffers)
+      .set({
+        remainingCapacity: sql`${lateDinnerOffers.remainingCapacity} + ${qty}`,
+        status: sql`CASE WHEN ${lateDinnerOffers.status} = 'SOLD_OUT' THEN 'ACTIVE' ELSE ${lateDinnerOffers.status} END`,
+        updatedAt: new Date(),
+      })
+      .where(eq(lateDinnerOffers.id, order.lateDinnerOfferId))
+      .returning();
+    if (!offer?.productionBatchId) return;
+
+    // Undo lateQuantity only — production remaining stays reserved on the offer pool.
+    const lines = await tx
+      .select()
+      .from(lateDinnerOfferItems)
+      .where(eq(lateDinnerOfferItems.offerId, order.lateDinnerOfferId));
+
+    for (const line of lines) {
+      const back = line.quantityPerTray * qty;
+      await tx
+        .update(familyDinnerProductionItemTotals)
+        .set({
+          lateQuantity: sql`GREATEST(${familyDinnerProductionItemTotals.lateQuantity} - ${back}, 0)`,
+        })
+        .where(
+          and(
+            eq(familyDinnerProductionItemTotals.productionBatchId, offer.productionBatchId),
+            eq(familyDinnerProductionItemTotals.menuItemId, line.menuItemId),
+          ),
+        );
+    }
+  }
+
   private async buildLineItems(
     providerLocationId: string,
     items: CreateOrderInput["items"],
@@ -491,6 +992,9 @@ export class OrdersService {
     const menuById = new Map(menu.map((m) => [m.offering_id, m]));
 
     const lineItems = items.map((item) => {
+      if (!item.offeringId) {
+        throw new PickiError("VALIDATION_ERROR", "offeringId required");
+      }
       const offering = menuById.get(item.offeringId);
       if (!offering) {
         throw new PickiError("VALIDATION_ERROR", "Invalid offering for this location", {
@@ -521,6 +1025,34 @@ export class OrdersService {
     return { lineItems, subtotalVnd, fulfillmentModes };
   }
 
+  private async computeCanCancel(order: typeof orders.$inferSelect): Promise<boolean> {
+    if (order.productionLockedAt) return false;
+    if (
+      !canCustomerCancel(
+        order.status,
+        order.serviceVertical as "FOOD" | "LAUNDRY",
+        order.laundryPickupMode as "HOME_PICKUP" | "SHOP_DROP_OFF" | "ON_SITE" | null,
+      )
+    ) {
+      return false;
+    }
+    // Unpaid/paid preorders after batch lock: hide cancel even if productionLockedAt null.
+    if (order.orderKind === "FAMILY_DINNER" && order.serviceDate) {
+      const batch = await this.db
+        .select({ status: familyDinnerProductionBatches.status })
+        .from(familyDinnerProductionBatches)
+        .where(
+          and(
+            eq(familyDinnerProductionBatches.providerLocationId, order.providerLocationId),
+            eq(familyDinnerProductionBatches.serviceDate, order.serviceDate),
+          ),
+        )
+        .limit(1);
+      if (batch[0]?.status === "LOCKED") return false;
+    }
+    return true;
+  }
+
   private async toOrderDto(
     order: typeof orders.$inferSelect,
     items: (typeof orderItems.$inferSelect)[],
@@ -535,6 +1067,11 @@ export class OrdersService {
       providerLocationId: order.providerLocationId,
       status: order.status,
       paymentMode: order.paymentMode,
+      orderKind: order.orderKind ?? "STANDARD",
+      serviceDate: order.serviceDate ?? null,
+      deliveryWindowId: order.deliveryWindowId ?? null,
+      lateDinnerOfferId: order.lateDinnerOfferId ?? null,
+      productionLockedAt: order.productionLockedAt?.toISOString() ?? null,
       subtotalVnd: order.subtotalVnd,
       deliveryFeeVnd: order.deliveryFeeVnd,
       totalVnd: order.totalVnd,
@@ -560,13 +1097,11 @@ export class OrdersService {
         quantity: i.quantity,
         lineTotalVnd: i.lineTotalVnd,
         estimatedDays: i.estimatedDays,
+        menuItemId: i.familyDinnerMenuItemId,
+        category: i.familyDinnerCategory,
       })),
       createdAt: order.createdAt.toISOString(),
-      canCancel: canCustomerCancel(
-        order.status,
-        order.serviceVertical as "FOOD" | "LAUNDRY",
-        order.laundryPickupMode as "HOME_PICKUP" | "SHOP_DROP_OFF" | "ON_SITE" | null,
-      ),
+      canCancel: await this.computeCanCancel(order),
       serviceVertical: order.serviceVertical,
       laundryPickupMode: order.laundryPickupMode,
       ...orderHandoffFields(order),

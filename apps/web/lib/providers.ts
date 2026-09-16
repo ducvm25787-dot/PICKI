@@ -76,6 +76,10 @@ export function isSportsVertical(providerType?: string | null) {
   return providerType === "SPORTS_FACILITY";
 }
 
+export function isHomeCookVertical(providerType?: string | null) {
+  return providerType === "HOME_COOK";
+}
+
 function beautyWaitLabel(
   status: string,
   waitMinutes: number | null | undefined,

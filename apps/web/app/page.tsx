@@ -175,6 +175,16 @@ export default function HomePage() {
           </div>
 
           <div className="card" style={{ marginBottom: 16 }}>
+            <p className="section-title">BỮA TỐI ẤM CÚNG</p>
+            <p className="stat" style={{ marginBottom: 12 }}>
+              Tối nay nhà mình ăn gì? — chọn món theo nhóm, giao theo khung giờ, trả trước
+            </p>
+            <Link href="/family-dinner" className="btn" style={{ width: "auto" }}>
+              Xem bếp đang nhận đơn →
+            </Link>
+          </div>
+
+          <div className="card" style={{ marginBottom: 16 }}>
             <p className="section-title">GÓC KHU MÌNH</p>
             <p className="stat" style={{ marginBottom: 12 }}>
               Cho tặng, thanh lý, cho thuê, thất lạc trong khu — không phải mạng xã hội

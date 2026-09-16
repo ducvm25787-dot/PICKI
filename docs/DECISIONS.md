@@ -493,3 +493,21 @@ Transactional outbox (`outbox_events`) processed by an in-process or same-deploy
 **Full scope:** `docs/S40_LOST_FOUND.md`.
 
 ---
+
+### ADR-046 — Family Dinner = build-your-own tray (không combo cố định)
+
+**Status:** ACCEPTED (2026-09-16)
+
+**Context:** Master Spec §65–68 + Food Spec §66 mô tả family meals. Draft “Bữa tối ấm cúng” định nghĩa meal builder ≥1 MAIN/SIDE/VEGETABLE/SOUP thay vì combo cố định.
+
+**Decision:**
+
+1. Family Dinner V1 = **build-your-own** từ daily menu theo category; Picki không áp mâm combo sẵn.
+2. Reuse `orders` / `order_items` / payments / fulfillment với `order_kind = FAMILY_DINNER`.
+3. Ship **phased**: A = menu + builder + windows + PREPAY; B = provider ops/cutoff dashboard; C = recipe engine; D = late dinner. **A–D shipped lean (2026-09-16).**
+4. Recipe calculation (khi có) **deterministic** — không LLM.
+5. Combo cố định (nếu cần) = Late Dinner offer hoặc offering thường — không thay meal builder.
+
+**Full scope:** `docs/PICKI_FAMILY_DINNER_SPEC.md`.
+
+---

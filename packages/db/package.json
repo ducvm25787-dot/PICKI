@@ -28,7 +28,8 @@
     "seed:housing": "tsx src/seed-housing-kvl.ts",
     "seed:pharmacy": "tsx src/seed-pharmacy-kvl.ts",
     "seed:minimart": "tsx src/seed-minimart-kvl.ts",
-    "seed:lost": "tsx src/seed-lost-kvl.ts"
+    "seed:lost": "tsx src/seed-lost-kvl.ts",
+    "seed:family-dinner": "tsx src/seed-family-dinner-kvl.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.40.0",

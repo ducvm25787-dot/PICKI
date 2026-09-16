@@ -1,5 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { eq } from "drizzle-orm";
 import {
+  familyDinnerProviderSettings,
   getLocationHeader,
   listDailySpecialsForLocation,
   listLocationMenu,
@@ -8,6 +10,7 @@ import {
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
 import { loadProviderContactPhone, loadProviderBrand } from "../orders/order-enrichment.js";
+import { defaultDinnerServiceDate } from "../family-dinner/family-dinner.service.js";
 import { PICKI_DB, PICKI_SQL } from "../../shared/tokens.js";
 
 @Injectable()
@@ -23,10 +26,17 @@ export class CatalogService {
       throw new PickiError("NOT_FOUND", "Provider location not found");
     }
 
-    const [items, specials] = await Promise.all([
+    const [items, specials, dinnerSettings] = await Promise.all([
       listLocationMenu(this.sql, locationId),
       listDailySpecialsForLocation(this.sql, locationId),
+      this.db
+        .select({ enabled: familyDinnerProviderSettings.enabled })
+        .from(familyDinnerProviderSettings)
+        .where(eq(familyDinnerProviderSettings.providerLocationId, locationId))
+        .limit(1),
     ]);
+
+    const familyDinnerEnabled = dinnerSettings[0]?.enabled === true;
 
     const isBeauty = header.provider_type === "BEAUTY";
     const isPet = header.provider_type === "PET_SERVICE";
@@ -81,6 +91,9 @@ export class CatalogService {
             }
           : undefined,
       },
+      familyDinner: familyDinnerEnabled
+        ? { enabled: true, serviceDate: defaultDinnerServiceDate() }
+        : { enabled: false },
       items: items.map((i) => ({
         id: i.offering_id,
         slug: i.slug,

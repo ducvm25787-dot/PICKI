@@ -49,6 +49,7 @@ This file bounds **what to build when**. It is an actionable sprint/rollout refe
 | S38    | Nhà thuốc lean — ADR-043; scope `docs/S38_PHARMACY.md` |
 | S39    | Đi chợ lean (minimart/tạp hóa) — ADR-044; scope `docs/S39_MARKET.md` |
 | S40    | Thất lạc / Pet Lost — ADR-045; scope `docs/S40_LOST_FOUND.md` |
+| S41    | Family Dinner Phase A–D — ADR-046; scope `docs/PICKI_FAMILY_DINNER_SPEC.md` |
 | Later  | Zalo Mini App                         |
 | Later  | Native                                |
 

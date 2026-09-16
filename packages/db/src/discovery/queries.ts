@@ -88,6 +88,10 @@ export async function listDiscoveryProviders(
       AND pzm.status = 'ACTIVE'
       AND pl.status = 'ACTIVE'
       AND p.status = 'ACTIVE'
+      AND NOT EXISTS (
+        SELECT 1 FROM family_dinner_provider_settings fds
+        WHERE fds.provider_location_id = pl.id AND fds.enabled = true
+      )
       AND (
         EXISTS (
           SELECT 1 FROM offerings o

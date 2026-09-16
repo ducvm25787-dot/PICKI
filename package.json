@@ -35,7 +35,8 @@
     "db:seed:housing": "bash scripts/db-seed-housing.sh",
     "db:seed:pharmacy": "bash scripts/db-seed-pharmacy.sh",
     "db:seed:minimart": "bash scripts/db-seed-minimart.sh",
-    "db:seed:lost": "bash scripts/db-seed-lost.sh"
+    "db:seed:lost": "bash scripts/db-seed-lost.sh",
+    "db:seed:family-dinner": "bash scripts/db-seed-family-dinner.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",

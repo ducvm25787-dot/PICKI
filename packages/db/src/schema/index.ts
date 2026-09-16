@@ -16,4 +16,5 @@ export * from "./runner-offers.js";
 export * from "./service-requests.js";
 export * from "./beauty-visit-intents.js";
 export * from "./classified.js";
+export * from "./family-dinner.js";
 export * from "./zones.js";

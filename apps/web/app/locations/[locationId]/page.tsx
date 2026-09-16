@@ -60,6 +60,7 @@ type MenuResponse = {
       provider: { phone: string | null; label?: string };
     };
   };
+  familyDinner?: { enabled: boolean; serviceDate?: string };
   items: {
     id: string;
     slug?: string;
@@ -163,18 +164,27 @@ export default function LocationMenuPage() {
           api<{ zones: { zoneId: string }[] }>("/zones/mine"),
           api<ReviewsResponse>(`/locations/${params.locationId}/reviews`),
         ]);
+        const zid = mine.zones[0]?.zoneId ?? null;
+        if (data.familyDinner?.enabled) {
+          const date = data.familyDinner.serviceDate ?? "";
+          const q = new URLSearchParams();
+          if (zid) q.set("zoneId", zid);
+          if (date) q.set("date", date);
+          router.replace(`/family-dinner/${params.locationId}?${q.toString()}`);
+          return; // keep loading until navigation; skip empty menu flash
+        }
         setMenu(data);
         setReviews(rev);
-        setZoneId(mine.zones[0]?.zoneId ?? null);
+        setZoneId(zid);
         setCart(readCart());
         if (isCustomerVisitVertical(data.location.providerType)) {
           await loadActiveVisit(data.location.id);
         }
+        setLoading(false);
       } catch (e) {
         if (e instanceof Error && e.message !== "auth") {
           setError(e.message);
         }
-      } finally {
         setLoading(false);
       }
     }
