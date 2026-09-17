@@ -13,6 +13,7 @@ export type RunnerOrder = {
   status: string;
   serviceVertical?: string;
   orderKind?: string;
+  serviceDate?: string | null;
   deliveryFeeVnd?: number;
   totalVnd: number;
   assignedToMe: boolean;
@@ -20,6 +21,7 @@ export type RunnerOrder = {
   providerHandoffAt: string | null;
   runnerSoughtAt: string | null;
   routeId: string | null;
+  deliveryWindow?: { startsAt: string; endsAt: string; label: string } | null;
   delivery: { building: string | null; apartment: string | null };
   contacts?: {
     customer: { phone: string | null; displayName?: string | null };

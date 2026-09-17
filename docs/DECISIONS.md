@@ -517,3 +517,23 @@ Transactional outbox (`outbox_events`) processed by an in-process or same-deploy
 3. Snapshot `order_items.prep_mode`; kế hoạch nấu hiện số phần tự nấu (lean). Giảm giá / recipe tách = Phase sau.
 
 ---
+
+### ADR-047 — Breakfast Preorder = daily menu FD-like (không tách phân phối/quán)
+
+**Status:** ACCEPTED (2026-09-17) — Phase 1 shipped lean
+
+**Context:** Food Spec §61–62 «Sáng mai ăn gì?» (20:00–23:30). Cần preorder sáng giống vận hành Bữa tối ấm cúng, nhưng món từ catalog quán; quán bún/phở vừa preorder sáng vừa bán instant cả ngày. Không tách account «phân phối» vs «quán».
+
+**Decision:**
+
+1. **Sáng mai ăn gì** = daily breakfast menu + delivery windows + **PREPAY 100%** (`PAY_ON_PICKI`); `order_kind = BREAKFAST_PREORDER`.
+2. Cutoff **gợi ý 23:30**, mỗi provider tự set; mở nhận gợi ý **20:00** (`open_from_time`). Cutoff tính trên **đêm trước** `service_date` (ngày giao sáng).
+3. Món trên menu sáng = chọn từ **offerings** sẵn có của quán (snapshot tên/giá). Không meal-builder 4 nhóm.
+4. Luôn **Nấu sẵn** — không Tự nấu / `SELF_COOK`.
+5. Fulfillment **cook-first** (giống Family Dinner): nấu xong mới tìm runner / tự giao.
+6. Phase 1 = Breakfast only. **Góc ăn khuya** (Bán khuya + giờ kết thúc) = phase sau — không ship trong ADR này.
+7. Discovery `/breakfast` chỉ list location `enabled` + menu PUBLISHED + đang trong cửa sổ nhận đơn.
+
+**Full scope:** `docs/PICKI_BREAKFAST_PREORDER_SPEC.md`.
+
+---

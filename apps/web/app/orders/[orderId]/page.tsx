@@ -21,9 +21,12 @@ type OrderDetail = {
   providerBrandName?: string | null;
   status: string;
   serviceVertical?: string;
+  orderKind?: string;
+  serviceDate?: string | null;
   laundryPickupMode?: string | null;
   estimatedReadyAt: string | null;
   providerHandoffAt: string | null;
+  runnerSoughtAt?: string | null;
   runner: { displayName: string } | null;
   contacts?: {
     customer: { phone: string | null; displayName?: string | null };
@@ -34,6 +37,7 @@ type OrderDetail = {
   subtotalVnd?: number;
   deliveryFeeVnd?: number;
   totalVnd: number;
+  deliveryWindow?: { startsAt: string; endsAt: string; label: string } | null;
   delivery: {
     addressType?: string;
     handoffMode?: string;
@@ -273,10 +277,22 @@ export default function OrderDetailPage() {
           </p>
           <OrderStatusSteps
             status={order.status}
+            runnerSoughtAt={order.runnerSoughtAt}
+            hasRunner={!!order.runner}
             serviceVertical={order.serviceVertical}
             laundryPickupMode={order.laundryPickupMode}
+            orderKind={order.orderKind}
             audience="customer"
           />
+          {order.deliveryWindow?.label || order.serviceDate ? (
+            <p className="stat" style={{ margin: "8px 0 0" }}>
+              {order.deliveryWindow?.label
+                ? `Khung giao: ${order.deliveryWindow.label}`
+                : null}
+              {order.deliveryWindow?.label && order.serviceDate ? " · " : null}
+              {order.serviceDate ? `Ngày ${order.serviceDate}` : null}
+            </p>
+          ) : null}
           {order.runner && order.serviceVertical !== "LAUNDRY" ? (
             <p className="stat" style={{ margin: "8px 0 0" }}>
               Runner: <strong>{order.runner.displayName}</strong>
@@ -423,6 +439,15 @@ export default function OrderDetailPage() {
         <div className="card" style={{ marginBottom: 16 }}>
           <p className="section-title">Giao đến</p>
           <p style={{ margin: 0 }}>{addr}</p>
+          {order.deliveryWindow?.label || order.serviceDate ? (
+            <p className="stat" style={{ margin: "8px 0 0" }}>
+              {order.deliveryWindow?.label
+                ? `Khung giao: ${order.deliveryWindow.label}`
+                : null}
+              {order.deliveryWindow?.label && order.serviceDate ? " · " : null}
+              {order.serviceDate ? `Ngày ${order.serviceDate}` : null}
+            </p>
+          ) : null}
           <p className="stat" style={{ margin: "8px 0 0" }}>
             {isApartment ? handoffModeLabel(handoffMode) : "Giao tận cửa"}
           </p>

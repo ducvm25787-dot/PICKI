@@ -7,6 +7,7 @@ import { CatalogModule } from "./modules/catalog/catalog.module.js";
 import { ClassifiedsModule } from "./modules/classifieds/classifieds.module.js";
 import { DiscoveryModule } from "./modules/discovery/discovery.module.js";
 import { FamilyDinnerModule } from "./modules/family-dinner/family-dinner.module.js";
+import { BreakfastPreorderModule } from "./modules/breakfast-preorder/breakfast-preorder.module.js";
 import { GeoModule } from "./modules/geo/geo.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
 import { OrdersModule } from "./modules/orders/orders.module.js";
@@ -32,6 +33,7 @@ import { ZonesModule } from "./modules/zones/zones.module.js";
     ClassifiedsModule,
     DiscoveryModule,
     FamilyDinnerModule,
+    BreakfastPreorderModule,
     OrdersModule,
     ProviderModule,
     RunnerModule,

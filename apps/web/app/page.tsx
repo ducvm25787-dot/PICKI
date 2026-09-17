@@ -5,8 +5,19 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { type ProviderListing } from "../lib/providers";
+import { BrandMark } from "./components/brand-mark";
 import { NotificationBell } from "./components/notification-bell";
 import { ProviderList } from "./components/provider-list";
+import {
+  IconGift,
+  IconMap,
+  IconOrders,
+  IconPin,
+  IconRoute,
+  IconSearch,
+  IconUsers,
+  IconWrench,
+} from "./components/nav-icons";
 
 type Me = {
   id: string;
@@ -135,10 +146,7 @@ export default function HomePage() {
   return (
     <div className="container">
       <div className="header-row">
-        <div>
-          <div className="logo">Picki</div>
-          <div className="tagline">Hôm nay quanh bạn có gì?</div>
-        </div>
+        <BrandMark subtitle="Hôm nay quanh bạn có gì?" />
         <NotificationBell audience="customer" />
       </div>
 
@@ -157,96 +165,124 @@ export default function HomePage() {
         </div>
       ) : (
         <>
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Link href={`/zones/${KVL_SLUG}/search`} className="btn btn-secondary" style={{ width: "auto" }}>
-                🔍 Tìm món (S12)
-              </Link>
-              <Link href={`/zones/${KVL_SLUG}/map`} className="btn btn-secondary" style={{ width: "auto" }}>
-                🗺 Bản đồ live (S12)
-              </Link>
-              <Link href="/orders" className="btn btn-secondary" style={{ width: "auto" }}>
-                📋 Đơn của tôi
-              </Link>
-              <Link href="/requests" className="btn btn-secondary" style={{ width: "auto" }}>
-                🔧 Yêu cầu dịch vụ
-              </Link>
-            </div>
+          <Link
+            href={`/zones/${KVL_SLUG}/search`}
+            className="home-search"
+            aria-label="Tìm quanh Zone"
+          >
+            <span className="home-search-icon">
+              <IconSearch />
+            </span>
+            <span>Tìm món, dịch vụ quanh Kim Văn…</span>
+          </Link>
+
+          <Link href="/family-dinner" className="home-hero">
+            <p className="home-hero-kicker">Bữa tối ấm cúng</p>
+            <h2 className="home-hero-title">Tối nay nhà mình ăn gì?</h2>
+            <p className="home-hero-copy">
+              Chọn mâm theo nhóm · giao khung giờ · trả trước — bếp đang nhận đơn trong Zone.
+            </p>
+            <span className="home-hero-cta">Xem bếp nhận đơn →</span>
+          </Link>
+
+          <div className="quick-grid" aria-label="Lối tắt">
+            <Link href={`/zones/${KVL_SLUG}/classifieds`} className="quick-tile">
+              <span className="quick-tile-icon quick-tile-icon--amber">
+                <IconUsers />
+              </span>
+              Góc khu
+            </Link>
+            <Link href="/orders" className="quick-tile">
+              <span className="quick-tile-icon quick-tile-icon--green">
+                <IconOrders />
+              </span>
+              Đơn
+            </Link>
+            <Link href={`/zones/${KVL_SLUG}/map`} className="quick-tile">
+              <span className="quick-tile-icon quick-tile-icon--blue">
+                <IconMap />
+              </span>
+              Bản đồ
+            </Link>
+            <Link href="/requests" className="quick-tile">
+              <span className="quick-tile-icon">
+                <IconWrench />
+              </span>
+              Dịch vụ
+            </Link>
           </div>
 
-          <div className="card" style={{ marginBottom: 16 }}>
-            <p className="section-title">BỮA TỐI ẤM CÚNG</p>
-            <p className="stat" style={{ marginBottom: 12 }}>
-              Tối nay nhà mình ăn gì? — chọn món theo nhóm, giao theo khung giờ, trả trước
-            </p>
-            <Link href="/family-dinner" className="btn" style={{ width: "auto" }}>
-              Xem bếp đang nhận đơn →
+          <div className="chip-row" aria-label="Danh mục nhanh">
+            <Link href="/breakfast" className="chip">
+              <span className="chip-icon">
+                <IconGift />
+              </span>
+              Sáng mai
+            </Link>
+            <Link href="/family-dinner" className="chip">
+              <span className="chip-icon">
+                <IconGift />
+              </span>
+              Bữa tối
+            </Link>
+            <Link href={`/zones/${KVL_SLUG}/search`} className="chip">
+              <span className="chip-icon">
+                <IconSearch />
+              </span>
+              Ăn uống
+            </Link>
+            <Link href={`/zones/${KVL_SLUG}/classifieds?type=GIVE_AWAY`} className="chip">
+              <span className="chip-icon">
+                <IconGift />
+              </span>
+              Cho tặng
+            </Link>
+            <Link href={`/zones/${KVL_SLUG}/classifieds?type=RESALE`} className="chip">
+              <span className="chip-icon">
+                <IconOrders />
+              </span>
+              Thanh lý
+            </Link>
+            <Link href={`/zones/${KVL_SLUG}/classifieds?type=LOST_FOUND`} className="chip">
+              <span className="chip-icon">
+                <IconPin />
+              </span>
+              Thất lạc
+            </Link>
+            <Link href="/requests" className="chip">
+              <span className="chip-icon">
+                <IconWrench />
+              </span>
+              Thợ
+            </Link>
+            <Link href={`/zones/${KVL_SLUG}`} className="chip">
+              <span className="chip-icon">
+                <IconRoute />
+              </span>
+              Zone
             </Link>
           </div>
 
           <div className="card" style={{ marginBottom: 16 }}>
-            <p className="section-title">GÓC KHU MÌNH</p>
-            <p className="stat" style={{ marginBottom: 12 }}>
-              Cho tặng, thanh lý, cho thuê, thất lạc trong khu — không phải mạng xã hội
-            </p>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-              <Link
-                href={`/zones/${KVL_SLUG}/classifieds?type=GIVE_AWAY`}
-                className="btn btn-secondary"
-                style={{ width: "auto" }}
-              >
-                Cho tặng ({community?.giveAwayCount ?? 0})
-              </Link>
-              <Link
-                href={`/zones/${KVL_SLUG}/classifieds?type=RESALE`}
-                className="btn btn-secondary"
-                style={{ width: "auto" }}
-              >
-                Thanh lý ({community?.resaleCount ?? 0})
-              </Link>
-              <Link
-                href={`/zones/${KVL_SLUG}/classifieds?type=CHO_THUE`}
-                className="btn btn-secondary"
-                style={{ width: "auto" }}
-              >
-                Cho thuê ({community?.rentCount ?? 0})
-              </Link>
-              <Link
-                href={`/zones/${KVL_SLUG}/classifieds?type=O_GHEP`}
-                className="btn btn-secondary"
-                style={{ width: "auto" }}
-              >
-                Ở ghép ({community?.roommateCount ?? 0})
-              </Link>
-              <Link
-                href={`/zones/${KVL_SLUG}/classifieds?type=LOST_FOUND`}
-                className="btn btn-secondary"
-                style={{ width: "auto" }}
-              >
-                Thất lạc ({community?.lostFoundCount ?? 0})
-              </Link>
-              <Link
-                href={`/zones/${KVL_SLUG}/classifieds?type=PET_LOST`}
-                className="btn btn-secondary"
-                style={{ width: "auto" }}
-              >
-                Thú cưng ({community?.petLostCount ?? 0})
-              </Link>
-              <Link href="/classifieds/mine" className="btn btn-secondary" style={{ width: "auto" }}>
-                Tin của tôi
+            <div className="section-head">
+              <p className="section-title">Góc khu mình</p>
+              <Link href={`/zones/${KVL_SLUG}/classifieds`} className="section-more">
+                Xem thêm →
               </Link>
             </div>
+            <p className="stat" style={{ marginBottom: 12 }}>
+              Cho tặng · thanh lý · cho thuê · thất lạc — trong Zone, không phải mạng xã hội
+            </p>
             {community && community.recentListings.length > 0 ? (
-              <div className="provider-list">
+              <div className="home-scroll-row">
                 {community.recentListings.map((item) => (
-                  <Link key={item.id} href={`/classifieds/${item.id}`} className="provider-card">
-                    <div className="provider-card-main">
-                      <p className="provider-name">{item.title}</p>
-                      <p className="stat">
-                        {item.listingType === "GIVE_AWAY"
-                          ? "Miễn phí"
-                          : item.listingType === "LOST_FOUND" || item.listingType === "PET_LOST"
-                            ? "Không mua bán"
+                  <Link key={item.id} href={`/classifieds/${item.id}`} className="home-scroll-card">
+                    <strong>{item.title}</strong>
+                    <span className="stat">
+                      {item.listingType === "GIVE_AWAY"
+                        ? "Miễn phí"
+                        : item.listingType === "LOST_FOUND" || item.listingType === "PET_LOST"
+                          ? "Không mua bán"
                           : item.priceVnd != null
                             ? `${item.priceVnd.toLocaleString("vi-VN")}đ${
                                 item.listingType === "CHO_THUE" || item.listingType === "O_GHEP"
@@ -254,21 +290,24 @@ export default function HomePage() {
                                   : ""
                               }`
                             : "Liên hệ"}
-                        {" · "}
-                        {item.locationLabel}
-                      </p>
-                    </div>
+                    </span>
+                    <span className="stat">{item.locationLabel}</span>
                   </Link>
                 ))}
               </div>
             ) : (
-              <p className="stat">Chưa có tin — chọn mục trên để đăng.</p>
+              <p className="stat">Chưa có tin — mở Góc khu để đăng.</p>
             )}
           </div>
 
           {blocks.map((block) => (
             <div key={block.id} className="card" style={{ marginBottom: 16 }}>
-              <p className="section-title">{block.title}</p>
+              <div className="section-head">
+                <p className="section-title">{block.title}</p>
+                <Link href={`/zones/${KVL_SLUG}/search`} className="section-more">
+                  Xem thêm →
+                </Link>
+              </div>
               <p className="stat" style={{ marginBottom: 12 }}>
                 {block.subtitle}
               </p>
@@ -282,7 +321,7 @@ export default function HomePage() {
 
           {favoriteIds.size > 0 && (
             <div className="card" style={{ marginBottom: 16 }}>
-              <p className="section-title">Quán yêu thích (S13)</p>
+              <p className="section-title">Quán yêu thích</p>
               <p className="stat">{favoriteIds.size} quán đã lưu — ♥ trên thẻ quán.</p>
             </div>
           )}

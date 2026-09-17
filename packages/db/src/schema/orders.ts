@@ -2,6 +2,10 @@ import { doublePrecision, integer, pgTable, text, timestamp, uuid, date } from "
 import { createdAt, updatedAt } from "./helpers.js";
 import { addresses } from "./addresses.js";
 import { offerings } from "./catalog.js";
+import {
+  breakfastPreorderDeliveryWindows,
+  breakfastPreorderMenuItems,
+} from "./breakfast-preorder.js";
 import { familyDinnerDeliveryWindows, familyDinnerMenuItems } from "./family-dinner.js";
 import { users } from "./identity.js";
 import { providerLocations } from "./providers.js";
@@ -26,6 +30,10 @@ export const orders = pgTable("orders", {
   deliveryWindowId: uuid("delivery_window_id").references(() => familyDinnerDeliveryWindows.id, {
     onDelete: "set null",
   }),
+  breakfastDeliveryWindowId: uuid("breakfast_delivery_window_id").references(
+    () => breakfastPreorderDeliveryWindows.id,
+    { onDelete: "set null" },
+  ),
   lateDinnerOfferId: uuid("late_dinner_offer_id"),
   productionLockedAt: timestamp("production_locked_at", { withTimezone: true, mode: "date" }),
   laundryPickupMode: text("laundry_pickup_mode"),
@@ -67,6 +75,10 @@ export const orderItems = pgTable("order_items", {
   offeringId: uuid("offering_id").references(() => offerings.id, { onDelete: "set null" }),
   familyDinnerMenuItemId: uuid("family_dinner_menu_item_id").references(
     () => familyDinnerMenuItems.id,
+    { onDelete: "set null" },
+  ),
+  breakfastMenuItemId: uuid("breakfast_menu_item_id").references(
+    () => breakfastPreorderMenuItems.id,
     { onDelete: "set null" },
   ),
   familyDinnerCategory: text("family_dinner_category"),

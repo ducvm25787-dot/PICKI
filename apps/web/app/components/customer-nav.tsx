@@ -2,15 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ComponentType } from "react";
+import { IconHome, IconOrders, IconPin, IconSearch } from "./nav-icons";
 
 const KVL = "kim-van-kim-lu";
 
-const tabs = [
-  { href: "/", label: "Trang chủ", icon: "🏠" },
-  { href: `/zones/${KVL}/search`, label: "Tìm", icon: "🔍" },
-  { href: "/orders", label: "Đơn", icon: "📦" },
-  { href: `/zones/${KVL}`, label: "Zone", icon: "📍" },
-] as const;
+const tabs: {
+  href: string;
+  label: string;
+  Icon: ComponentType<{ className?: string }>;
+}[] = [
+  { href: "/", label: "Trang chủ", Icon: IconHome },
+  { href: `/zones/${KVL}/search`, label: "Tìm", Icon: IconSearch },
+  { href: "/orders", label: "Đơn", Icon: IconOrders },
+  { href: `/zones/${KVL}`, label: "Zone", Icon: IconPin },
+];
 
 export function CustomerNav() {
   const pathname = usePathname();
@@ -30,7 +36,7 @@ export function CustomerNav() {
             aria-current={active ? "page" : undefined}
           >
             <span className="customer-nav-icon" aria-hidden>
-              {tab.icon}
+              <tab.Icon />
             </span>
             <span>{tab.label}</span>
           </Link>

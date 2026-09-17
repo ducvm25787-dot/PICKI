@@ -239,6 +239,15 @@ function RunnerOrderCard({
         orderKind={order.orderKind}
         audience="runner"
       />
+      {order.deliveryWindow?.label || order.serviceDate ? (
+        <p className="stat" style={{ margin: "4px 0" }}>
+          {order.deliveryWindow?.label
+            ? `Khung giao: ${order.deliveryWindow.label}`
+            : null}
+          {order.deliveryWindow?.label && order.serviceDate ? " · " : null}
+          {order.serviceDate ? `Ngày ${order.serviceDate}` : null}
+        </p>
+      ) : null}
       <p className="stat">
         {order.delivery.building}-{order.delivery.apartment}
       </p>

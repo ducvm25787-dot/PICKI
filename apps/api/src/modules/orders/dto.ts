@@ -13,7 +13,7 @@ const orderCheckoutFields = {
   zoneId: z.string().uuid(),
   deliveryHandoffMode: z.enum(["LOBBY_PICKUP", "DOOR_DELIVERY"]).default("LOBBY_PICKUP"),
   items: z.array(createOrderItemSchema).min(1).max(30),
-  orderKind: z.enum(["STANDARD", "FAMILY_DINNER", "LATE_DINNER"]).default("STANDARD"),
+  orderKind: z.enum(["STANDARD", "FAMILY_DINNER", "LATE_DINNER", "BREAKFAST_PREORDER"]).default("STANDARD"),
   serviceDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -24,7 +24,7 @@ const orderCheckoutFields = {
 
 function refineOrderCheckout(
   v: {
-    orderKind: "STANDARD" | "FAMILY_DINNER" | "LATE_DINNER";
+    orderKind: "STANDARD" | "FAMILY_DINNER" | "LATE_DINNER" | "BREAKFAST_PREORDER";
     items: { offeringId?: string; menuItemId?: string }[];
     lateDinnerOfferId?: string;
   },
@@ -41,7 +41,7 @@ function refineOrderCheckout(
       }
     }
   }
-  if (v.orderKind === "FAMILY_DINNER") {
+  if (v.orderKind === "FAMILY_DINNER" || v.orderKind === "BREAKFAST_PREORDER") {
     for (const [i, item] of v.items.entries()) {
       if (!item.menuItemId) {
         ctx.addIssue({

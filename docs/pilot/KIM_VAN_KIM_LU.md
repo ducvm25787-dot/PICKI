@@ -53,7 +53,14 @@ Travel-time accessibility and operator edits replace any fixed-radius assumption
 - **Automated API:** `pnpm pilot:family-dinner:e2e` (script: `scripts/pilot-family-dinner-e2e.sh`)
 - **Manual UI checklist:** [`FAMILY_DINNER_E2E_CHECKLIST.md`](./FAMILY_DINNER_E2E_CHECKLIST.md) — cook-first PREPAY, runner sau READY, Tự giao, cutoff gate
 
+## Breakfast Preorder — S42
+
+- **Seed:** `bash scripts/db-seed-breakfast.sh` · demo: `BF_SEED_DEMO=1 …`
+- **Demo:** Phở Gà Kim Văn · login `0908888015` · customer `/breakfast`
+- **Rules:** PREPAY · Nấu sẵn only · cutoff tối hôm trước (gợi ý 23:30) · ADR-047 · [`PICKI_BREAKFAST_PREORDER_SPEC.md`](../PICKI_BREAKFAST_PREORDER_SPEC.md)
+
 ## Pilot harden + PWA
 
 - **Gate trước pilot rộng:** [`PILOT_HARDEN_CHECKLIST.md`](./PILOT_HARDEN_CHECKLIST.md)
 - **Icons:** `bash scripts/generate-pwa-icons.sh` → PNG 192/512 + apple-touch (Customer / Provider / Runner)
+- **Visual V1:** [`VISUAL_V1.md`](./VISUAL_V1.md) — Zone Citrus theme, home layout, SVG nav

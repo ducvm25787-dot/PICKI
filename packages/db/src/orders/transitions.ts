@@ -5,13 +5,17 @@ import {
   type ServiceVertical,
 } from "./laundry-transitions.js";
 
-/** Family Dinner / Late Dinner: nấu trước, tìm runner (hoặc tự giao) khi READY. */
+/** Family Dinner / Late Dinner / Breakfast Preorder: nấu trước, tìm runner (hoặc tự giao) khi READY. */
 export function isCookFirstFoodOrder(order: {
   serviceVertical?: string | null;
   orderKind?: string | null;
 }): boolean {
   if (order.serviceVertical === "LAUNDRY") return false;
-  return order.orderKind === "FAMILY_DINNER" || order.orderKind === "LATE_DINNER";
+  return (
+    order.orderKind === "FAMILY_DINNER" ||
+    order.orderKind === "LATE_DINNER" ||
+    order.orderKind === "BREAKFAST_PREORDER"
+  );
 }
 
 /** Server-controlled transitions for Food orders (COD + online pay paths). */
@@ -55,7 +59,16 @@ export function canTransition(
   to: string,
   vertical: ServiceVertical = "FOOD",
   laundryPickupMode?: LaundryPickupMode | null,
+  orderKind?: string | null,
 ): boolean {
+  // Breakfast: Quán nhận → Sẵn sàng (bỏ bước Nấu)
+  if (
+    orderKind === "BREAKFAST_PREORDER" &&
+    from === "PROVIDER_ACCEPTED" &&
+    to === "READY"
+  ) {
+    return true;
+  }
   const allowed = orderTransitionsForVertical(vertical, laundryPickupMode)[from];
   return allowed?.includes(to) ?? false;
 }

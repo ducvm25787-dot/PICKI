@@ -43,6 +43,7 @@ export class OrderTransitionService {
         toStatus,
         order.serviceVertical as ServiceVertical,
         order.laundryPickupMode as LaundryPickupMode | null,
+        order.orderKind,
       )
     ) {
       throw new PickiError("FORBIDDEN", `Cannot transition ${order.status} → ${toStatus}`);
@@ -70,6 +71,7 @@ export class OrderTransitionService {
         toStatus,
         order.serviceVertical as ServiceVertical,
         order.laundryPickupMode as LaundryPickupMode | null,
+        order.orderKind,
       )
     ) {
       throw new PickiError("FORBIDDEN", `Cannot transition ${order.status} → ${toStatus}`);

@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
 import {
   hasPendingOffer,
   isCookFirstFoodOrder,
+  loadOrderDeliveryWindow,
   markOfferAccepted,
   orderItems,
   orders,
@@ -105,7 +106,7 @@ export class RunnerService {
             and(
               eq(orders.serviceVertical, "FOOD"),
               eq(orders.status, "READY"),
-              inArray(orders.orderKind, ["FAMILY_DINNER", "LATE_DINNER"]),
+              inArray(orders.orderKind, ["FAMILY_DINNER", "LATE_DINNER", "BREAKFAST_PREORDER"]),
             ),
             and(eq(orders.serviceVertical, "LAUNDRY"), eq(orders.status, "READY_FOR_RETURN")),
           ),
@@ -146,6 +147,7 @@ export class RunnerService {
         status: o.status,
         serviceVertical: o.serviceVertical,
         orderKind: o.orderKind ?? "STANDARD",
+        serviceDate: o.serviceDate ?? null,
         subtotalVnd: o.subtotalVnd,
         deliveryFeeVnd: o.deliveryFeeVnd,
         totalVnd: o.totalVnd,
@@ -154,6 +156,7 @@ export class RunnerService {
         providerHandoffAt: o.providerHandoffAt?.toISOString() ?? null,
         runnerSoughtAt: o.runnerSoughtAt?.toISOString() ?? null,
         routeId: routeLink[0]?.routeId ?? null,
+        deliveryWindow: await loadOrderDeliveryWindow(this.db, o),
         delivery: {
           building: o.deliveryBuilding,
           apartment: o.deliveryApartment,

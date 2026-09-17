@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, ApiUnreachableError } from "../../lib/api";
+import { BrandMark } from "../components/brand-mark";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -63,9 +64,8 @@ export default function LoginPage() {
 
   return (
     <div className="container">
-      <div style={{ marginBottom: 24 }}>
-        <div className="logo">Picki</div>
-        <div className="tagline">Đăng nhập để khám phá khu của bạn</div>
+      <div style={{ marginBottom: 28 }}>
+        <BrandMark subtitle="Đăng nhập để khám phá khu của bạn" />
       </div>
 
       {apiReady === false && (

@@ -2,7 +2,9 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
 import {
   isCookFirstFoodOrder,
+  breakfastPreorderProviderSettings,
   familyDinnerProviderSettings,
+  loadOrderDeliveryWindow,
   orderItems,
   orders,
   providerActionToStatus,
@@ -24,6 +26,7 @@ import { OrderTransitionService } from "../orders/order-transition.service.js";
 import { OutboxService } from "../outbox/outbox.service.js";
 import { RunnerDispatchService } from "../runner/runner-dispatch.service.js";
 import { formatTime, isPastCutoff } from "../family-dinner/family-dinner.service.js";
+import { isPastBreakfastCutoff } from "../breakfast-preorder/breakfast-preorder.service.js";
 import type { z } from "zod";
 import type { providerOrderActionSchema, updateLiveStatusSchema } from "./dto.js";
 
@@ -142,6 +145,17 @@ export class ProviderService {
       ? formatTime(fdSettings[0].cutoffTime)
       : null;
 
+    const bfSettings = await this.db
+      .select({
+        cutoffTime: breakfastPreorderProviderSettings.cutoffTime,
+      })
+      .from(breakfastPreorderProviderSettings)
+      .where(eq(breakfastPreorderProviderSettings.providerLocationId, locationId))
+      .limit(1);
+    const breakfastCutoffTime = bfSettings[0]
+      ? formatTime(bfSettings[0].cutoffTime)
+      : null;
+
     const ordersOut = await Promise.all(
       rows.map(async (raw) => {
         const o = await this.ensureRunnerSought(raw);
@@ -160,6 +174,7 @@ export class ProviderService {
           runnerFeeVnd: this.runnerDispatch.runnerFeeVnd(o, runnerLeg, zoneRow),
           totalVnd: o.totalVnd,
           paymentMode: o.paymentMode,
+          deliveryWindow: await loadOrderDeliveryWindow(this.db, o),
           delivery: {
             building: o.deliveryBuilding,
             apartment: o.deliveryApartment,
@@ -176,7 +191,7 @@ export class ProviderService {
       }),
     );
 
-    return { orders: ordersOut, familyDinnerCutoffTime };
+    return { orders: ordersOut, familyDinnerCutoffTime, breakfastCutoffTime };
   }
 
   async listLocationOrderHistory(userId: string, locationId: string, limit = 30) {
@@ -369,6 +384,12 @@ export class ProviderService {
     }
 
     if (input.action === "preparing") {
+      if (order[0].orderKind === "BREAKFAST_PREORDER") {
+        throw new PickiError(
+          "FORBIDDEN",
+          "Đơn sáng không có bước nấu — bấm Sẵn sàng giao sau khi chuẩn bị xong",
+        );
+      }
       if (isCookFirstFoodOrder(order[0])) {
         if (order[0].status !== "PROVIDER_ACCEPTED" && order[0].status !== "RUNNER_ASSIGNED") {
           throw new PickiError("FORBIDDEN", "Nhận đơn trước khi bắt đầu nấu");
@@ -403,8 +424,33 @@ export class ProviderService {
       }
     }
 
-    if (input.action === "ready" && order[0].status !== "PREPARING") {
-      throw new PickiError("FORBIDDEN", "Order must be preparing before marking ready");
+    if (input.action === "ready") {
+      if (order[0].orderKind === "BREAKFAST_PREORDER") {
+        if (order[0].status !== "PROVIDER_ACCEPTED" && order[0].status !== "PREPARING") {
+          throw new PickiError("FORBIDDEN", "Nhận đơn trước khi đánh dấu sẵn sàng");
+        }
+        if (order[0].serviceDate) {
+          const settings = await this.db
+            .select({ cutoffTime: breakfastPreorderProviderSettings.cutoffTime })
+            .from(breakfastPreorderProviderSettings)
+            .where(
+              eq(
+                breakfastPreorderProviderSettings.providerLocationId,
+                order[0].providerLocationId,
+              ),
+            )
+            .limit(1);
+          const cutoff = formatTime(settings[0]?.cutoffTime ?? "23:30");
+          if (!isPastBreakfastCutoff(order[0].serviceDate, cutoff)) {
+            throw new PickiError(
+              "FORBIDDEN",
+              `Chỉ đánh dấu sẵn sàng sau giờ chốt nhận đơn tối hôm trước (${cutoff})`,
+            );
+          }
+        }
+      } else if (order[0].status !== "PREPARING") {
+        throw new PickiError("FORBIDDEN", "Order must be preparing before marking ready");
+      }
     }
 
     const toStatus = providerActionToStatus(input.action);

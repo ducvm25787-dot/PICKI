@@ -80,6 +80,21 @@ export function isHomeCookVertical(providerType?: string | null) {
   return providerType === "HOME_COOK";
 }
 
+/** Quán ăn uống — tab Sáng mai (RESTAURANT / FOOD_STALL / HOME_COOK / CAFÉ / bakery-like). */
+export function isFoodBreakfastVertical(providerType?: string | null) {
+  if (!providerType) return false;
+  const food = new Set([
+    "RESTAURANT",
+    "FOOD_STALL",
+    "HOME_COOK",
+    "CAFE",
+    "CAFÉ",
+    "BAKERY",
+    "FOOD",
+  ]);
+  return food.has(providerType);
+}
+
 function beautyWaitLabel(
   status: string,
   waitMinutes: number | null | undefined,

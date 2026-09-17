@@ -1,7 +1,22 @@
 import type { Metadata, Viewport } from "next";
+import { Be_Vietnam_Pro, Sora } from "next/font/google";
 import { AppShell } from "./components/app-shell";
 import { PwaRegister } from "./components/pwa-register";
 import "./globals.css";
+
+const beVietnam = Be_Vietnam_Pro({
+  subsets: ["latin", "vietnamese"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-be-vietnam",
+  display: "swap",
+});
+
+const sora = Sora({
+  subsets: ["latin"],
+  weight: ["600", "700"],
+  variable: "--font-sora",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -41,7 +56,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="vi">
+    <html lang="vi" className={`${beVietnam.variable} ${sora.variable}`}>
       <body>
         <PwaRegister />
         <AppShell>{children}</AppShell>

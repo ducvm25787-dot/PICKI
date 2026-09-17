@@ -8,9 +8,10 @@ import { ProviderPageShell, useProviderLocation } from "../../components/provide
 import { OrderStatusSteps } from "../../components/order-status-steps";
 import { api } from "../../../lib/api";
 import { OrderNumberHeading } from "../../components/order-number-heading";
-import { orderStatusRich } from "../../../lib/order-display";
+import { orderStatusRich, isBreakfastPreorderOrderKind } from "../../../lib/order-display";
 import { formatOrderAmount, formatVnd } from "../../../lib/money";
 import { fdFormatItemQtyLabel, fdIsPastCutoff } from "../../../lib/family-dinner";
+import { bfIsPastCutoff } from "../../../lib/breakfast-preorder";
 
 type DailyRunnerStats = {
   date: string;
@@ -39,6 +40,7 @@ type ProviderOrder = {
   runnerSoughtAt: string | null;
   runnerUserId: string | null;
   runner: { displayName: string } | null;
+  deliveryWindow?: { startsAt: string; endsAt: string; label: string } | null;
   delivery: { building: string | null; apartment: string | null };
   contacts?: {
     customer: { phone: string | null; displayName?: string | null };
@@ -53,7 +55,11 @@ function hasRunnerSought(order: ProviderOrder): boolean {
 }
 
 function isCookFirstOrder(order: ProviderOrder): boolean {
-  return order.orderKind === "FAMILY_DINNER" || order.orderKind === "LATE_DINNER";
+  return (
+    order.orderKind === "FAMILY_DINNER" ||
+    order.orderKind === "LATE_DINNER" ||
+    order.orderKind === "BREAKFAST_PREORDER"
+  );
 }
 
 function patchOrder(prev: ProviderOrder, patch: Partial<ProviderOrder>): ProviderOrder {
@@ -123,6 +129,7 @@ export default function ProviderOrdersPage() {
   const [rejectPreset, setRejectPreset] = useState<string>(REJECT_PRESETS[0]);
   const [rejectCustom, setRejectCustom] = useState("");
   const [fdCutoffTime, setFdCutoffTime] = useState<string | null>(null);
+  const [bfCutoffTime, setBfCutoffTime] = useState<string | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
 
   const activeLocationId = locations.some((l) => l.locationId === locationId) ? locationId : "";
@@ -139,9 +146,11 @@ export default function ProviderOrdersPage() {
       const res = await api<{
         orders: ProviderOrder[];
         familyDinnerCutoffTime?: string | null;
+        breakfastCutoffTime?: string | null;
       }>(`/provider/orders?locationId=${activeLocationId}`);
       setOrders(res.orders);
       setFdCutoffTime(res.familyDinnerCutoffTime?.slice(0, 5) ?? null);
+      setBfCutoffTime(res.breakfastCutoffTime?.slice(0, 5) ?? null);
     } catch (e) {
       setOrders([]);
       setLoadError(e instanceof Error ? e.message : "Không tải được đơn hàng");
@@ -150,6 +159,10 @@ export default function ProviderOrdersPage() {
 
   function canStartFamilyDinnerCook(order: ProviderOrder): boolean {
     if (order.orderKind === "LATE_DINNER") return true;
+    if (order.orderKind === "BREAKFAST_PREORDER") {
+      if (!order.serviceDate || !bfCutoffTime) return false;
+      return bfIsPastCutoff(order.serviceDate, bfCutoffTime, nowTick);
+    }
     if (order.orderKind !== "FAMILY_DINNER") return true;
     if (!order.serviceDate || !fdCutoffTime) return false;
     return fdIsPastCutoff(order.serviceDate, fdCutoffTime, nowTick);
@@ -202,8 +215,10 @@ export default function ProviderOrdersPage() {
       return;
     }
     if (act === "preparing" && current && isCookFirstOrder(current) && !canStartFamilyDinnerCook(current)) {
+      const cutoffLabel =
+        current.orderKind === "BREAKFAST_PREORDER" ? bfCutoffTime : fdCutoffTime;
       setActionError(
-        `Chỉ bắt đầu nấu sau giờ chốt nhận đơn${fdCutoffTime ? ` (${fdCutoffTime})` : ""}`,
+        `Chỉ bắt đầu nấu sau giờ chốt nhận đơn${cutoffLabel ? ` (${cutoffLabel})` : ""}`,
       );
       setActingId(null);
       return;
@@ -590,8 +605,9 @@ export default function ProviderOrdersPage() {
                 ) : null}
                 {waitingRunner && cookFirst ? (
                   <div className="runner-route-hint" style={{ margin: "8px 0", fontSize: 14 }}>
-                    Đã nấu xong — đang chờ runner nhận giao. Hoặc bấm <strong>Tự giao</strong> nếu
-                    bếp tự sắp xếp.
+                    {isBreakfastPreorderOrderKind(o.orderKind)
+                      ? "Đã sẵn sàng — đang chờ runner nhận giao. Hoặc bấm Tự giao nếu quán tự sắp xếp."
+                      : "Đã nấu xong — đang chờ runner nhận giao. Hoặc bấm Tự giao nếu bếp tự sắp xếp."}
                   </div>
                 ) : null}
                 {waitingRunner && o.serviceVertical === "LAUNDRY" ? (
@@ -616,6 +632,15 @@ export default function ProviderOrdersPage() {
                     )
                     .join(", ")}
                 </p>
+                {o.deliveryWindow?.label || o.serviceDate ? (
+                  <p className="stat" style={{ marginBottom: 4 }}>
+                    {o.deliveryWindow?.label
+                      ? `Khung giao: ${o.deliveryWindow.label}`
+                      : null}
+                    {o.deliveryWindow?.label && o.serviceDate ? " · " : null}
+                    {o.serviceDate ? `Ngày ${o.serviceDate}` : null}
+                  </p>
+                ) : null}
                 <p className="stat" style={{ marginBottom: 8 }}>
                   Giao: {o.delivery.building}-{o.delivery.apartment}
                 </p>
@@ -841,7 +866,9 @@ export default function ProviderOrdersPage() {
                         : `Tìm runner${(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0)}` : ""}`}
                     </button>
                   ) : null}
-                  {cookFirst && o.status === "PROVIDER_ACCEPTED" ? (
+                  {cookFirst &&
+                  o.status === "PROVIDER_ACCEPTED" &&
+                  isBreakfastPreorderOrderKind(o.orderKind) ? (
                     <button
                       type="button"
                       className="btn provider-btn"
@@ -854,7 +881,37 @@ export default function ProviderOrdersPage() {
                       title={
                         canStartFamilyDinnerCook(o)
                           ? undefined
-                          : `Bắt đầu nấu sau giờ chốt nhận đơn${fdCutoffTime ? ` (${fdCutoffTime})` : ""}`
+                          : `Sẵn sàng sau giờ chốt nhận đơn${
+                              bfCutoffTime ? ` (${bfCutoffTime})` : ""
+                            }`
+                      }
+                      onClick={() => void action(o.id, "ready")}
+                    >
+                      {busy
+                        ? "…"
+                        : canStartFamilyDinnerCook(o)
+                          ? "Sẵn sàng giao"
+                          : `Sẵn sàng giao (sau ${bfCutoffTime ?? "giờ chốt"})`}
+                    </button>
+                  ) : null}
+                  {cookFirst &&
+                  o.status === "PROVIDER_ACCEPTED" &&
+                  !isBreakfastPreorderOrderKind(o.orderKind) ? (
+                    <button
+                      type="button"
+                      className="btn provider-btn"
+                      style={{
+                        width: "auto",
+                        padding: "8px 12px",
+                        opacity: canStartFamilyDinnerCook(o) ? 1 : 0.45,
+                      }}
+                      disabled={busy || !canStartFamilyDinnerCook(o)}
+                      title={
+                        canStartFamilyDinnerCook(o)
+                          ? undefined
+                          : `Bắt đầu nấu sau giờ chốt nhận đơn${
+                              fdCutoffTime ? ` (${fdCutoffTime})` : ""
+                            }`
                       }
                       onClick={() => void action(o.id, "preparing")}
                     >

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "../../../../lib/api";
+import { BrandMark } from "../../../components/brand-mark";
 
 export default function ProviderLoginPage() {
   const router = useRouter();
@@ -50,10 +51,13 @@ export default function ProviderLoginPage() {
 
   return (
     <div className="container">
-      <div className="logo provider-logo">Picki Provider</div>
-      <p className="tagline">
-        Đăng nhập quản lý quán — Food 0908888001 · Giặt 0908888004 · Dịch vụ nhà 0908888005
-      </p>
+      <div style={{ marginBottom: 20 }}>
+        <BrandMark
+          tone="provider"
+          title="Picki Provider"
+          subtitle="Food 0908888001 · Giặt 0908888004 · Nhà 0908888005 · Bếp tối 0908888014"
+        />
+      </div>
       <div className="card">
         {step === "phone" ? (
           <>

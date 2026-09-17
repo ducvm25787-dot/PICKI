@@ -2,14 +2,27 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ComponentType } from "react";
+import {
+  IconHistory,
+  IconLive,
+  IconOrders,
+  IconRoute,
+  IconSettings,
+} from "./nav-icons";
 
-const tabs = [
-  { href: "/runner", label: "Đơn", icon: "📦", exact: true },
-  { href: "/runner/route", label: "Tiến trình", icon: "🗺️", exact: false },
-  { href: "/runner/history", label: "Lịch sử", icon: "📋", exact: false },
-  { href: "/runner/status", label: "Trạng thái", icon: "🟢", exact: false },
-  { href: "/runner/settings", label: "Cài đặt", icon: "⚙️", exact: false },
-] as const;
+const tabs: {
+  href: string;
+  label: string;
+  Icon: ComponentType<{ className?: string }>;
+  exact: boolean;
+}[] = [
+  { href: "/runner", label: "Đơn", Icon: IconOrders, exact: true },
+  { href: "/runner/route", label: "Tiến trình", Icon: IconRoute, exact: false },
+  { href: "/runner/history", label: "Lịch sử", Icon: IconHistory, exact: false },
+  { href: "/runner/status", label: "Trạng thái", Icon: IconLive, exact: false },
+  { href: "/runner/settings", label: "Cài đặt", Icon: IconSettings, exact: false },
+];
 
 export function RunnerNav() {
   const pathname = usePathname();
@@ -26,7 +39,7 @@ export function RunnerNav() {
             aria-current={active ? "page" : undefined}
           >
             <span className="runner-nav-icon" aria-hidden>
-              {tab.icon}
+              <tab.Icon />
             </span>
             <span>{tab.label}</span>
           </Link>

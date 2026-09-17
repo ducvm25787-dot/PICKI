@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "../../../../lib/api";
+import { BrandMark } from "../../../components/brand-mark";
 
 export default function RunnerLoginPage() {
   const router = useRouter();
@@ -50,8 +51,13 @@ export default function RunnerLoginPage() {
 
   return (
     <div className="container">
-      <div className="logo runner-logo">Picki Runner</div>
-      <p className="tagline">Đăng nhập runner (demo: 0908888002)</p>
+      <div style={{ marginBottom: 20 }}>
+        <BrandMark
+          tone="runner"
+          title="Picki Runner"
+          subtitle="Demo login 0908888002"
+        />
+      </div>
       <div className="card">
         {step === "phone" ? (
           <>

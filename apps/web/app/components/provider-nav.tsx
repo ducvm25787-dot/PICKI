@@ -2,28 +2,178 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ComponentType } from "react";
 import {
   isContactLiveOnlyShop,
   isCustomerVisitVertical,
   isEducationVertical,
+  isFoodBreakfastVertical,
   isHealthVertical,
   isHomeCookVertical,
+  isHomeServiceVertical,
   isQueueOnlyShop,
   isSportsVertical,
 } from "../../lib/providers";
+import {
+  IconBell,
+  IconChat,
+  IconClipboard,
+  IconDinner,
+  IconHistory,
+  IconLive,
+  IconOrders,
+  IconSettings,
+  IconWalk,
+  IconWrench,
+} from "./nav-icons";
 import { useProviderLocation } from "./provider-location-context";
 
-const tabs = [
-  { href: "/provider", label: "Đơn", icon: "📋", exact: true, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: false, homeCookOnly: false },
-  { href: "/provider/family-dinner", label: "Bữa tối", icon: "🍲", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: false, homeCookOnly: true },
-  { href: "/provider/incoming", label: "Sắp tới", icon: "🚶", exact: false, hideForBeauty: false, beautyOnly: true, hideForEducation: true, healthOnly: false, pharmacyOnly: false, homeCookOnly: false },
-  { href: "/provider/followups", label: "Tái khám", icon: "🔔", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: true, pharmacyOnly: false, homeCookOnly: false },
-  { href: "/provider/chats", label: "Hỏi hàng", icon: "💬", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: true, homeCookOnly: false },
-  { href: "/provider/requests", label: "Yêu cầu", icon: "🔧", exact: false, hideForBeauty: true, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: false, homeCookOnly: false },
-  { href: "/provider/history", label: "Lịch sử", icon: "📦", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: false, homeCookOnly: false },
-  { href: "/provider/live", label: "Trạng thái", icon: "🟢", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: true, healthOnly: false, pharmacyOnly: false, homeCookOnly: false },
-  { href: "/provider/settings", label: "Cài đặt", icon: "⚙️", exact: false, hideForBeauty: false, beautyOnly: false, hideForEducation: false, healthOnly: false, pharmacyOnly: false, homeCookOnly: false },
-] as const;
+type Tab = {
+  href: string;
+  label: string;
+  Icon: ComponentType<{ className?: string }>;
+  exact: boolean;
+  hideForBeauty: boolean;
+  beautyOnly: boolean;
+  hideForEducation: boolean;
+  healthOnly: boolean;
+  pharmacyOnly: boolean;
+  homeCookOnly: boolean;
+  foodBreakfastOnly: boolean;
+};
+
+const tabs: Tab[] = [
+  {
+    href: "/provider",
+    label: "Đơn",
+    Icon: IconClipboard,
+    exact: true,
+    hideForBeauty: false,
+    beautyOnly: false,
+    hideForEducation: false,
+    healthOnly: false,
+    pharmacyOnly: false,
+    homeCookOnly: false,
+    foodBreakfastOnly: false,
+  },
+  {
+    href: "/provider/family-dinner",
+    label: "Bữa tối",
+    Icon: IconDinner,
+    exact: false,
+    hideForBeauty: false,
+    beautyOnly: false,
+    hideForEducation: false,
+    healthOnly: false,
+    pharmacyOnly: false,
+    homeCookOnly: true,
+    foodBreakfastOnly: false,
+  },
+  {
+    href: "/provider/breakfast",
+    label: "Sáng mai",
+    Icon: IconDinner,
+    exact: false,
+    hideForBeauty: false,
+    beautyOnly: false,
+    hideForEducation: false,
+    healthOnly: false,
+    pharmacyOnly: false,
+    homeCookOnly: false,
+    foodBreakfastOnly: true,
+  },
+  {
+    href: "/provider/incoming",
+    label: "Sắp tới",
+    Icon: IconWalk,
+    exact: false,
+    hideForBeauty: false,
+    beautyOnly: true,
+    hideForEducation: true,
+    healthOnly: false,
+    pharmacyOnly: false,
+    homeCookOnly: false,
+    foodBreakfastOnly: false,
+  },
+  {
+    href: "/provider/followups",
+    label: "Tái khám",
+    Icon: IconBell,
+    exact: false,
+    hideForBeauty: false,
+    beautyOnly: false,
+    hideForEducation: false,
+    healthOnly: true,
+    pharmacyOnly: false,
+    homeCookOnly: false,
+    foodBreakfastOnly: false,
+  },
+  {
+    href: "/provider/chats",
+    label: "Hỏi hàng",
+    Icon: IconChat,
+    exact: false,
+    hideForBeauty: false,
+    beautyOnly: false,
+    hideForEducation: false,
+    healthOnly: false,
+    pharmacyOnly: true,
+    homeCookOnly: false,
+    foodBreakfastOnly: false,
+  },
+  {
+    href: "/provider/requests",
+    label: "Yêu cầu",
+    Icon: IconWrench,
+    exact: false,
+    hideForBeauty: true,
+    beautyOnly: false,
+    hideForEducation: false,
+    healthOnly: false,
+    pharmacyOnly: false,
+    homeCookOnly: false,
+    foodBreakfastOnly: false,
+  },
+  {
+    href: "/provider/history",
+    label: "Lịch sử",
+    Icon: IconOrders,
+    exact: false,
+    hideForBeauty: false,
+    beautyOnly: false,
+    hideForEducation: false,
+    healthOnly: false,
+    pharmacyOnly: false,
+    homeCookOnly: false,
+    foodBreakfastOnly: false,
+  },
+  {
+    href: "/provider/live",
+    label: "Trạng thái",
+    Icon: IconLive,
+    exact: false,
+    hideForBeauty: false,
+    beautyOnly: false,
+    hideForEducation: true,
+    healthOnly: false,
+    pharmacyOnly: false,
+    homeCookOnly: false,
+    foodBreakfastOnly: false,
+  },
+  {
+    href: "/provider/settings",
+    label: "Cài đặt",
+    Icon: IconSettings,
+    exact: false,
+    hideForBeauty: false,
+    beautyOnly: false,
+    hideForEducation: false,
+    healthOnly: false,
+    pharmacyOnly: false,
+    homeCookOnly: false,
+    foodBreakfastOnly: false,
+  },
+];
 
 export function ProviderNav() {
   const pathname = usePathname();
@@ -33,6 +183,7 @@ export function ProviderNav() {
   const hideServiceRequests = isQueueOnlyShop(providerType);
   const isHealth = isHealthVertical(providerType);
   const isHomeCook = isHomeCookVertical(providerType);
+  const foodBreakfast = isFoodBreakfastVertical(providerType);
   const contactLiveOnly = isContactLiveOnlyShop(providerType);
   const hideQueueTabs = isEducationVertical(providerType) || isSportsVertical(providerType);
   const visibleTabs = tabs.filter((tab) => {
@@ -45,6 +196,8 @@ export function ProviderNav() {
     }
     if (tab.pharmacyOnly) return false;
     if (tab.homeCookOnly && !isHomeCook) return false;
+    if (tab.foodBreakfastOnly && !foodBreakfast) return false;
+    if (tab.foodBreakfastOnly && isHomeServiceVertical(providerType)) return false;
     if (tab.healthOnly && !isHealth) return false;
     if (hideServiceRequests && tab.hideForBeauty) return false;
     if (hideQueueTabs && tab.hideForEducation) return false;
@@ -64,7 +217,7 @@ export function ProviderNav() {
             aria-current={active ? "page" : undefined}
           >
             <span className="provider-nav-icon" aria-hidden>
-              {tab.icon}
+              <tab.Icon />
             </span>
             <span>{tab.label}</span>
           </Link>

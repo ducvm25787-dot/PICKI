@@ -43,6 +43,17 @@ export const COOK_FIRST_FLOW_STEPS = [
   { key: "DELIVERED", label: "Xong" },
 ] as const;
 
+/** Breakfast Preorder: bỏ bước Nấu — Quán nhận → Sẵn sàng → tìm runner */
+export const BREAKFAST_FLOW_STEPS = [
+  { key: "PROVIDER_ACCEPTED", label: "Quán nhận" },
+  { key: "READY", label: "Sẵn sàng" },
+  { key: "SEEKING_RUNNER", label: "Tìm runner" },
+  { key: "RUNNER_ASSIGNED", label: "Runner nhận" },
+  { key: "PICKED_UP", label: "Bàn giao" },
+  { key: "DELIVERING", label: "Giao" },
+  { key: "DELIVERED", label: "Xong" },
+] as const;
+
 export const LAUNDRY_FLOW_STEPS = [
   { key: "PROVIDER_ACCEPTED", label: "Tiệm nhận" },
   { key: "AT_SHOP", label: "Đã lấy đồ" },
@@ -70,7 +81,15 @@ export const LAUNDRY_ON_SITE_FLOW_STEPS = [
 ] as const;
 
 export function isCookFirstOrderKind(orderKind?: string | null): boolean {
-  return orderKind === "FAMILY_DINNER" || orderKind === "LATE_DINNER";
+  return (
+    orderKind === "FAMILY_DINNER" ||
+    orderKind === "LATE_DINNER" ||
+    orderKind === "BREAKFAST_PREORDER"
+  );
+}
+
+export function isBreakfastPreorderOrderKind(orderKind?: string | null): boolean {
+  return orderKind === "BREAKFAST_PREORDER";
 }
 
 export function orderStepIndex(
@@ -129,6 +148,25 @@ export function orderStepIndex(
     return laundryMap[status] ?? -1;
   }
 
+  if (isBreakfastPreorderOrderKind(opts.orderKind)) {
+    if (status === "PROVIDER_ACCEPTED") return 0;
+    if (status === "PREPARING") return 1; // legacy if any
+    if (status === "READY") {
+      if (opts.hasRunner || opts.runnerUserId) return 3;
+      if (opts.runnerSoughtAt) return 2;
+      return 1;
+    }
+    if (status === "RUNNER_ASSIGNED") return 3;
+    const breakfastMap: Record<string, number> = {
+      CREATED: -1,
+      PAID: -1,
+      PICKED_UP: 4,
+      DELIVERING: 5,
+      DELIVERED: 6,
+    };
+    return breakfastMap[status] ?? -1;
+  }
+
   if (isCookFirstOrderKind(opts.orderKind)) {
     if (status === "PROVIDER_ACCEPTED") return 0;
     if (status === "PREPARING") return 1;
@@ -175,6 +213,7 @@ export function flowStepsForOrder(opts: {
     if (opts.audience === "customer") return LAUNDRY_CUSTOMER_FLOW_STEPS;
     return LAUNDRY_FLOW_STEPS;
   }
+  if (isBreakfastPreorderOrderKind(opts.orderKind)) return BREAKFAST_FLOW_STEPS;
   if (isCookFirstOrderKind(opts.orderKind)) return COOK_FIRST_FLOW_STEPS;
   return ORDER_FLOW_STEPS;
 }
