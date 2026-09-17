@@ -537,3 +537,20 @@ Transactional outbox (`outbox_events`) processed by an in-process or same-deploy
 **Full scope:** `docs/PICKI_BREAKFAST_PREORDER_SPEC.md`.
 
 ---
+
+### ADR-048 — Góc ăn khuya = opt-in Bán khuya + giờ kết thúc
+
+**Status:** ACCEPTED (2026-09-18) — Phase 1 lean
+
+**Context:** Food Spec §61 window 20:30+ «ĂN KHUYA»; user yêu cầu gom quán chọn bán khuya, không tách account.
+
+**Decision:**
+
+1. Provider Food bật **Bán khuya** + set **giờ kết thúc** (và tùy chọn giờ bắt đầu; mặc định 20:30 → 02:00, overnight).
+2. Discovery **ĂN KHUYA** / `/late-night` chỉ hiện location `enabled` và **đang trong khung** + live OPEN/BUSY.
+3. Đặt hàng = menu thường + `order_kind = STANDARD` — không preorder / daily menu riêng.
+4. Không ship tiện ích đêm non-food trong cùng block V1 lean.
+
+**Full scope:** `docs/PICKI_LATE_NIGHT_SPEC.md`.
+
+---

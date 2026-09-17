@@ -33,6 +33,22 @@ export class DiscoveryController {
     return this.discovery.getDiscovery(slugOrId);
   }
 
+  @Get("zones/:slugOrId/browse/:categoryId")
+  async zoneBrowse(
+    @Param("slugOrId") slugOrId: string,
+    @Param("categoryId") categoryId: string,
+    @Query("types") types?: string,
+  ) {
+    const providerTypes = (types ?? "")
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (providerTypes.length === 0) {
+      throw new PickiError("VALIDATION_ERROR", "types query required (comma-separated provider_type)");
+    }
+    return this.discovery.browseCategory(slugOrId, categoryId, providerTypes);
+  }
+
   @Get("zones/:slugOrId/search")
   async zoneSearch(@Param("slugOrId") slugOrId: string, @Query("q") q?: string) {
     return this.discovery.search(slugOrId, q ?? "");

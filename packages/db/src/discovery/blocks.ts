@@ -40,7 +40,7 @@ export function discoveryBlocksForNow(now = new Date()): DiscoveryBlock[] {
         id: "breakfast-instant",
         title: "ĂN SÁNG",
         subtitle: "Phở, bún, xôi, bánh mì — giao ngay",
-        foodMoments: ["BREAKFAST_INSTANT", "BREAKFAST_PREORDER"],
+        foodMoments: ["BREAKFAST_INSTANT"],
       },
     ];
   }

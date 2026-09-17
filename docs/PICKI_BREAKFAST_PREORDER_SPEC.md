@@ -43,8 +43,8 @@ Hiển thị **khung giao** trên customer + provider + runner.
 
 ## Out of Phase 1
 
-- Góc ăn khuya / Bán khuya (phase sau)
-- Recipe / inventory / production lock nâng cao
+- ~~Góc ăn khuya / Bán khuya~~ → **shipped S43** (`docs/PICKI_LATE_NIGHT_SPEC.md`)
+- Menu sáng tách / recipe / inventory / production lock nâng cao
 - Self-cook
 - Tách distributor account
 

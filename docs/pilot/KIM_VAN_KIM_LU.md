@@ -59,6 +59,12 @@ Travel-time accessibility and operator edits replace any fixed-radius assumption
 - **Demo:** Phở Gà Kim Văn · login `0908888015` · customer `/breakfast`
 - **Rules:** PREPAY · Nấu sẵn only · cutoff tối hôm trước (gợi ý 23:30) · ADR-047 · [`PICKI_BREAKFAST_PREORDER_SPEC.md`](../PICKI_BREAKFAST_PREORDER_SPEC.md)
 
+## Góc ăn khuya — S43
+
+- **Seed:** `bash scripts/db-seed-late-night.sh` (sau breakfast seed)
+- **Demo:** cùng Phở Gà · Bán khuya 20:30–02:00 · customer `/late-night` · provider tab Trạng thái
+- **ADR-048** · [`PICKI_LATE_NIGHT_SPEC.md`](../PICKI_LATE_NIGHT_SPEC.md)
+
 ## Pilot harden + PWA
 
 - **Gate trước pilot rộng:** [`PILOT_HARDEN_CHECKLIST.md`](./PILOT_HARDEN_CHECKLIST.md)

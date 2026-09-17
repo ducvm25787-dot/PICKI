@@ -3,8 +3,11 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   classifiedListings,
   discoveryBlocksForNow,
+  isWithinLateNightWindow,
   listDailySpecialsForLocation,
   listDiscoveryProviders,
+  listBreakfastPreorderProvidersEnabled,
+  listLateNightProvidersEnabled,
   listAutoProviders,
   listBeautyProviders,
   listEducationProviders,
@@ -16,15 +19,21 @@ import {
   listHomeServiceProviders,
   listLaundryProviders,
   listMapProviders,
+  listProvidersByTypes,
   locationReviews,
   searchZone,
   userFavorites,
+  vnNowHhMm,
   type PickiDb,
   type PickiSql,
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
 import { PICKI_DB, PICKI_SQL } from "../../shared/tokens.js";
 import { ZonesService } from "../zones/zones.service.js";
+import {
+  defaultBreakfastServiceDate,
+  isPastBreakfastCutoff,
+} from "../breakfast-preorder/breakfast-preorder.service.js";
 
 @Injectable()
 export class DiscoveryService {
@@ -39,13 +48,50 @@ export class DiscoveryService {
     if (!zone) throw new PickiError("NOT_FOUND", "Zone not found");
 
     const blocks = discoveryBlocksForNow();
+    const nowHm = vnNowHhMm();
+    const lateRows = await listLateNightProvidersEnabled(this.sql, zone.id);
+    const lateAccepting = lateRows.filter((r) =>
+      isWithinLateNightWindow(nowHm, r.late_starts_at, r.late_ends_at),
+    );
+
+    const breakfastServiceDate = defaultBreakfastServiceDate();
+    const breakfastRows = await listBreakfastPreorderProvidersEnabled(
+      this.sql,
+      zone.id,
+      breakfastServiceDate,
+    );
+    const breakfastAccepting = breakfastRows.filter((r) => {
+      const openFrom = (r.open_from_time ?? "20:00").slice(0, 5);
+      const cutoff = (r.cutoff_time ?? "23:30").slice(0, 5);
+      return (
+        isPastBreakfastCutoff(breakfastServiceDate, openFrom) &&
+        !isPastBreakfastCutoff(breakfastServiceDate, cutoff)
+      );
+    });
+
     const enriched = await Promise.all(
-      blocks.map(async (block) => ({
-        ...block,
-        providers: (await listDiscoveryProviders(this.sql, zone.id, block.foodMoments)).map(
-          mapProvider,
-        ),
-      })),
+      blocks.map(async (block) => {
+        if (block.id === "late-snack") {
+          return {
+            ...block,
+            providers: lateAccepting.map(mapProvider),
+            href: "/late-night",
+          };
+        }
+        if (block.id === "breakfast-preorder") {
+          return {
+            ...block,
+            providers: breakfastAccepting.map(mapProvider),
+            href: "/breakfast",
+          };
+        }
+        return {
+          ...block,
+          providers: (await listDiscoveryProviders(this.sql, zone.id, block.foodMoments)).map(
+            mapProvider,
+          ),
+        };
+      }),
     );
 
     const laundry = await listLaundryProviders(this.sql, zone.id);
@@ -161,6 +207,19 @@ export class DiscoveryService {
     const community = await this.communitySummary(zone.id);
 
     return { zoneId: zone.id, slug: zone.slug, blocks: enriched, community };
+  }
+
+  /** Home category browse — filter by provider_type set. */
+  async browseCategory(slugOrId: string, categoryId: string, providerTypes: string[]) {
+    const zone = await this.zones.findZone(slugOrId);
+    if (!zone) throw new PickiError("NOT_FOUND", "Zone not found");
+    const rows = await listProvidersByTypes(this.sql, zone.id, providerTypes);
+    return {
+      zoneId: zone.id,
+      slug: zone.slug,
+      categoryId,
+      providers: rows.map(mapProvider),
+    };
   }
 
   private async communitySummary(zoneId: string) {
@@ -390,6 +449,7 @@ function mapProvider(r: {
   avg_rating: string | null;
   review_count: string;
   sample_offering: string | null;
+  logo_url?: string | null;
 }) {
   return {
     locationId: r.location_id,
@@ -408,5 +468,6 @@ function mapProvider(r: {
     averageRating: r.avg_rating ? Number(r.avg_rating) : null,
     reviewCount: Number(r.review_count),
     sampleOffering: r.sample_offering,
+    logoUrl: r.logo_url ?? null,
   };
 }

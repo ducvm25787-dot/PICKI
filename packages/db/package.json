@@ -30,7 +30,8 @@
     "seed:minimart": "tsx src/seed-minimart-kvl.ts",
     "seed:lost": "tsx src/seed-lost-kvl.ts",
     "seed:family-dinner": "tsx src/seed-family-dinner-kvl.ts",
-    "seed:breakfast": "tsx src/seed-breakfast-kvl.ts"
+    "seed:breakfast": "tsx src/seed-breakfast-kvl.ts",
+    "seed:late-night": "tsx src/seed-late-night-kvl.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.40.0",

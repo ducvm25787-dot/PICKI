@@ -1,6 +1,6 @@
 # Visual V1 — theme + layout + icons
 
-**Status:** shipped lean (2026-09-17)  
+**Status:** shipped lean (2026-09-17) · category browse 2026-09-18  
 **Goal:** polish Web/PWA trước pilot rộng / onboarding bếp thật — **không** đổi business logic.
 
 ## Direction: Zone Citrus
@@ -19,10 +19,14 @@ Tham chiếu layout marketplace (search → hero → quick grid → chip row →
 
 ## Surfaces
 
-- Customer home: search pill, Family Dinner hero, 4 quick tiles, horizontal chips, section heads «Xem thêm»
-- Bottom nav Customer / Provider / Runner: SVG (no emoji)
-- Login Customer / Provider / Runner: `BrandMark`
-- Role shells inherit accent via `.provider-app` / `.runner-app`
+- Customer home: search → hero → quick tiles → **Tiện ích quanh nhà** (9 danh mục, gồm Thể thao) → chips → sections
+- Browse: `/zones/:slug/browse/:category` — filter `provider_type` (`lib/categories.ts`)
+- «Xem thêm» discovery → đúng danh mục / deep link (không search chung)
+- Discovery food moments: **bắt buộc** `offerings.food_moment` khớp (không còn fallback mọi quán)
+- «Sáng mai» block: chỉ quán bật breakfast preorder + đang nhận đơn
+- Provider cards: `logoUrl` hoặc chữ cái đầu
+- Bottom nav Customer / Provider / Runner: SVG
+- Login: `BrandMark`
 
 ## Regenerate PWA icons
 
@@ -33,7 +37,8 @@ bash scripts/generate-pwa-icons.sh
 
 ## Out of this sprint
 
+- Tab Giới thiệu provider (phase 4)
+- Beauty sub-service tags — hiện filter `BEAUTY` only
 - Full photo catalog / promo CMS
-- Per-vertical illustration packs
 - Dark mode
 - Native / Zalo skins

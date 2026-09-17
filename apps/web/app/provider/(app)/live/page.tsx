@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ProviderPageShell, useProviderLocation } from "../../../components/provider-location-context";
-import { beautyWaitDisplay, isCustomerVisitVertical, isHealthVertical } from "../../../../lib/providers";
+import {
+  beautyWaitDisplay,
+  isCustomerVisitVertical,
+  isFoodBreakfastVertical,
+  isHealthVertical,
+} from "../../../../lib/providers";
+import { LN_DEFAULT_END, LN_DEFAULT_START } from "../../../../lib/late-night";
 import { api } from "../../../../lib/api";
 
 type LiveStatus = {
@@ -11,6 +17,13 @@ type LiveStatus = {
   message: string | null;
   estimatedWaitMinutes: number | null;
   updatedAt: string | null;
+};
+
+type LateNightSettings = {
+  enabled: boolean;
+  startsAt: string;
+  endsAt: string;
+  acceptingNow: boolean;
 };
 
 const STATUSES = ["OPEN", "BUSY", "CLOSED"] as const;
@@ -53,9 +66,15 @@ function statusPillClass(status: string): string {
 export default function ProviderLivePage() {
   const { locationId, activeLocation } = useProviderLocation();
   const [live, setLive] = useState<LiveStatus | null>(null);
+  const [late, setLate] = useState<LateNightSettings | null>(null);
   const [saving, setSaving] = useState(false);
+  const [lateBusy, setLateBusy] = useState(false);
+  const [lateError, setLateError] = useState<string | null>(null);
+  const [startsDraft, setStartsDraft] = useState(LN_DEFAULT_START);
+  const [endsDraft, setEndsDraft] = useState(LN_DEFAULT_END);
   const isCustomerVisit = isCustomerVisitVertical(activeLocation?.providerType);
   const isHealth = isHealthVertical(activeLocation?.providerType);
+  const isFood = isFoodBreakfastVertical(activeLocation?.providerType);
 
   const loadLive = useCallback(async () => {
     if (!locationId) return;
@@ -63,9 +82,20 @@ export default function ProviderLivePage() {
     setLive(res);
   }, [locationId]);
 
+  const loadLate = useCallback(async () => {
+    if (!locationId || !isFood) return;
+    const res = await api<LateNightSettings>(
+      `/provider/locations/${locationId}/late-night/settings`,
+    );
+    setLate(res);
+    setStartsDraft(res.startsAt.slice(0, 5));
+    setEndsDraft(res.endsAt.slice(0, 5));
+  }, [locationId, isFood]);
+
   useEffect(() => {
     void loadLive();
-  }, [loadLive]);
+    void loadLate().catch(() => setLate(null));
+  }, [loadLive, loadLate]);
 
   async function patchLive(body: { status?: string; estimatedWaitMinutes?: number }) {
     if (!locationId || !live) return;
@@ -93,6 +123,32 @@ export default function ProviderLivePage() {
 
   async function setWaitMinutes(minutes: number) {
     await patchLive({ estimatedWaitMinutes: minutes });
+  }
+
+  async function saveLate(patch: Partial<{ enabled: boolean; startsAt: string; endsAt: string }>) {
+    if (!locationId) return;
+    setLateBusy(true);
+    setLateError(null);
+    try {
+      const res = await api<LateNightSettings>(
+        `/provider/locations/${locationId}/late-night/settings`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            enabled: patch.enabled ?? late?.enabled,
+            startsAt: patch.startsAt ?? startsDraft,
+            endsAt: patch.endsAt ?? endsDraft,
+          }),
+        },
+      );
+      setLate(res);
+      setStartsDraft(res.startsAt.slice(0, 5));
+      setEndsDraft(res.endsAt.slice(0, 5));
+    } catch (e) {
+      setLateError(e instanceof Error ? e.message : "Không lưu được");
+    } finally {
+      setLateBusy(false);
+    }
   }
 
   return (
@@ -168,6 +224,72 @@ export default function ProviderLivePage() {
             : "Khách thấy trạng thái này trên discovery và menu quán."}
         </p>
       </div>
+
+      {isFood ? (
+        <div className="card" style={{ marginTop: 12 }}>
+          <p className="section-title">Bán khuya</p>
+          <p className="stat" style={{ marginTop: 0 }}>
+            Bật để hiện trong «Góc ăn khuya». Cần đang mở (OPEN/BUSY) và trong khung giờ.
+          </p>
+          {lateError ? <p style={{ color: "#b91c1c", fontSize: 14 }}>{lateError}</p> : null}
+          <p style={{ margin: "8px 0" }}>
+            {late?.enabled ? (
+              <span className="live-pill live-open">Đang bán khuya</span>
+            ) : (
+              <span className="live-pill live-closed">Tắt</span>
+            )}
+            {late?.acceptingNow ? (
+              <span className="stat" style={{ marginLeft: 8 }}>
+                · đang trong khung
+              </span>
+            ) : null}
+          </p>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
+            <label className="stat" style={{ display: "block" }}>
+              Từ
+              <input
+                type="time"
+                value={startsDraft}
+                onChange={(e) => setStartsDraft(e.target.value)}
+                style={{ display: "block", marginTop: 4, padding: 8 }}
+              />
+            </label>
+            <label className="stat" style={{ display: "block" }}>
+              Đến
+              <input
+                type="time"
+                value={endsDraft}
+                onChange={(e) => setEndsDraft(e.target.value)}
+                style={{ display: "block", marginTop: 4, padding: 8 }}
+              />
+            </label>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="btn provider-btn"
+              style={{ width: "auto", padding: "8px 14px" }}
+              disabled={lateBusy}
+              onClick={() =>
+                void saveLate({ enabled: true, startsAt: startsDraft, endsAt: endsDraft })
+              }
+            >
+              {lateBusy ? "…" : late?.enabled ? "Lưu giờ" : "Bật bán khuya"}
+            </button>
+            {late?.enabled ? (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ width: "auto", padding: "8px 14px" }}
+                disabled={lateBusy}
+                onClick={() => void saveLate({ enabled: false })}
+              >
+                Tắt
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </ProviderPageShell>
   );
 }

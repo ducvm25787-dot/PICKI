@@ -14,7 +14,9 @@ Master Spec wins on conflict. Implement **the current sprint only**.
 
 **S32 Education + Pet:** service requests cho học thử (`ONLINE`/`CUSTOMER_VISIT`) và dịch vụ pet tại nhà; seed `bash scripts/db-seed-education.sh`, `bash scripts/db-seed-pet.sh`. **S33 Classified + Give Away (GÓC KHU MÌNH):** tin thanh lý/cho tặng trong Zone + giữ chỗ + chat + ảnh (nén client, tối đa 3 ảnh < 300KB); seed `bash scripts/db-seed-classified.sh`. **S34 Auto Service:** rửa xe/bơm lốp dùng queue (`CUSTOMER_VISIT`), thay dầu/sửa chữa dùng `CONTACT_ONLY`; seed `bash scripts/db-seed-auto.sh`. **S35 Đặt sân:** service request kèm khung giờ mong muốn — không có booking engine/lịch sân (quyết định giữ lean); seed `bash scripts/db-seed-sports.sh`.
 
-**Current — S42 Breakfast Preorder Phase 1 (ADR-047):** Sáng mai ăn gì? — lean FD-like preorder (READY_COOKED only, PREPAY, cutoff tối hôm trước). Seed `bash scripts/db-seed-breakfast.sh` — **Phở Gà Kim Văn** (`pho-ga-kim-van`), login `0908888015` (blank reset; `BF_SEED_DEMO=1` = menu + receiving). Scope: catalog offerings → daily breakfast menu.
+**Current — S43 Góc ăn khuya / Bán khuya (ADR-048):** opt-in `late_night_provider_settings` + discovery `/late-night`. Seed `bash scripts/db-seed-late-night.sh` (cần breakfast seed trước) — Phở Gà `0908888015` bán đến 02:00. Scope: `docs/PICKI_LATE_NIGHT_SPEC.md`.
+
+**S42 Breakfast Preorder Phase 1 (ADR-047):** Sáng mai ăn gì? — lean FD-like preorder (READY_COOKED only, PREPAY, cutoff tối hôm trước, slot 15 phút). Seed `bash scripts/db-seed-breakfast.sh` — **Phở Gà Kim Văn** (`pho-ga-kim-van`), login `0908888015`. Scope: `docs/PICKI_BREAKFAST_PREORDER_SPEC.md`.
 
 **S41 Family Dinner Phase A–D (ADR-046):** Bữa tối ấm cúng — daily menu + meal builder + PREPAY; provider ops/dashboard + production lock; recipe/yield/inventory; late dinner atomic. Seed `bash scripts/db-seed-family-dinner.sh` — **Bếp Nhà Lan** (`bep-nha-lan`), login `0908888014` (blank reset; `FD_SEED_DEMO=1` = menu + receiving). **E2E:** `pnpm pilot:family-dinner:e2e` · checklist `docs/pilot/FAMILY_DINNER_E2E_CHECKLIST.md`. Scope: `docs/PICKI_FAMILY_DINNER_SPEC.md`.
 

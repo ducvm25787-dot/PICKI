@@ -15,6 +15,7 @@ export type ProviderListing = {
   averageRating?: number | null;
   reviewCount?: number;
   sampleOffering?: string | null;
+  logoUrl?: string | null;
 };
 
 export function isHomeServiceVertical(providerType?: string | null) {

@@ -2,6 +2,7 @@ export * from "./catalog/index.js";
 export * from "./classified/index.js";
 export * from "./discovery/index.js";
 export * from "./family-dinner/index.js";
+export * from "./late-night/index.js";
 export * from "./fulfillment/index.js";
 export * from "./health/index.js";
 export * from "./orders/index.js";

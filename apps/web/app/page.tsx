@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { browseHrefForDiscoveryBlock, HOME_CATEGORIES } from "../lib/categories";
 import { type ProviderListing } from "../lib/providers";
 import { BrandMark } from "./components/brand-mark";
 import { NotificationBell } from "./components/notification-bell";
@@ -12,8 +13,6 @@ import {
   IconGift,
   IconMap,
   IconOrders,
-  IconPin,
-  IconRoute,
   IconSearch,
   IconUsers,
   IconWrench,
@@ -212,7 +211,27 @@ export default function HomePage() {
             </Link>
           </div>
 
-          <div className="chip-row" aria-label="Danh mục nhanh">
+          <section className="home-utilities" aria-label="Tiện ích quanh nhà">
+            <p className="section-title" style={{ marginBottom: 12 }}>
+              Tiện ích quanh nhà
+            </p>
+            <div className="utility-grid">
+              {HOME_CATEGORIES.map((cat) => (
+                <Link
+                  key={cat.id}
+                  href={`/zones/${KVL_SLUG}/browse/${cat.id}`}
+                  className="utility-tile"
+                >
+                  <span className="utility-tile-emoji" aria-hidden>
+                    {cat.emoji}
+                  </span>
+                  <span className="utility-tile-label">{cat.shortLabel}</span>
+                </Link>
+              ))}
+            </div>
+          </section>
+
+          <div className="chip-row" aria-label="Lối tắt hôm nay">
             <Link href="/breakfast" className="chip">
               <span className="chip-icon">
                 <IconGift />
@@ -225,41 +244,11 @@ export default function HomePage() {
               </span>
               Bữa tối
             </Link>
-            <Link href={`/zones/${KVL_SLUG}/search`} className="chip">
-              <span className="chip-icon">
-                <IconSearch />
-              </span>
-              Ăn uống
+            <Link href="/late-night" className="chip">
+              Ăn khuya
             </Link>
             <Link href={`/zones/${KVL_SLUG}/classifieds?type=GIVE_AWAY`} className="chip">
-              <span className="chip-icon">
-                <IconGift />
-              </span>
               Cho tặng
-            </Link>
-            <Link href={`/zones/${KVL_SLUG}/classifieds?type=RESALE`} className="chip">
-              <span className="chip-icon">
-                <IconOrders />
-              </span>
-              Thanh lý
-            </Link>
-            <Link href={`/zones/${KVL_SLUG}/classifieds?type=LOST_FOUND`} className="chip">
-              <span className="chip-icon">
-                <IconPin />
-              </span>
-              Thất lạc
-            </Link>
-            <Link href="/requests" className="chip">
-              <span className="chip-icon">
-                <IconWrench />
-              </span>
-              Thợ
-            </Link>
-            <Link href={`/zones/${KVL_SLUG}`} className="chip">
-              <span className="chip-icon">
-                <IconRoute />
-              </span>
-              Zone
             </Link>
           </div>
 
@@ -271,7 +260,7 @@ export default function HomePage() {
               </Link>
             </div>
             <p className="stat" style={{ marginBottom: 12 }}>
-              Cho tặng · thanh lý · cho thuê · thất lạc — trong Zone, không phải mạng xã hội
+              Cho tặng · thanh lý · cho thuê · thất lạc — trong Zone
             </p>
             {community && community.recentListings.length > 0 ? (
               <div className="home-scroll-row">
@@ -304,7 +293,10 @@ export default function HomePage() {
             <div key={block.id} className="card" style={{ marginBottom: 16 }}>
               <div className="section-head">
                 <p className="section-title">{block.title}</p>
-                <Link href={`/zones/${KVL_SLUG}/search`} className="section-more">
+                <Link
+                  href={browseHrefForDiscoveryBlock(block.id, KVL_SLUG)}
+                  className="section-more"
+                >
                   Xem thêm →
                 </Link>
               </div>
