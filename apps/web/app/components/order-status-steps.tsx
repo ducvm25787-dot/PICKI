@@ -5,21 +5,30 @@ import { flowStepsForOrder, orderStepIndex } from "../../lib/order-display";
 export function OrderStatusSteps({
   status,
   runnerSoughtAt,
+  runnerUserId,
+  hasRunner,
   serviceVertical,
   laundryPickupMode,
+  orderKind,
   audience = "provider",
 }: {
   status: string;
   runnerSoughtAt?: string | null;
+  runnerUserId?: string | null;
+  hasRunner?: boolean;
   serviceVertical?: string | null;
   laundryPickupMode?: string | null;
+  orderKind?: string | null;
   audience?: "customer" | "provider" | "runner";
 }) {
-  const steps = flowStepsForOrder({ serviceVertical, laundryPickupMode, audience });
+  const steps = flowStepsForOrder({ serviceVertical, laundryPickupMode, orderKind, audience });
   const current = orderStepIndex(status, {
     runnerSoughtAt,
+    runnerUserId,
+    hasRunner,
     serviceVertical,
     laundryPickupMode,
+    orderKind,
     audience,
   });
   if (current < 0) return null;

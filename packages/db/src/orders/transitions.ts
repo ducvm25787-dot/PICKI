@@ -5,17 +5,27 @@ import {
   type ServiceVertical,
 } from "./laundry-transitions.js";
 
+/** Family Dinner / Late Dinner: nấu trước, tìm runner (hoặc tự giao) khi READY. */
+export function isCookFirstFoodOrder(order: {
+  serviceVertical?: string | null;
+  orderKind?: string | null;
+}): boolean {
+  if (order.serviceVertical === "LAUNDRY") return false;
+  return order.orderKind === "FAMILY_DINNER" || order.orderKind === "LATE_DINNER";
+}
+
 /** Server-controlled transitions for Food orders (COD + online pay paths). */
 export const FOOD_ORDER_TRANSITIONS: Record<string, string[]> = {
   CREATED: ["PAYMENT_PENDING", "PROVIDER_ACCEPTED", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
   PAYMENT_PENDING: ["PAID", "PAYMENT_FAILED", "CUSTOMER_CANCELLED"],
   PAID: ["PROVIDER_ACCEPTED", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
-  /** Quán nhận → chờ runner claim (Grab-like) */
-  PROVIDER_ACCEPTED: ["RUNNER_ASSIGNED", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
-  /** Runner đã nhận → quán mới được nấu */
+  /** Quán nhận → runner claim (STANDARD) hoặc bắt đầu nấu (Family Dinner) */
+  PROVIDER_ACCEPTED: ["RUNNER_ASSIGNED", "PREPARING", "PROVIDER_REJECTED", "CUSTOMER_CANCELLED"],
+  /** Runner đã nhận → quán mới được nấu (STANDARD) */
   RUNNER_ASSIGNED: ["PREPARING", "CUSTOMER_CANCELLED"],
   PREPARING: ["READY", "CUSTOMER_CANCELLED"],
-  READY: ["PICKED_UP", "CUSTOMER_CANCELLED"],
+  /** Runner pickup, hoặc bếp tự giao (DELIVERING không runner) */
+  READY: ["PICKED_UP", "DELIVERING", "CUSTOMER_CANCELLED"],
   PICKED_UP: ["DELIVERING"],
   DELIVERING: ["DELIVERED"],
   PAYMENT_FAILED: [],

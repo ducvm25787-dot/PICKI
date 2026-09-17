@@ -59,6 +59,19 @@ function RouteSummaryCard() {
     }
   }
 
+  async function lobbyAction(stopId: string, orderId: string, action: "received" | "no_response") {
+    setActionError(null);
+    try {
+      await api(`/runner/route/stops/${stopId}/lobby/${orderId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action }),
+      });
+      await refresh();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Không thực hiện được");
+    }
+  }
+
   const pickupBlocked =
     nextStop?.stopType === "PICKUP" ? pickupBlockReason(mine) : null;
 
@@ -82,14 +95,39 @@ function RouteSummaryCard() {
             {nextStop.status === "ARRIVED" ? "Đã đến — xử lý giao hàng" : "Chưa hoàn thành"}
           </p>
           {nextStop.handoffs?.map((h) => (
-            <p key={h.orderId} className="stat" style={{ margin: "2px 0", fontSize: 14 }}>
-              {h.orderNumber} · {h.apartment ?? "—"} · {lobbyStatusLabel(h.customerStatus)}
-            </p>
+            <div key={h.orderId} style={{ marginTop: 8, fontSize: 14 }}>
+              <p className="stat" style={{ margin: "0 0 6px" }}>
+                <strong>{h.orderNumber}</strong> · {h.apartment ?? "—"} ·{" "}
+                {lobbyStatusLabel(h.customerStatus)}
+              </p>
+              {nextStop.status === "ARRIVED" &&
+              h.customerStatus !== "RECEIVED" &&
+              h.customerStatus !== "NO_RESPONSE" ? (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="btn runner-btn"
+                    style={{ width: "auto", padding: "6px 10px", fontSize: 13 }}
+                    onClick={() => void lobbyAction(nextStop.id, h.orderId, "received")}
+                  >
+                    Đã giao khách
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ width: "auto", padding: "6px 10px", fontSize: 13 }}
+                    onClick={() => void lobbyAction(nextStop.id, h.orderId, "no_response")}
+                  >
+                    Không phản hồi
+                  </button>
+                </div>
+              ) : null}
+            </div>
           ))}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-            {nextStop.stopType === "LOBBY_DROPOFF" ? (
-              <p className="stat" style={{ margin: "0 0 8px", fontSize: 13 }}>
-                Khách chọn <strong>nhận tại sảnh</strong> — bấm &quot;Đã giao&quot; khi khách nhận, không lên căn.
+            {nextStop.stopType === "LOBBY_DROPOFF" || nextStop.stopType === "PICKI_POINT" ? (
+              <p className="stat" style={{ margin: "0 0 8px", fontSize: 13, width: "100%" }}>
+                Khách nhận tại sảnh — bấm <strong>Đã giao khách</strong> từng đơn, rồi hoàn thành bước.
               </p>
             ) : null}
             {nextStop.status === "PENDING" &&
@@ -124,14 +162,27 @@ function RouteSummaryCard() {
                 Đã lấy hàng tại quán
               </button>
             ) : null}
-            {nextStop.status === "ARRIVED" || (nextStop.status === "PENDING" && nextStop.stopType !== "PICKUP") ? (
+            {nextStop.status === "PENDING" &&
+            nextStop.stopType !== "PICKUP" &&
+            nextStop.stopType !== "LOBBY_DROPOFF" &&
+            nextStop.stopType !== "PICKI_POINT" ? (
               <button
                 type="button"
-                className="btn btn-secondary"
+                className="btn runner-btn"
                 style={{ width: "auto", padding: "8px 12px" }}
                 onClick={() => void completeStop(nextStop.id)}
               >
                 Hoàn thành bước
+              </button>
+            ) : null}
+            {nextStop.status === "ARRIVED" ? (
+              <button
+                type="button"
+                className="btn runner-btn"
+                style={{ width: "auto", padding: "8px 12px" }}
+                onClick={() => void completeStop(nextStop.id)}
+              >
+                Hoàn thành điểm sảnh
               </button>
             ) : null}
           </div>
@@ -154,12 +205,13 @@ function RunnerOrderCard({
   hasRoute: boolean;
   onAction: (orderId: string, act: string) => void;
 }) {
+  const onRoute = Boolean(order.routeId);
   const canClaim =
     !order.assignedToMe &&
     order.runnerSoughtAt != null &&
     (order.serviceVertical === "LAUNDRY"
       ? order.status === "READY_FOR_RETURN"
-      : order.status === "PROVIDER_ACCEPTED");
+      : order.status === "PROVIDER_ACCEPTED" || order.status === "READY");
 
   return (
     <article id={`order-${order.id}`} className="provider-card" style={{ marginBottom: 12 }}>
@@ -180,17 +232,29 @@ function RunnerOrderCard({
           serviceVertical: order.serviceVertical,
         })}
       </p>
-      <OrderStatusSteps status={order.status} serviceVertical={order.serviceVertical} />
+      <OrderStatusSteps
+        status={order.status}
+        runnerSoughtAt={order.runnerSoughtAt}
+        serviceVertical={order.serviceVertical}
+        orderKind={order.orderKind}
+        audience="runner"
+      />
       <p className="stat">
         {order.delivery.building}-{order.delivery.apartment}
       </p>
       {order.contacts ? (
         <OrderPhoneLinks contacts={order.contacts} hideRole="runner" compact />
       ) : null}
-      {order.assignedToMe && order.routeId && hasRoute ? (
+      {order.assignedToMe && onRoute && order.status !== "DELIVERED" ? (
         <p className="stat" style={{ marginBottom: 8, fontSize: 13 }}>
-          Tiến trình đã tạo — làm theo bước ở thẻ phía trên hoặc tab{" "}
-          <Link href="/runner/route">Tiến trình</Link>.
+          {hasRoute ? (
+            <>
+              Làm theo <strong>Tiến trình</strong> phía trên (hoặc tab{" "}
+              <Link href="/runner/route">Tiến trình</Link>) — không cần bấm giao lại ở đây.
+            </>
+          ) : (
+            <>Đã gắn tiến trình — trạng thái cập nhật khi hoàn thành bước giao.</>
+          )}
         </p>
       ) : null}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
@@ -229,7 +293,7 @@ function RunnerOrderCard({
             Món sẵn sàng — chờ quán xác nhận giao hàng
           </p>
         ) : null}
-        {!hasRoute && order.assignedToMe && order.status === "READY" && order.providerHandoffAt ? (
+        {!onRoute && order.assignedToMe && order.status === "READY" && order.providerHandoffAt ? (
           <button
             type="button"
             className="btn runner-btn"
@@ -239,7 +303,7 @@ function RunnerOrderCard({
             Đã nhận hàng tại quán
           </button>
         ) : null}
-        {!hasRoute && order.assignedToMe && order.status === "PICKED_UP" ? (
+        {!onRoute && order.assignedToMe && order.status === "PICKED_UP" ? (
           <button
             type="button"
             className="btn runner-btn"
@@ -249,7 +313,7 @@ function RunnerOrderCard({
             Đang giao
           </button>
         ) : null}
-        {!hasRoute && order.assignedToMe && order.status === "DELIVERING" ? (
+        {!onRoute && order.assignedToMe && order.status === "DELIVERING" ? (
           <button
             type="button"
             className="btn runner-btn"
@@ -258,6 +322,13 @@ function RunnerOrderCard({
           >
             Đã giao
           </button>
+        ) : null}
+        {onRoute &&
+        order.assignedToMe &&
+        (order.status === "PICKED_UP" || order.status === "DELIVERING") ? (
+          <p className="stat" style={{ margin: 0 }}>
+            Đang giao theo tiến trình
+          </p>
         ) : null}
       </div>
       {order.assignedToMe && order.status !== "DELIVERED" ? (

@@ -9,6 +9,7 @@ import { OrderPhoneLinks } from "../../components/order-phone-links";
 import { api } from "../../../lib/api";
 import { OrderNumberHeading } from "../../components/order-number-heading";
 import { formatLaundryReferencePrice, formatOrderAmount, formatVnd } from "../../../lib/money";
+import { fdFormatItemQtyLabel } from "../../../lib/family-dinner";
 import { isLaundryVertical, orderButtonLabel } from "../../../lib/providers";
 import { OrderStatusSteps } from "../../components/order-status-steps";
 import { formatAddressLine, handoffModeLabel, isApartmentAddress } from "../../../lib/addresses";
@@ -51,6 +52,8 @@ type OrderDetail = {
     unitPriceVnd?: number;
     lineTotalVnd: number;
     estimatedDays?: number | null;
+    category?: string | null;
+    prepMode?: string | null;
   }[];
   fulfillment: {
     nextStop: { label: string; stopType: string } | null;
@@ -368,7 +371,12 @@ export default function OrderDetailPage() {
             style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}
           >
             <span>
-              {item.name} × {item.quantity}
+              {fdFormatItemQtyLabel(item.name, item.quantity, { category: item.category })}
+              {item.prepMode === "SELF_COOK" ? (
+                <span className="stat" style={{ display: "block", fontSize: 13 }}>
+                  Tự nấu
+                </span>
+              ) : null}
               {isLaundryVertical(order.serviceVertical) && item.estimatedDays ? (
                 <span className="stat" style={{ display: "block", fontSize: 13 }}>
                   Dự kiến ~{String(item.estimatedDays)} ngày

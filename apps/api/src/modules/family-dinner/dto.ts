@@ -5,11 +5,16 @@ export const familyDinnerCategorySchema = z.enum([
   "SIDE",
   "VEGETABLE",
   "SOUP",
+  "RICE",
   "EXTRA",
 ]);
 
 export const publishFamilyDinnerMenuSchema = z.object({
-  serviceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** Mặc định = hôm nay (VN). Provider không cần chọn ngày. */
+  serviceDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   items: z
     .array(
       z.object({
@@ -20,9 +25,11 @@ export const publishFamilyDinnerMenuSchema = z.object({
         capacity: z.number().int().min(1).max(500).optional(),
         sortOrder: z.number().int().min(0).max(100).optional(),
         recipeVersionId: z.string().uuid().optional(),
+        /** Provider tick — khách được chọn Tự nấu (cùng giá). */
+        allowsSelfCook: z.boolean().optional(),
       }),
     )
-    .min(4)
+    .min(5)
     .max(40),
   windows: z
     .array(
@@ -33,7 +40,8 @@ export const publishFamilyDinnerMenuSchema = z.object({
       }),
     )
     .min(1)
-    .max(8),
+    .max(8)
+    .optional(),
 });
 
 export const patchFamilyDinnerSettingsSchema = z.object({
@@ -98,7 +106,10 @@ export const upsertInventorySchema = z.object({
 });
 
 export const createLateDinnerOfferSchema = z.object({
-  serviceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  serviceDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   title: z.string().trim().min(2).max(120),
   priceVnd: z.number().int().min(0),
   etaMinutes: z.number().int().min(5).max(180).default(25),
@@ -112,4 +123,13 @@ export const createLateDinnerOfferSchema = z.object({
     )
     .min(1)
     .max(12),
+});
+
+export const copyLastFamilyDinnerMenuSchema = z.object({
+  serviceDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  /** true = publish ngay (mặc định false → chỉ trả draft items cho FE). */
+  publish: z.boolean().optional().default(false),
 });

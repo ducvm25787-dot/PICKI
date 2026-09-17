@@ -8,7 +8,10 @@ export const metadata: Metadata = {
   description: "Admin/Ops — pilot Kim Văn Kim Lũ",
   applicationName: "Picki Ops",
   icons: {
-    icon: [{ url: "/icons/icon.svg", type: "image/svg+xml" }],
+    icon: [
+      { url: "/icons/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icons/icon.svg", type: "image/svg+xml" },
+    ],
   },
 };
 

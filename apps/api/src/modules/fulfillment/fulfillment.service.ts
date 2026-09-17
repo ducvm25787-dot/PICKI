@@ -456,6 +456,8 @@ export class FulfillmentService {
       }
     }
 
+    const toFinalize: string[] = [];
+
     await this.db.transaction(async (tx) => {
       await tx
         .update(routeStops)
@@ -476,6 +478,7 @@ export class FulfillmentService {
             await this.applyLobbyNoResponse(runnerUserId, h.orderId);
           }
         }
+        toFinalize.push(...affectedOrderIds);
       } else {
         for (const orderId of affectedOrderIds) {
           await this.applyStopToOrder(runnerUserId, stop.stopType, orderId);
@@ -503,11 +506,46 @@ export class FulfillmentService {
             .update(deliveries)
             .set({ status: "COMPLETED", updatedAt: new Date() })
             .where(eq(deliveries.id, ro.deliveryId));
+          toFinalize.push(ro.orderId);
         }
       }
     });
 
+    const uniqueFinalize = [...new Set(toFinalize)];
+    for (const orderId of uniqueFinalize) {
+      await this.finalizeFoodDeliveryIfNeeded(
+        runnerUserId,
+        orderId,
+        isLobby ? "Lobby stop completed" : "Route / dropoff completed",
+      );
+    }
+
     return this.getActiveRoute(runnerUserId);
+  }
+
+  /** Đơn food còn PICKED_UP/DELIVERING sau khi đã giao trên tiến trình → chốt DELIVERED. */
+  private async finalizeFoodDeliveryIfNeeded(
+    runnerUserId: string,
+    orderId: string,
+    note: string,
+  ) {
+    const orderRow = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    const order = orderRow[0];
+    if (!order || order.runnerUserId !== runnerUserId) return;
+    if (order.serviceVertical === "LAUNDRY") return;
+    if (order.status === "DELIVERED") return;
+
+    if (order.status === "PICKED_UP") {
+      await this.transitions.transition(orderId, "DELIVERING", runnerUserId, note);
+    }
+    const refreshed = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    if (refreshed[0]?.status === "DELIVERING") {
+      await this.transitions.transition(orderId, "DELIVERED", runnerUserId, note);
+      await this.db
+        .update(deliveries)
+        .set({ status: "COMPLETED", updatedAt: new Date() })
+        .where(eq(deliveries.orderId, orderId));
+    }
   }
 
   private async applyLobbyNoResponse(runnerUserId: string, orderId: string) {

@@ -31,6 +31,18 @@ export const ORDER_FLOW_STEPS = [
   { key: "DELIVERED", label: "Xong" },
 ] as const;
 
+/** Family Dinner: nấu xong mới tìm runner / tự giao */
+export const COOK_FIRST_FLOW_STEPS = [
+  { key: "PROVIDER_ACCEPTED", label: "Quán nhận" },
+  { key: "PREPARING", label: "Nấu" },
+  { key: "READY", label: "Sẵn sàng" },
+  { key: "SEEKING_RUNNER", label: "Tìm runner" },
+  { key: "RUNNER_ASSIGNED", label: "Runner nhận" },
+  { key: "PICKED_UP", label: "Bàn giao" },
+  { key: "DELIVERING", label: "Giao" },
+  { key: "DELIVERED", label: "Xong" },
+] as const;
+
 export const LAUNDRY_FLOW_STEPS = [
   { key: "PROVIDER_ACCEPTED", label: "Tiệm nhận" },
   { key: "AT_SHOP", label: "Đã lấy đồ" },
@@ -57,12 +69,19 @@ export const LAUNDRY_ON_SITE_FLOW_STEPS = [
   { key: "COMPLETED", label: "Hoàn tất" },
 ] as const;
 
+export function isCookFirstOrderKind(orderKind?: string | null): boolean {
+  return orderKind === "FAMILY_DINNER" || orderKind === "LATE_DINNER";
+}
+
 export function orderStepIndex(
   status: string,
   opts: {
     runnerSoughtAt?: string | null;
+    runnerUserId?: string | null;
+    hasRunner?: boolean;
     serviceVertical?: string | null;
     laundryPickupMode?: string | null;
+    orderKind?: string | null;
     audience?: "customer" | "provider" | "runner";
   } = {},
 ): number {
@@ -110,6 +129,25 @@ export function orderStepIndex(
     return laundryMap[status] ?? -1;
   }
 
+  if (isCookFirstOrderKind(opts.orderKind)) {
+    if (status === "PROVIDER_ACCEPTED") return 0;
+    if (status === "PREPARING") return 1;
+    if (status === "READY") {
+      if (opts.hasRunner || opts.runnerUserId) return 4;
+      if (opts.runnerSoughtAt) return 3;
+      return 2;
+    }
+    if (status === "RUNNER_ASSIGNED") return 4;
+    const cookFirstMap: Record<string, number> = {
+      CREATED: -1,
+      PAID: -1,
+      PICKED_UP: 5,
+      DELIVERING: 6,
+      DELIVERED: 7,
+    };
+    return cookFirstMap[status] ?? -1;
+  }
+
   if (status === "PROVIDER_ACCEPTED") {
     return opts.runnerSoughtAt ? 1 : 0;
   }
@@ -129,6 +167,7 @@ export function orderStepIndex(
 export function flowStepsForOrder(opts: {
   serviceVertical?: string | null;
   laundryPickupMode?: string | null;
+  orderKind?: string | null;
   audience?: "customer" | "provider" | "runner";
 }) {
   if (opts.serviceVertical === "LAUNDRY") {
@@ -136,6 +175,7 @@ export function flowStepsForOrder(opts: {
     if (opts.audience === "customer") return LAUNDRY_CUSTOMER_FLOW_STEPS;
     return LAUNDRY_FLOW_STEPS;
   }
+  if (isCookFirstOrderKind(opts.orderKind)) return COOK_FIRST_FLOW_STEPS;
   return ORDER_FLOW_STEPS;
 }
 

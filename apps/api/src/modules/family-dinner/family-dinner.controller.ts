@@ -14,6 +14,7 @@ import { PickiError } from "@picki/shared";
 import { CurrentUserId } from "../auth/current-user.decorator.js";
 import { SessionAuthGuard } from "../auth/session-auth.guard.js";
 import {
+  copyLastFamilyDinnerMenuSchema,
   createFamilyDinnerRecipeSchema,
   createLateDinnerOfferSchema,
   createRecipeVersionSchema,
@@ -140,6 +141,21 @@ export class FamilyDinnerController {
     return this.dinner.lockProduction(userId, locationId, parsed.data.serviceDate);
   }
 
+  @Post("provider/locations/:locationId/family-dinner/unlock")
+  unlock(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = lockFamilyDinnerSchema.partial().safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Invalid unlock body", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.dinner.unlockProduction(userId, locationId, parsed.data.serviceDate);
+  }
+
   @Get("provider/locations/:locationId/family-dinner/recipes")
   listRecipes(
     @CurrentUserId() userId: string,
@@ -217,5 +233,39 @@ export class FamilyDinnerController {
       });
     }
     return this.dinner.createLateOffer(userId, locationId, parsed.data);
+  }
+
+  @Get("provider/locations/:locationId/family-dinner/late-offers")
+  listProviderLateOffers(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Query("serviceDate") serviceDate?: string,
+  ) {
+    const date = serviceDate ?? defaultDinnerServiceDate();
+    return this.dinner.listLateForProvider(userId, locationId, date);
+  }
+
+  @Post("provider/locations/:locationId/family-dinner/late-offers/:offerId/close")
+  closeLateOffer(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Param("offerId") offerId: string,
+  ) {
+    return this.dinner.closeLateOffer(userId, locationId, offerId);
+  }
+
+  @Post("provider/locations/:locationId/family-dinner/copy-last-menu")
+  copyLastMenu(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = copyLastFamilyDinnerMenuSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Invalid copy-last-menu", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.dinner.copyLastMenuForProvider(userId, locationId, parsed.data);
   }
 }

@@ -32,6 +32,8 @@
     "start:local": "bash scripts/start-local.sh",
     "pilot:e2e": "bash scripts/pilot-food-e2e.sh",
     "pilot:laundry:e2e": "bash scripts/pilot-laundry-e2e.sh",
+    "pilot:family-dinner:e2e": "bash scripts/pilot-family-dinner-e2e.sh",
+    "pwa:icons": "bash scripts/generate-pwa-icons.sh",
     "db:seed:housing": "bash scripts/db-seed-housing.sh",
     "db:seed:pharmacy": "bash scripts/db-seed-pharmacy.sh",
     "db:seed:minimart": "bash scripts/db-seed-minimart.sh",

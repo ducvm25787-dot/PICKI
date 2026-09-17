@@ -48,6 +48,8 @@ export const familyDinnerDailyMenus = pgTable("family_dinner_daily_menus", {
   serviceDate: date("service_date").notNull(),
   status: text("status").notNull().default("DRAFT"),
   publishedAt: timestamp("published_at", { withTimezone: true, mode: "date" }),
+  /** When menu was cloned from a prior day (auto-copy or Chép menu). */
+  copiedFromServiceDate: date("copied_from_service_date"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -118,6 +120,8 @@ export const familyDinnerMenuItems = pgTable("family_dinner_menu_items", {
   }),
   sortOrder: integer("sort_order").notNull().default(0),
   status: text("status").notNull().default("ACTIVE"),
+  /** Provider tick: khách được chọn Tự nấu (cùng giá). Chỉ MAIN/SIDE/VEGETABLE/SOUP. */
+  allowsSelfCook: boolean("allows_self_cook").notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

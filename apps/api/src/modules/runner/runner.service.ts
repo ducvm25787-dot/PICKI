@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
 import {
   hasPendingOffer,
+  isCookFirstFoodOrder,
   markOfferAccepted,
   orderItems,
   orders,
@@ -101,6 +102,11 @@ export class RunnerService {
           isNull(orders.runnerUserId),
           or(
             and(eq(orders.serviceVertical, "FOOD"), eq(orders.status, "PROVIDER_ACCEPTED")),
+            and(
+              eq(orders.serviceVertical, "FOOD"),
+              eq(orders.status, "READY"),
+              inArray(orders.orderKind, ["FAMILY_DINNER", "LATE_DINNER"]),
+            ),
             and(eq(orders.serviceVertical, "LAUNDRY"), eq(orders.status, "READY_FOR_RETURN")),
           ),
         ),
@@ -139,6 +145,7 @@ export class RunnerService {
         providerBrandName: await loadProviderBrand(this.db, o.providerLocationId),
         status: o.status,
         serviceVertical: o.serviceVertical,
+        orderKind: o.orderKind ?? "STANDARD",
         subtotalVnd: o.subtotalVnd,
         deliveryFeeVnd: o.deliveryFeeVnd,
         totalVnd: o.totalVnd,
@@ -236,10 +243,19 @@ export class RunnerService {
       const isReturn =
         order[0].serviceVertical === "LAUNDRY" && order[0].status === "READY_FOR_RETURN";
       const isInbound =
-        order[0].serviceVertical !== "LAUNDRY" && order[0].status === "PROVIDER_ACCEPTED";
+        order[0].serviceVertical !== "LAUNDRY" &&
+        !isCookFirstFoodOrder(order[0]) &&
+        order[0].status === "PROVIDER_ACCEPTED";
+      const isCookFirstReady =
+        isCookFirstFoodOrder(order[0]) && order[0].status === "READY";
 
-      if (!isReturn && !isInbound) {
-        throw new PickiError("FORBIDDEN", "Quán phải nhận đơn trước — runner chỉ nhận khi đang tìm runner");
+      if (!isReturn && !isInbound && !isCookFirstReady) {
+        throw new PickiError(
+          "FORBIDDEN",
+          isCookFirstFoodOrder(order[0])
+            ? "Bếp phải nấu xong và bấm Tìm runner trước"
+            : "Quán phải nhận đơn trước — runner chỉ nhận khi đang tìm runner",
+        );
       }
       if (!order[0].runnerSoughtAt) {
         throw new PickiError("FORBIDDEN", "Quán chưa bấm Tìm runner");
@@ -263,6 +279,20 @@ export class RunnerService {
       await this.db.transaction(async (tx) => {
         await markOfferAccepted(tx, orderId, order[0]!.runnerOfferWave ?? 0, userId);
       });
+
+      if (isCookFirstReady) {
+        await this.db
+          .update(orders)
+          .set({ runnerUserId: userId, updatedAt: new Date() })
+          .where(eq(orders.id, orderId));
+        await this.fulfillment.assignOrderOnAccept(userId, orderId);
+        return {
+          id: order[0].id,
+          orderNumber: order[0].orderNumber,
+          status: "READY",
+          estimatedReadyAt: order[0].estimatedReadyAt?.toISOString() ?? null,
+        };
+      }
 
       await this.transitions.transition(orderId, toStatus, userId, "Runner accepted", {
         runnerUserId: userId,

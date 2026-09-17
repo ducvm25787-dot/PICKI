@@ -129,80 +129,87 @@ async function seed() {
       ON CONFLICT (provider_id) DO UPDATE SET tagline = ${KITCHEN.tagline}
     `;
 
+    // ── Reset ngày phục vụ: xóa menu / khung / batch / late — tắt nhận đơn để bếp tạo lại ──
+    const batches = await sql<{ id: string }[]>`
+      SELECT id FROM family_dinner_production_batches
+      WHERE provider_location_id = ${locationId}::uuid AND service_date = ${serviceDate}::date
+    `;
+    for (const b of batches) {
+      await sql`DELETE FROM family_dinner_production_item_totals WHERE production_batch_id = ${b.id}::uuid`;
+      await sql`
+        UPDATE late_dinner_offers SET production_batch_id = NULL
+        WHERE production_batch_id = ${b.id}::uuid
+      `;
+    }
+    await sql`
+      DELETE FROM family_dinner_production_batches
+      WHERE provider_location_id = ${locationId}::uuid AND service_date = ${serviceDate}::date
+    `;
+
+    const lateOffers = await sql<{ id: string }[]>`
+      SELECT id FROM late_dinner_offers
+      WHERE provider_location_id = ${locationId}::uuid AND service_date = ${serviceDate}::date
+    `;
+    for (const o of lateOffers) {
+      await sql`DELETE FROM late_dinner_offer_items WHERE offer_id = ${o.id}::uuid`;
+    }
+    await sql`
+      DELETE FROM late_dinner_offers
+      WHERE provider_location_id = ${locationId}::uuid AND service_date = ${serviceDate}::date
+    `;
+
+    await sql`
+      DELETE FROM family_dinner_delivery_windows
+      WHERE provider_location_id = ${locationId}::uuid AND service_date = ${serviceDate}::date
+    `;
+    await sql`
+      DELETE FROM family_dinner_inventory_snapshots
+      WHERE provider_location_id = ${locationId}::uuid AND service_date = ${serviceDate}::date
+    `;
+
+    // Hủy đơn FAMILY_DINNER hôm nay (tránh kẹt FK / dashboard cũ)
+    await sql`
+      UPDATE orders
+      SET
+        status = 'SYSTEM_CANCELLED',
+        delivery_window_id = NULL,
+        production_locked_at = NULL,
+        updated_at = now()
+      WHERE provider_location_id = ${locationId}::uuid
+        AND service_date = ${serviceDate}::date
+        AND order_kind IN ('FAMILY_DINNER', 'LATE_DINNER')
+        AND status NOT IN ('DELIVERED', 'COMPLETED', 'SYSTEM_CANCELLED', 'CUSTOMER_CANCELLED', 'PROVIDER_REJECTED')
+    `;
+    await sql`
+      UPDATE order_items oi
+      SET family_dinner_menu_item_id = NULL
+      FROM orders o
+      WHERE oi.order_id = o.id
+        AND o.provider_location_id = ${locationId}::uuid
+        AND o.service_date = ${serviceDate}::date
+        AND o.order_kind IN ('FAMILY_DINNER', 'LATE_DINNER')
+    `;
+
+    await sql`
+      DELETE FROM family_dinner_daily_menus
+      WHERE provider_location_id = ${locationId}::uuid AND service_date = ${serviceDate}::date
+    `;
+
     await sql`
       INSERT INTO family_dinner_provider_settings (
-        provider_location_id, enabled, cutoff_time, daily_capacity
+        provider_location_id, enabled, cutoff_time, daily_capacity, procurement_buffer_percent
       ) VALUES (
-        ${locationId}::uuid, true, ${KITCHEN.cutoff}::time, 40
+        ${locationId}::uuid, false, ${KITCHEN.cutoff}::time, 40, 10
       )
       ON CONFLICT (provider_location_id) DO UPDATE
-        SET enabled = true, cutoff_time = ${KITCHEN.cutoff}::time, updated_at = now()
+        SET enabled = false,
+            cutoff_time = ${KITCHEN.cutoff}::time,
+            daily_capacity = 40,
+            procurement_buffer_percent = 10,
+            updated_at = now()
     `;
 
-    let menuId = "";
-    const menu = await sql<{ id: string }[]>`
-      SELECT id FROM family_dinner_daily_menus
-      WHERE provider_location_id = ${locationId}::uuid AND service_date = ${serviceDate}::date
-      LIMIT 1
-    `;
-    if (menu[0]) {
-      menuId = menu[0].id;
-      await sql`DELETE FROM family_dinner_menu_items WHERE daily_menu_id = ${menuId}::uuid`;
-      await sql`
-        DELETE FROM family_dinner_delivery_windows
-        WHERE provider_location_id = ${locationId}::uuid AND service_date = ${serviceDate}::date
-      `;
-      await sql`
-        UPDATE family_dinner_daily_menus
-        SET status = 'PUBLISHED', published_at = now(), updated_at = now()
-        WHERE id = ${menuId}::uuid
-      `;
-    } else {
-      const [created] = await sql<{ id: string }[]>`
-        INSERT INTO family_dinner_daily_menus (
-          provider_location_id, service_date, status, published_at
-        ) VALUES (
-          ${locationId}::uuid, ${serviceDate}::date, 'PUBLISHED', now()
-        )
-        RETURNING id
-      `;
-      if (!created) throw new Error("Failed menu");
-      menuId = created.id;
-    }
-
-    const items = [
-      { category: "MAIN", name: "Thịt rang cháy cạnh", price: 109_000, sort: 1 },
-      { category: "MAIN", name: "Cá kho tộ", price: 119_000, sort: 2 },
-      { category: "MAIN", name: "Gà rang gừng", price: 119_000, sort: 3 },
-      { category: "SIDE", name: "Đậu tẩm hành", price: 39_000, sort: 1 },
-      { category: "SIDE", name: "Nem rán", price: 49_000, sort: 2 },
-      { category: "VEGETABLE", name: "Rau muống luộc", price: 29_000, sort: 1 },
-      { category: "VEGETABLE", name: "Cải xào tỏi", price: 35_000, sort: 2 },
-      { category: "SOUP", name: "Canh cua mồng tơi", price: 69_000, sort: 1 },
-      { category: "SOUP", name: "Canh bí đỏ", price: 49_000, sort: 2 },
-      { category: "EXTRA", name: "Cà muối", price: 19_000, sort: 1 },
-      { category: "EXTRA", name: "Dưa muối", price: 19_000, sort: 2 },
-    ] as const;
-
-    for (const item of items) {
-      await sql`
-        INSERT INTO family_dinner_menu_items (
-          daily_menu_id, category, name, price_vnd, capacity, remaining_capacity, sort_order, status
-        ) VALUES (
-          ${menuId}::uuid,
-          ${item.category},
-          ${item.name},
-          ${item.price},
-          ${30},
-          ${30},
-          ${item.sort},
-          ${"ACTIVE"}
-        )
-      `;
-      console.log("  +", item.category, item.name);
-    }
-
-    // Phase C: sample recipes + link to today's menu items
+    // Recipe mẫu (giữ lại cho Phase C) — không đăng menu; bếp tạo trên Provider UI
     const recipeDefs = [
       {
         name: "Thịt rang cháy cạnh",
@@ -302,41 +309,7 @@ async function seed() {
           `;
         }
       }
-
-      await sql`
-        UPDATE family_dinner_menu_items
-        SET recipe_version_id = ${versionId}::uuid
-        WHERE daily_menu_id = ${menuId}::uuid AND name = ${def.name}
-      `;
-      console.log("  recipe →", def.name);
-    }
-
-    await sql`
-      UPDATE family_dinner_provider_settings
-      SET procurement_buffer_percent = 60, daily_capacity = 20, updated_at = now()
-      WHERE provider_location_id = ${locationId}::uuid
-    `;
-
-    const windows = [
-      { start: "17:30", end: "18:00", cap: 12 },
-      { start: "18:00", end: "18:30", cap: 15 },
-      { start: "18:30", end: "19:00", cap: 15 },
-      { start: "19:00", end: "19:30", cap: 10 },
-    ];
-    for (const w of windows) {
-      await sql`
-        INSERT INTO family_dinner_delivery_windows (
-          provider_location_id, service_date, starts_at, ends_at, capacity, remaining_capacity, status
-        ) VALUES (
-          ${locationId}::uuid,
-          ${serviceDate}::date,
-          ${w.start}::time,
-          ${w.end}::time,
-          ${w.cap},
-          ${w.cap},
-          ${"OPEN"}
-        )
-      `;
+      console.log("  recipe ok →", def.name);
     }
 
     const ownerId = await ensureUser(sql, KITCHEN.ownerPhone, KITCHEN.ownerName);
@@ -363,10 +336,86 @@ async function seed() {
       `;
     }
 
+    const demoMode = process.env.FD_SEED_DEMO === "1" || process.env.FD_SEED_DEMO === "true";
+    if (demoMode) {
+      const demoItems = [
+        { category: "MAIN", name: "Thịt rang cháy cạnh", price: 109_000, capacity: 40, selfCook: true },
+        { category: "SIDE", name: "Đậu tẩm hành", price: 39_000, capacity: 40, selfCook: true },
+        { category: "VEGETABLE", name: "Rau muống luộc", price: 29_000, capacity: 40, selfCook: false },
+        { category: "SOUP", name: "Canh cua mồng tơi", price: 69_000, capacity: 40, selfCook: false },
+        { category: "RICE", name: "Cơm trắng", price: 15_000, capacity: 80, selfCook: false },
+      ] as const;
+      const demoWindows = [
+        { start: "17:30", end: "18:00", cap: 12 },
+        { start: "18:00", end: "18:30", cap: 15 },
+        { start: "18:30", end: "19:00", cap: 15 },
+        { start: "19:00", end: "19:30", cap: 10 },
+      ] as const;
+
+      const [menu] = await sql<{ id: string }[]>`
+        INSERT INTO family_dinner_daily_menus (
+          provider_location_id, service_date, status, published_at
+        ) VALUES (
+          ${locationId}::uuid, ${serviceDate}::date, 'PUBLISHED', now()
+        )
+        RETURNING id
+      `;
+      if (!menu) throw new Error("Failed to insert demo menu");
+
+      for (const [idx, item] of demoItems.entries()) {
+        await sql`
+          INSERT INTO family_dinner_menu_items (
+            daily_menu_id, category, name, price_vnd, capacity, remaining_capacity,
+            sort_order, status, allows_self_cook
+          ) VALUES (
+            ${menu.id}::uuid,
+            ${item.category},
+            ${item.name},
+            ${item.price},
+            ${item.capacity},
+            ${item.capacity},
+            ${idx},
+            'ACTIVE',
+            ${item.selfCook}
+          )
+        `;
+      }
+      for (const w of demoWindows) {
+        await sql`
+          INSERT INTO family_dinner_delivery_windows (
+            provider_location_id, service_date, starts_at, ends_at,
+            capacity, remaining_capacity, status
+          ) VALUES (
+            ${locationId}::uuid,
+            ${serviceDate}::date,
+            ${w.start}::time,
+            ${w.end}::time,
+            ${w.cap},
+            ${w.cap},
+            'OPEN'
+          )
+        `;
+      }
+      await sql`
+        UPDATE family_dinner_provider_settings
+        SET enabled = true,
+            cutoff_time = ${"23:59"}::time,
+            updated_at = now()
+        WHERE provider_location_id = ${locationId}::uuid
+      `;
+      console.log(
+        `✓ FD_SEED_DEMO — menu PUBLISHED + receiving open (cutoff 23:59) · service_date=${serviceDate}`,
+      );
+    } else {
+      console.log(
+        "✓ Đã reset Bếp Nhà Lan — chưa có menu, chưa mở nhận đơn. Vào Provider → Bữa tối để tạo.",
+      );
+      console.log("  (Demo menu+receiving: FD_SEED_DEMO=1 bash scripts/db-seed-family-dinner.sh)");
+    }
+
     console.log(
       `Family Dinner login: ${KITCHEN.ownerPhone} (UI: 0908888014) · service_date=${serviceDate}`,
     );
-    console.log("✓ Family Dinner seed done (Bếp Nhà Lan)");
   } finally {
     await sql.end({ timeout: 5 });
   }

@@ -46,3 +46,14 @@ Travel-time accessibility and operator edits replace any fixed-radius assumption
 
 - **Automated API:** `pnpm pilot:e2e` (script: `scripts/pilot-food-e2e.sh`)
 - **Manual UI checklist:** [`FOOD_E2E_CHECKLIST.md`](./FOOD_E2E_CHECKLIST.md) — 3-tab COD flow, cancel, PayOS, push, Admin
+
+## E2E testing (Family Dinner — S41)
+
+- **Seed:** `bash scripts/db-seed-family-dinner.sh` · demo menu: `FD_SEED_DEMO=1 …`
+- **Automated API:** `pnpm pilot:family-dinner:e2e` (script: `scripts/pilot-family-dinner-e2e.sh`)
+- **Manual UI checklist:** [`FAMILY_DINNER_E2E_CHECKLIST.md`](./FAMILY_DINNER_E2E_CHECKLIST.md) — cook-first PREPAY, runner sau READY, Tự giao, cutoff gate
+
+## Pilot harden + PWA
+
+- **Gate trước pilot rộng:** [`PILOT_HARDEN_CHECKLIST.md`](./PILOT_HARDEN_CHECKLIST.md)
+- **Icons:** `bash scripts/generate-pwa-icons.sh` → PNG 192/512 + apple-touch (Customer / Provider / Runner)

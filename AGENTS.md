@@ -14,7 +14,7 @@ Master Spec wins on conflict. Implement **the current sprint only**.
 
 **S32 Education + Pet:** service requests cho học thử (`ONLINE`/`CUSTOMER_VISIT`) và dịch vụ pet tại nhà; seed `bash scripts/db-seed-education.sh`, `bash scripts/db-seed-pet.sh`. **S33 Classified + Give Away (GÓC KHU MÌNH):** tin thanh lý/cho tặng trong Zone + giữ chỗ + chat + ảnh (nén client, tối đa 3 ảnh < 300KB); seed `bash scripts/db-seed-classified.sh`. **S34 Auto Service:** rửa xe/bơm lốp dùng queue (`CUSTOMER_VISIT`), thay dầu/sửa chữa dùng `CONTACT_ONLY`; seed `bash scripts/db-seed-auto.sh`. **S35 Đặt sân:** service request kèm khung giờ mong muốn — không có booking engine/lịch sân (quyết định giữ lean); seed `bash scripts/db-seed-sports.sh`.
 
-**Current — S41 Family Dinner Phase A–D (ADR-046):** Bữa tối ấm cúng — daily menu + meal builder + PREPAY; provider ops/dashboard + production lock; recipe/yield/inventory; late dinner atomic. Seed `bash scripts/db-seed-family-dinner.sh` — **Bếp Nhà Lan** (`bep-nha-lan`), login `0908888014`. Scope: `docs/PICKI_FAMILY_DINNER_SPEC.md`.
+**Current — S41 Family Dinner Phase A–D (ADR-046):** Bữa tối ấm cúng — daily menu + meal builder + PREPAY; provider ops/dashboard + production lock; recipe/yield/inventory; late dinner atomic. Seed `bash scripts/db-seed-family-dinner.sh` — **Bếp Nhà Lan** (`bep-nha-lan`), login `0908888014` (blank reset; `FD_SEED_DEMO=1` = menu + receiving). **E2E:** `pnpm pilot:family-dinner:e2e` · checklist `docs/pilot/FAMILY_DINNER_E2E_CHECKLIST.md`. Scope: `docs/PICKI_FAMILY_DINNER_SPEC.md`.
 
 **S40 Thất lạc / Pet Lost (ADR-045):** `LOST_FOUND` / `PET_LOST` trong GÓC KHU MÌNH — chat only, TTL 14 ngày, quota 2 ACTIVE · 5/tháng. Seed `bash scripts/db-seed-lost.sh`. Scope: `docs/S40_LOST_FOUND.md`.
 
@@ -28,7 +28,7 @@ Master Spec wins on conflict. Implement **the current sprint only**.
 
 **Demo accounts (seed:ops):** Food `0908888001` · Laundry `0908888004` · Home `0908888005` · Beauty `0908888006` · Auto `0908888007` · Sports `0908888008` · Phòng khám `0908888009`–`011` · Nhà thuốc `0908888012` · Tạp hóa `0908888013` · Bếp tối `0908888014` · Runner `0908888002` · Admin `0908888003` · Customer `0901234567`
 
-**Pilot Zone 1:** Kim Văn – Kim Lũ (`kim-van-kim-lu`) — see `docs/pilot/KIM_VAN_KIM_LU.md`. **E2E:** `pnpm pilot:e2e` · manual checklist `docs/pilot/FOOD_E2E_CHECKLIST.md`.
+**Pilot Zone 1:** Kim Văn – Kim Lũ (`kim-van-kim-lu`) — see `docs/pilot/KIM_VAN_KIM_LU.md`. **E2E:** `pnpm pilot:e2e` · laundry `pnpm pilot:laundry:e2e` · FD `pnpm pilot:family-dinner:e2e`. **Pilot harden + PWA icons:** `docs/pilot/PILOT_HARDEN_CHECKLIST.md` · `bash scripts/generate-pwa-icons.sh`.
 
 **Delivery fees (ADR-041):** Food — khách trả **một lần** hàng + ship → merchant Provider; provider tự trả runner theo stats ngày. Laundry — khách **0 phí ship**; lấy đồ = staff tiệm; giao = staff hoặc runner do tiệm gọi (phí tiệm chịu).
 

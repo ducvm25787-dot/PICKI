@@ -10,6 +10,7 @@ import { api } from "../../../lib/api";
 import { OrderNumberHeading } from "../../components/order-number-heading";
 import { orderStatusRich } from "../../../lib/order-display";
 import { formatOrderAmount, formatVnd } from "../../../lib/money";
+import { fdFormatItemQtyLabel, fdIsPastCutoff } from "../../../lib/family-dinner";
 
 type DailyRunnerStats = {
   date: string;
@@ -26,6 +27,8 @@ type ProviderOrder = {
   providerBrandName?: string | null;
   status: string;
   serviceVertical?: string;
+  orderKind?: string;
+  serviceDate?: string | null;
   laundryPickupMode?: string | null;
   subtotalVnd?: number;
   deliveryFeeVnd?: number;
@@ -42,11 +45,15 @@ type ProviderOrder = {
     provider: { phone: string | null; label?: string };
     runner?: { phone: string | null; displayName?: string | null } | null;
   };
-  items: { name: string; quantity: number }[];
+  items: { name: string; quantity: number; familyDinnerCategory?: string | null }[];
 };
 
 function hasRunnerSought(order: ProviderOrder): boolean {
   return order.runnerSoughtAt != null && order.runnerSoughtAt !== "";
+}
+
+function isCookFirstOrder(order: ProviderOrder): boolean {
+  return order.orderKind === "FAMILY_DINNER" || order.orderKind === "LATE_DINNER";
 }
 
 function patchOrder(prev: ProviderOrder, patch: Partial<ProviderOrder>): ProviderOrder {
@@ -115,22 +122,38 @@ export default function ProviderOrdersPage() {
   const [rejectOrderId, setRejectOrderId] = useState<string | null>(null);
   const [rejectPreset, setRejectPreset] = useState<string>(REJECT_PRESETS[0]);
   const [rejectCustom, setRejectCustom] = useState("");
+  const [fdCutoffTime, setFdCutoffTime] = useState<string | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
 
   const activeLocationId = locations.some((l) => l.locationId === locationId) ? locationId : "";
+
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 1_000);
+    return () => clearInterval(t);
+  }, []);
 
   const loadOrders = useCallback(async () => {
     if (!activeLocationId) return;
     setLoadError(null);
     try {
-      const res = await api<{ orders: ProviderOrder[] }>(
-        `/provider/orders?locationId=${activeLocationId}`,
-      );
+      const res = await api<{
+        orders: ProviderOrder[];
+        familyDinnerCutoffTime?: string | null;
+      }>(`/provider/orders?locationId=${activeLocationId}`);
       setOrders(res.orders);
+      setFdCutoffTime(res.familyDinnerCutoffTime?.slice(0, 5) ?? null);
     } catch (e) {
       setOrders([]);
       setLoadError(e instanceof Error ? e.message : "Không tải được đơn hàng");
     }
   }, [activeLocationId]);
+
+  function canStartFamilyDinnerCook(order: ProviderOrder): boolean {
+    if (order.orderKind === "LATE_DINNER") return true;
+    if (order.orderKind !== "FAMILY_DINNER") return true;
+    if (!order.serviceDate || !fdCutoffTime) return false;
+    return fdIsPastCutoff(order.serviceDate, fdCutoffTime, nowTick);
+  }
 
   const loadRunnerStats = useCallback(async () => {
     if (!activeLocationId) return;
@@ -168,8 +191,20 @@ export default function ProviderOrdersPage() {
     setActingId(orderId);
 
     const current = orders.find((o) => o.id === orderId);
-    if (act === "preparing" && current && current.status !== "RUNNER_ASSIGNED") {
+    if (
+      act === "preparing" &&
+      current &&
+      current.status !== "RUNNER_ASSIGNED" &&
+      !isCookFirstOrder(current)
+    ) {
       setActionError("Runner phải nhận đơn trước — mở app Runner (0908888002) bấm Nhận giao.");
+      setActingId(null);
+      return;
+    }
+    if (act === "preparing" && current && isCookFirstOrder(current) && !canStartFamilyDinnerCook(current)) {
+      setActionError(
+        `Chỉ bắt đầu nấu sau giờ chốt nhận đơn${fdCutoffTime ? ` (${fdCutoffTime})` : ""}`,
+      );
       setActingId(null);
       return;
     }
@@ -498,8 +533,10 @@ export default function ProviderOrdersPage() {
         ) : (
           orders.map((o) => {
             const sought = hasRunnerSought(o);
-            const waitingRunner =
-              o.status === "PROVIDER_ACCEPTED" && sought && !o.runnerUserId && !o.runner;
+            const cookFirst = isCookFirstOrder(o);
+            const waitingRunner = cookFirst
+              ? o.status === "READY" && sought && !o.runnerUserId && !o.runner
+              : o.status === "PROVIDER_ACCEPTED" && sought && !o.runnerUserId && !o.runner;
             const busy = actingId === o.id;
             const batch = handoffBatchForOrder(o, handoffBatches);
 
@@ -538,14 +575,23 @@ export default function ProviderOrdersPage() {
                 <OrderStatusSteps
                   status={o.status}
                   runnerSoughtAt={o.runnerSoughtAt}
+                  runnerUserId={o.runnerUserId}
+                  hasRunner={!!o.runner}
                   serviceVertical={o.serviceVertical}
                   laundryPickupMode={o.laundryPickupMode}
+                  orderKind={o.orderKind}
                 />
-                {waitingRunner && o.serviceVertical !== "LAUNDRY" ? (
+                {waitingRunner && o.serviceVertical !== "LAUNDRY" && !cookFirst ? (
                   <div className="runner-route-hint" style={{ margin: "8px 0", fontSize: 14 }}>
                     <strong>Bước tiếp:</strong> Runner mở app{" "}
                     <strong>Picki Runner</strong> (0908888002) → tab <strong>Đơn chờ nhận</strong>{" "}
                     → bấm <strong>Nhận giao</strong>. Quán chưa nấu cho đến khi runner nhận.
+                  </div>
+                ) : null}
+                {waitingRunner && cookFirst ? (
+                  <div className="runner-route-hint" style={{ margin: "8px 0", fontSize: 14 }}>
+                    Đã nấu xong — đang chờ runner nhận giao. Hoặc bấm <strong>Tự giao</strong> nếu
+                    bếp tự sắp xếp.
                   </div>
                 ) : null}
                 {waitingRunner && o.serviceVertical === "LAUNDRY" ? (
@@ -562,7 +608,13 @@ export default function ProviderOrdersPage() {
                   </p>
                 ) : null}
                 <p style={{ fontSize: 14, margin: "4px 0 8px" }}>
-                  {o.items.map((i) => `${i.name}×${String(i.quantity)}`).join(", ")}
+                  {o.items
+                    .map((i) =>
+                      fdFormatItemQtyLabel(i.name, i.quantity, {
+                        category: i.familyDinnerCategory,
+                      }),
+                    )
+                    .join(", ")}
                 </p>
                 <p className="stat" style={{ marginBottom: 8 }}>
                   Giao: {o.delivery.building}-{o.delivery.apartment}
@@ -758,7 +810,9 @@ export default function ProviderOrdersPage() {
                       >
                         {busy
                           ? "…"
-                          : `Nhận đơn & tìm runner${(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0)}` : ""}`}
+                          : cookFirst
+                            ? "Nhận đơn"
+                            : `Nhận đơn & tìm runner${(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0)}` : ""}`}
                       </button>
                       <button
                         type="button"
@@ -771,7 +825,10 @@ export default function ProviderOrdersPage() {
                       </button>
                     </>
                   ) : null}
-                  {o.serviceVertical !== "LAUNDRY" && o.status === "PROVIDER_ACCEPTED" && !sought ? (
+                  {o.serviceVertical !== "LAUNDRY" &&
+                  !cookFirst &&
+                  o.status === "PROVIDER_ACCEPTED" &&
+                  !sought ? (
                     <button
                       type="button"
                       className="btn provider-btn"
@@ -784,7 +841,31 @@ export default function ProviderOrdersPage() {
                         : `Tìm runner${(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0)}` : ""}`}
                     </button>
                   ) : null}
-                  {waitingRunner && o.serviceVertical !== "LAUNDRY" ? (
+                  {cookFirst && o.status === "PROVIDER_ACCEPTED" ? (
+                    <button
+                      type="button"
+                      className="btn provider-btn"
+                      style={{
+                        width: "auto",
+                        padding: "8px 12px",
+                        opacity: canStartFamilyDinnerCook(o) ? 1 : 0.45,
+                      }}
+                      disabled={busy || !canStartFamilyDinnerCook(o)}
+                      title={
+                        canStartFamilyDinnerCook(o)
+                          ? undefined
+                          : `Bắt đầu nấu sau giờ chốt nhận đơn${fdCutoffTime ? ` (${fdCutoffTime})` : ""}`
+                      }
+                      onClick={() => void action(o.id, "preparing")}
+                    >
+                      {busy
+                        ? "…"
+                        : canStartFamilyDinnerCook(o)
+                          ? "Bắt đầu nấu"
+                          : `Bắt đầu nấu (sau ${fdCutoffTime ?? "giờ chốt"})`}
+                    </button>
+                  ) : null}
+                  {waitingRunner && o.serviceVertical !== "LAUNDRY" && !cookFirst ? (
                     <>
                       <span className="live-pill live-open" style={{ margin: 0 }}>
                         Đang chờ runner
@@ -800,7 +881,7 @@ export default function ProviderOrdersPage() {
                       </button>
                     </>
                   ) : null}
-                  {o.serviceVertical !== "LAUNDRY" && o.status === "RUNNER_ASSIGNED" ? (
+                  {o.serviceVertical !== "LAUNDRY" && !cookFirst && o.status === "RUNNER_ASSIGNED" ? (
                     <button
                       type="button"
                       className="btn provider-btn"
@@ -821,6 +902,71 @@ export default function ProviderOrdersPage() {
                     >
                       Sẵn sàng giao
                     </button>
+                  ) : null}
+                  {cookFirst && o.status === "READY" && !o.runner && !o.runnerUserId && !sought ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn provider-btn"
+                        style={{ width: "auto", padding: "8px 12px" }}
+                        disabled={busy}
+                        onClick={() => void action(o.id, "find_runner")}
+                      >
+                        {busy
+                          ? "…"
+                          : `Tìm runner${(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0)}` : ""}`}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ width: "auto", padding: "8px 12px" }}
+                        disabled={busy}
+                        onClick={() => void action(o.id, "staff_deliver")}
+                      >
+                        {busy ? "…" : "Tự giao"}
+                      </button>
+                    </>
+                  ) : null}
+                  {cookFirst && waitingRunner ? (
+                    <>
+                      <span className="live-pill live-open" style={{ margin: 0 }}>
+                        Đang chờ runner
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ width: "auto", padding: "8px 12px" }}
+                        disabled={busy}
+                        onClick={() => void action(o.id, "find_runner")}
+                      >
+                        Gửi lại runner
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ width: "auto", padding: "8px 12px" }}
+                        disabled={busy}
+                        onClick={() => void action(o.id, "staff_deliver")}
+                      >
+                        {busy ? "…" : "Tự giao"}
+                      </button>
+                    </>
+                  ) : null}
+                  {cookFirst && o.status === "DELIVERING" && !o.runnerUserId && !o.runner ? (
+                    <>
+                      <span className="live-pill live-open" style={{ margin: 0 }}>
+                        Đang tự giao về khách
+                      </span>
+                      <button
+                        type="button"
+                        className="btn provider-btn"
+                        style={{ width: "auto", padding: "8px 12px" }}
+                        disabled={busy}
+                        onClick={() => void action(o.id, "complete")}
+                      >
+                        {busy ? "…" : "Hoàn thành đơn hàng"}
+                      </button>
+                    </>
                   ) : null}
                   {o.serviceVertical !== "LAUNDRY" && o.status === "READY" && !o.providerHandoffAt && (o.runner || o.runnerUserId) ? (
                     <button

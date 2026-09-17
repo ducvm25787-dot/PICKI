@@ -1,6 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
 import {
+  isCookFirstFoodOrder,
+  familyDinnerProviderSettings,
   orderItems,
   orders,
   providerActionToStatus,
@@ -21,6 +23,7 @@ import {
 import { OrderTransitionService } from "../orders/order-transition.service.js";
 import { OutboxService } from "../outbox/outbox.service.js";
 import { RunnerDispatchService } from "../runner/runner-dispatch.service.js";
+import { formatTime, isPastCutoff } from "../family-dinner/family-dinner.service.js";
 import type { z } from "zod";
 import type { providerOrderActionSchema, updateLiveStatusSchema } from "./dto.js";
 
@@ -127,6 +130,18 @@ export class ProviderService {
       ? await this.runnerDispatch.loadZoneFees(rows[0].zoneId)
       : null;
 
+    const fdSettings = await this.db
+      .select({
+        cutoffTime: familyDinnerProviderSettings.cutoffTime,
+        enabled: familyDinnerProviderSettings.enabled,
+      })
+      .from(familyDinnerProviderSettings)
+      .where(eq(familyDinnerProviderSettings.providerLocationId, locationId))
+      .limit(1);
+    const familyDinnerCutoffTime = fdSettings[0]
+      ? formatTime(fdSettings[0].cutoffTime)
+      : null;
+
     const ordersOut = await Promise.all(
       rows.map(async (raw) => {
         const o = await this.ensureRunnerSought(raw);
@@ -137,6 +152,8 @@ export class ProviderService {
           providerBrandName,
           status: o.status,
           serviceVertical: o.serviceVertical,
+          orderKind: o.orderKind ?? "STANDARD",
+          serviceDate: o.serviceDate ?? null,
           laundryPickupMode: o.laundryPickupMode,
           subtotalVnd: o.subtotalVnd,
           deliveryFeeVnd: o.deliveryFeeVnd,
@@ -159,7 +176,7 @@ export class ProviderService {
       }),
     );
 
-    return { orders: ordersOut };
+    return { orders: ordersOut, familyDinnerCutoffTime };
   }
 
   async listLocationOrderHistory(userId: string, locationId: string, limit = 30) {
@@ -301,6 +318,27 @@ export class ProviderService {
       if (order[0].paymentMode === "PAY_ON_PICKI" && order[0].status === "CREATED") {
         throw new PickiError("FORBIDDEN", "Order awaiting online payment");
       }
+      if (isCookFirstFoodOrder(order[0])) {
+        if (order[0].status === "PROVIDER_ACCEPTED") {
+          return this.foodOrderActionDto(order[0]);
+        }
+        const result = await this.transitions.transition(
+          orderId,
+          "PROVIDER_ACCEPTED",
+          userId,
+          "Provider: accept",
+        );
+        await this.db
+          .update(orders)
+          .set({
+            runnerUserId: null,
+            runnerSoughtAt: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(orders.id, orderId));
+        const refreshed = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+        return this.foodOrderActionDto(refreshed[0] ?? result.order);
+      }
       if (order[0].status === "PROVIDER_ACCEPTED") {
         return this.providerFindRunner(userId, order[0]);
       }
@@ -322,12 +360,46 @@ export class ProviderService {
       return this.providerFindRunner(userId, order[0]);
     }
 
+    if (input.action === "staff_deliver") {
+      return this.providerStaffDeliverFood(userId, order[0]);
+    }
+
+    if (input.action === "complete") {
+      return this.providerCompleteStaffDeliver(userId, order[0]);
+    }
+
     if (input.action === "preparing") {
-      if (order[0].status !== "RUNNER_ASSIGNED") {
-        throw new PickiError("FORBIDDEN", "Runner phải nhận đơn trước khi bắt đầu nấu");
-      }
-      if (!order[0].runnerUserId) {
-        throw new PickiError("FORBIDDEN", "Chưa có runner nhận đơn");
+      if (isCookFirstFoodOrder(order[0])) {
+        if (order[0].status !== "PROVIDER_ACCEPTED" && order[0].status !== "RUNNER_ASSIGNED") {
+          throw new PickiError("FORBIDDEN", "Nhận đơn trước khi bắt đầu nấu");
+        }
+        // Family Dinner: chỉ nấu sau giờ chốt nhận đơn (Late Dinner được nấu ngay).
+        if (order[0].orderKind === "FAMILY_DINNER" && order[0].serviceDate) {
+          const settings = await this.db
+            .select({ cutoffTime: familyDinnerProviderSettings.cutoffTime })
+            .from(familyDinnerProviderSettings)
+            .where(
+              eq(
+                familyDinnerProviderSettings.providerLocationId,
+                order[0].providerLocationId,
+              ),
+            )
+            .limit(1);
+          const cutoff = formatTime(settings[0]?.cutoffTime ?? "16:00");
+          if (!isPastCutoff(order[0].serviceDate, cutoff)) {
+            throw new PickiError(
+              "FORBIDDEN",
+              `Chỉ bắt đầu nấu sau giờ chốt nhận đơn (${cutoff})`,
+            );
+          }
+        }
+      } else {
+        if (order[0].status !== "RUNNER_ASSIGNED") {
+          throw new PickiError("FORBIDDEN", "Runner phải nhận đơn trước khi bắt đầu nấu");
+        }
+        if (!order[0].runnerUserId) {
+          throw new PickiError("FORBIDDEN", "Chưa có runner nhận đơn");
+        }
       }
     }
 
@@ -359,13 +431,7 @@ export class ProviderService {
     const refreshed = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
     const latest = refreshed[0] ?? result.order;
 
-    return {
-      id: result.order.id,
-      orderNumber: result.order.orderNumber,
-      status: latest.status,
-      ...orderHandoffFields(latest),
-      runner: await loadRunnerSummary(this.db, latest.runnerUserId ?? null),
-    };
+    return this.foodOrderActionDto(latest);
   }
 
   private async applyLaundryOrderAction(
@@ -568,7 +634,12 @@ export class ProviderService {
   }
 
   private async providerFindRunner(userId: string, order: typeof orders.$inferSelect) {
-    if (order.status !== "PROVIDER_ACCEPTED") {
+    const cookFirst = isCookFirstFoodOrder(order);
+    if (cookFirst) {
+      if (order.status !== "READY") {
+        throw new PickiError("FORBIDDEN", "Nấu xong (sẵn sàng giao) rồi mới tìm runner");
+      }
+    } else if (order.status !== "PROVIDER_ACCEPTED") {
       throw new PickiError("FORBIDDEN", "Chỉ tìm runner sau khi đã nhận đơn");
     }
     if (order.runnerUserId) {
@@ -586,6 +657,61 @@ export class ProviderService {
       deliveryFeeVnd: refreshed[0]?.deliveryFeeVnd ?? order.deliveryFeeVnd,
       ...orderHandoffFields(refreshed[0] ?? order),
       runner: null,
+    };
+  }
+
+  /** Family Dinner: bếp tự sắp xếp giao — không dùng runner Picki. */
+  private async providerStaffDeliverFood(userId: string, order: typeof orders.$inferSelect) {
+    if (!isCookFirstFoodOrder(order)) {
+      throw new PickiError("FORBIDDEN", "Chỉ dùng Tự giao cho bữa tối ấm cúng");
+    }
+    if (order.status !== "READY") {
+      throw new PickiError("FORBIDDEN", "Nấu xong rồi mới tự giao");
+    }
+    if (order.runnerUserId) {
+      throw new PickiError("FORBIDDEN", "Đã có runner — dùng bàn giao runner");
+    }
+    if (order.runnerSoughtAt) {
+      await this.runnerDispatch.cancelDispatch(order.id);
+    }
+
+    const result = await this.transitions.transition(
+      order.id,
+      "DELIVERING",
+      userId,
+      "Provider: staff_deliver",
+    );
+    const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+    return this.foodOrderActionDto(refreshed[0] ?? result.order);
+  }
+
+  private async providerCompleteStaffDeliver(userId: string, order: typeof orders.$inferSelect) {
+    if (!isCookFirstFoodOrder(order)) {
+      throw new PickiError("FORBIDDEN", "Invalid complete action");
+    }
+    if (order.status !== "DELIVERING" || order.runnerUserId) {
+      throw new PickiError("FORBIDDEN", "Chỉ hoàn thành sau khi đã tự giao về khách");
+    }
+
+    const result = await this.transitions.transition(
+      order.id,
+      "DELIVERED",
+      userId,
+      "Provider: complete staff deliver",
+    );
+    const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+    return this.foodOrderActionDto(refreshed[0] ?? result.order);
+  }
+
+  private async foodOrderActionDto(order: typeof orders.$inferSelect) {
+    return {
+      id: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      orderKind: order.orderKind ?? "STANDARD",
+      deliveryFeeVnd: order.deliveryFeeVnd,
+      ...orderHandoffFields(order),
+      runner: await loadRunnerSummary(this.db, order.runnerUserId ?? null),
     };
   }
 
@@ -694,9 +820,10 @@ export class ProviderService {
     };
   }
 
-  /** Pilot food: đơn đã nhận nhưng chưa tìm runner → tự bổ sung khi load list. Laundry không dùng runner lấy đồ. */
+  /** Pilot food STANDARD: đơn đã nhận nhưng chưa tìm runner → tự bổ sung khi load list.
+   * Family Dinner / Late Dinner: nấu trước — không auto tìm runner. */
   private async ensureRunnerSought(order: typeof orders.$inferSelect) {
-    if (order.serviceVertical === "LAUNDRY") {
+    if (order.serviceVertical === "LAUNDRY" || isCookFirstFoodOrder(order)) {
       return order;
     }
     if (

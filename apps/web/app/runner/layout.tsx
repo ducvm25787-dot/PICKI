@@ -13,8 +13,14 @@ export const metadata: Metadata = {
     title: "Picki Runner",
   },
   icons: {
-    icon: [{ url: "/icons/icon-runner.svg", type: "image/svg+xml" }],
-    apple: [{ url: "/icons/icon-runner.svg", type: "image/svg+xml" }],
+    icon: [
+      { url: "/icons/icon-runner-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icons/icon-runner-512.png", type: "image/png", sizes: "512x512" },
+      { url: "/icons/icon-runner.svg", type: "image/svg+xml" },
+    ],
+    apple: [
+      { url: "/icons/apple-touch-icon-runner.png", type: "image/png", sizes: "180x180" },
+    ],
   },
   manifest: "/runner/manifest.webmanifest",
 };

@@ -12,6 +12,7 @@ export type RunnerOrder = {
   providerBrandName?: string | null;
   status: string;
   serviceVertical?: string;
+  orderKind?: string;
   deliveryFeeVnd?: number;
   totalVnd: number;
   assignedToMe: boolean;

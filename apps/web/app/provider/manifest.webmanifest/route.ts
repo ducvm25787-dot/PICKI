@@ -14,16 +14,28 @@ const providerManifest = {
   categories: ["business", "food"],
   icons: [
     {
+      src: "/icons/icon-provider-192.png",
+      sizes: "192x192",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: "/icons/icon-provider-512.png",
+      sizes: "512x512",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: "/icons/icon-provider-maskable-512.png",
+      sizes: "512x512",
+      type: "image/png",
+      purpose: "maskable",
+    },
+    {
       src: "/icons/icon-provider.svg",
       sizes: "any",
       type: "image/svg+xml",
       purpose: "any",
-    },
-    {
-      src: "/icons/icon-provider-maskable.svg",
-      sizes: "any",
-      type: "image/svg+xml",
-      purpose: "maskable",
     },
   ],
 } as const;

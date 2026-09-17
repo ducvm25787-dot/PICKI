@@ -510,4 +510,10 @@ Transactional outbox (`outbox_events`) processed by an in-process or same-deploy
 
 **Full scope:** `docs/PICKI_FAMILY_DINNER_SPEC.md`.
 
+**Addendum (2026-09-17) — Prep mode Nấu sẵn / Tự nấu:**
+
+1. Mặc định **Nấu sẵn**. Provider tick `allows_self_cook` trên món MAIN/SIDE/VEGETABLE/SOUP.
+2. Khách chọn **Tự nấu** chỉ khi món được mở; **cùng giá** V1 (không giảm giá platform).
+3. Snapshot `order_items.prep_mode`; kế hoạch nấu hiện số phần tự nấu (lean). Giảm giá / recipe tách = Phase sau.
+
 ---

@@ -4,6 +4,8 @@ export const createOrderItemSchema = z.object({
   offeringId: z.string().uuid().optional(),
   menuItemId: z.string().uuid().optional(),
   quantity: z.number().int().min(1).max(20),
+  /** Family Dinner: Nấu sẵn (default) | Tự nấu — cùng giá */
+  prepMode: z.enum(["READY_COOKED", "SELF_COOK"]).optional(),
 });
 
 const orderCheckoutFields = {

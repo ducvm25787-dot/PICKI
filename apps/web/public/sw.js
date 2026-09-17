@@ -1,12 +1,18 @@
 /* Picki PWA — offline shell + Web Push */
-const CACHE = "picki-shell-v5";
+const CACHE = "picki-shell-v6";
 const PRECACHE = [
   "/offline",
+  "/favicon.png",
+  "/apple-touch-icon.png",
   "/icons/icon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
   "/provider/offline",
   "/icons/icon-provider.svg",
+  "/icons/icon-provider-192.png",
   "/runner/offline",
   "/icons/icon-runner.svg",
+  "/icons/icon-runner-192.png",
 ];
 
 self.addEventListener("install", (event) => {

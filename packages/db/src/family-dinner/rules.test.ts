@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   countFamilyDinnerPortions,
+  familyDinnerRiceLineTotalVnd,
   grossFromNet,
   lateOfferMaxCapacity,
   toBuyQuantity,
@@ -29,8 +30,27 @@ describe("validateFamilyDinnerBaseMeal", () => {
     expect(r.ok).toBe(true);
   });
 
+  it("allows multiple dishes per group", () => {
+    const r = validateFamilyDinnerBaseMeal([
+      { category: "MAIN", quantity: 1 },
+      { category: "MAIN", quantity: 1 },
+      { category: "SIDE", quantity: 1 },
+      { category: "VEGETABLE", quantity: 1 },
+      { category: "SOUP", quantity: 1 },
+    ]);
+    expect(r.ok).toBe(true);
+  });
+
   it("counts portions", () => {
     expect(countFamilyDinnerPortions([{ quantity: 2 }, { quantity: 3 }])).toBe(5);
+  });
+});
+
+describe("rice extra portions", () => {
+  it("first portion = menu price; each extra +5k", () => {
+    expect(familyDinnerRiceLineTotalVnd(15_000, 1)).toBe(15_000);
+    expect(familyDinnerRiceLineTotalVnd(15_000, 2)).toBe(20_000);
+    expect(familyDinnerRiceLineTotalVnd(15_000, 3)).toBe(25_000);
   });
 });
 

@@ -70,6 +70,8 @@ export const orderItems = pgTable("order_items", {
     { onDelete: "set null" },
   ),
   familyDinnerCategory: text("family_dinner_category"),
+  /** READY_COOKED | SELF_COOK — Family Dinner; null = món thường / mặc định nấu sẵn */
+  prepMode: text("prep_mode"),
   recipeVersionId: uuid("recipe_version_id"),
   providerLocationId: uuid("provider_location_id")
     .notNull()

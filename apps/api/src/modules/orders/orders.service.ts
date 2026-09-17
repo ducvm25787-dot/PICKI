@@ -27,6 +27,8 @@ import {
   providerZoneMemberships,
   userZoneMemberships,
   validateFamilyDinnerBaseMeal,
+  isFamilyDinnerSelfCookCategory,
+  familyDinnerRiceLineTotalVnd,
   zoneFulfillmentSettings,
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
@@ -317,6 +319,7 @@ export class OrdersService {
             offeringId: null,
             familyDinnerMenuItemId: item.menuItemId,
             familyDinnerCategory: item.category,
+            prepMode: item.prepMode,
             recipeVersionId: item.recipeVersionId,
             providerLocationId: input.providerLocationId,
             name: item.name,
@@ -731,15 +734,35 @@ export class OrdersService {
       if (row.remainingCapacity != null && row.remainingCapacity < item.quantity) {
         throw new PickiError("CONFLICT", `Hết suất: ${row.name}`);
       }
+      const prepMode = item.prepMode ?? "READY_COOKED";
+      if (prepMode === "SELF_COOK") {
+        if (!row.allowsSelfCook || !isFamilyDinnerSelfCookCategory(row.category)) {
+          throw new PickiError(
+            "VALIDATION_ERROR",
+            `Món «${row.name}» không hỗ trợ tự nấu`,
+          );
+        }
+      }
+      const isRice = row.category === "RICE";
+      const lineTotalVnd = isRice
+        ? familyDinnerRiceLineTotalVnd(row.priceVnd, item.quantity)
+        : row.priceVnd * item.quantity;
+      const unitPriceVnd = isRice
+        ? Math.round(lineTotalVnd / item.quantity)
+        : row.priceVnd;
       return {
         menuItemId: row.id,
         category: row.category,
         name: row.name,
-        description: row.description,
-        unitPriceVnd: row.priceVnd,
+        description:
+          prepMode === "SELF_COOK"
+            ? [row.description, "Khách tự nấu — giao nguyên liệu/sơ chế"].filter(Boolean).join(" · ")
+            : row.description,
+        unitPriceVnd,
         quantity: item.quantity,
-        lineTotalVnd: row.priceVnd * item.quantity,
+        lineTotalVnd,
         recipeVersionId: row.recipeVersionId,
+        prepMode,
       };
     });
 
@@ -1099,6 +1122,7 @@ export class OrdersService {
         estimatedDays: i.estimatedDays,
         menuItemId: i.familyDinnerMenuItemId,
         category: i.familyDinnerCategory,
+        prepMode: i.prepMode,
       })),
       createdAt: order.createdAt.toISOString(),
       canCancel: await this.computeCanCancel(order),

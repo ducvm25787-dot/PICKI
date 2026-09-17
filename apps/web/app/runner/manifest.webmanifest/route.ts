@@ -14,16 +14,28 @@ const runnerManifest = {
   categories: ["business", "navigation"],
   icons: [
     {
+      src: "/icons/icon-runner-192.png",
+      sizes: "192x192",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: "/icons/icon-runner-512.png",
+      sizes: "512x512",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: "/icons/icon-runner-maskable-512.png",
+      sizes: "512x512",
+      type: "image/png",
+      purpose: "maskable",
+    },
+    {
       src: "/icons/icon-runner.svg",
       sizes: "any",
       type: "image/svg+xml",
       purpose: "any",
-    },
-    {
-      src: "/icons/icon-runner-maskable.svg",
-      sizes: "any",
-      type: "image/svg+xml",
-      purpose: "maskable",
     },
   ],
 } as const;

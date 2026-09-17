@@ -22,8 +22,10 @@ type LateOffer = {
   title: string;
   priceVnd: number;
   remainingCapacity: number;
+  capacity?: number;
   etaMinutes: number;
   available: boolean;
+  items?: { name: string; category: string; quantityPerTray: number }[];
 };
 
 type ZoneInfo = { zoneId: string; slug: string };
@@ -53,7 +55,7 @@ export default function FamilyDinnerListPage() {
         ]);
         setServiceDate(res.serviceDate || late.serviceDate);
         setKitchens(res.providers);
-        setLateOffers(late.offers.filter((o) => o.available !== false));
+        setLateOffers(late.offers.filter((o) => o.available !== false && o.remainingCapacity > 0));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Không tải được");
       } finally {
@@ -90,7 +92,7 @@ export default function FamilyDinnerListPage() {
         <div className="card" style={{ marginBottom: 16 }}>
           <p className="section-title">Bữa tối muộn</p>
           <p className="stat" style={{ marginTop: 0 }}>
-            Tối nay vẫn còn gì ngon?
+            Tối nay vẫn còn gì ngon? — xem thực đơn & số suất còn lại
           </p>
           <div className="provider-list">
             {lateOffers.map((o) => (
@@ -101,8 +103,16 @@ export default function FamilyDinnerListPage() {
               >
                 <h3 style={{ margin: "0 0 4px" }}>{o.title}</h3>
                 <p className="stat" style={{ margin: 0 }}>
-                  {o.brandName ?? o.displayName ?? "Bếp"} · {formatVnd(o.priceVnd)} · còn{" "}
-                  {o.remainingCapacity} · ~{o.etaMinutes} phút
+                  {o.brandName ?? o.displayName ?? "Bếp"} · {formatVnd(o.priceVnd)}
+                </p>
+                {o.items?.length ? (
+                  <p className="stat" style={{ margin: "6px 0 0" }}>
+                    Thực đơn: {o.items.map((i) => i.name).join(" · ")}
+                  </p>
+                ) : null}
+                <p className="stat" style={{ margin: "6px 0 0" }}>
+                  Còn <strong>{o.remainingCapacity}</strong>
+                  {o.capacity != null ? `/${o.capacity}` : ""} suất · giao ~{o.etaMinutes} phút →
                 </p>
               </Link>
             ))}
@@ -122,7 +132,7 @@ export default function FamilyDinnerListPage() {
           {kitchens.map((k) => (
             <Link
               key={k.locationId}
-              href={`/family-dinner/${k.locationId}?date=${serviceDate}&zoneId=${zone?.zoneId ?? ""}`}
+              href={`/family-dinner/${k.locationId}?zoneId=${zone?.zoneId ?? ""}`}
               className="provider-card"
             >
               <h3 style={{ margin: "0 0 4px" }}>{k.brandName}</h3>
@@ -131,10 +141,10 @@ export default function FamilyDinnerListPage() {
               </p>
               <p className="stat" style={{ margin: "8px 0 0" }}>
                 {k.acceptingPreorder
-                  ? `Nhận đơn tới ${k.cutoffTime}`
+                  ? `Đang nhận đơn tới ${k.cutoffTime}`
                   : `Đã qua cutoff ${k.cutoffTime}`}
                 {" · "}
-                Chọn món →
+                Chọn 4 món →
               </p>
             </Link>
           ))}

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import {
   FAMILY_DINNER_CATEGORY_LIMITS,
   familyDinnerDailyMenus,
@@ -24,9 +24,11 @@ import {
   providerZoneMemberships,
   recipeIngredients,
   toBuyQuantity,
+  isFamilyDinnerSelfCookCategory,
   type FamilyDinnerCategory,
   type PickiDb,
   validateFamilyDinnerBaseMeal,
+  validateFamilyDinnerDailyMenu,
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
 import { PICKI_DB } from "../../shared/tokens.js";
@@ -59,6 +61,8 @@ export class FamilyDinnerService {
   constructor(@Inject(PICKI_DB) private readonly db: PickiDb) {}
 
   async listForZone(zoneId: string, serviceDate: string) {
+    await this.ensureTodayMenusForZone(zoneId, serviceDate);
+
     const rows = await this.db
       .select({
         locationId: providerLocations.id,
@@ -113,13 +117,15 @@ export class FamilyDinnerService {
   }
 
   async getMenu(locationId: string, serviceDate: string) {
+    await this.copyLastPublishedMenuIfMissing(locationId, serviceDate);
+
     const settings = await this.db
       .select()
       .from(familyDinnerProviderSettings)
       .where(eq(familyDinnerProviderSettings.providerLocationId, locationId))
       .limit(1);
-    if (!settings[0]?.enabled) {
-      throw new PickiError("NOT_FOUND", "Bếp chưa bật Bữa tối ấm cúng");
+    if (!settings[0]) {
+      throw new PickiError("NOT_FOUND", "Bếp chưa cấu hình Bữa tối ấm cúng");
     }
 
     const loc = await this.db
@@ -167,13 +173,18 @@ export class FamilyDinnerService {
       .orderBy(asc(familyDinnerDeliveryWindows.startsAt));
 
     const cutoff = formatTime(settings[0].cutoffTime);
+    const receivingOpen = settings[0].enabled === true;
     return {
       locationId,
       brandName: loc[0].brandName,
       displayName: loc[0].displayName,
       serviceDate,
       cutoffTime: cutoff,
-      acceptingPreorder: !isPastCutoff(serviceDate, cutoff),
+      // Chỉ nhận đơn sau khi bếp bấm mở giờ cutoff (enabled).
+      acceptingPreorder: receivingOpen && !isPastCutoff(serviceDate, cutoff),
+      receivingOpen,
+      publishedAt: menu[0].publishedAt?.toISOString() ?? null,
+      receivingOpenedAt: receivingOpen ? settings[0].updatedAt?.toISOString() ?? null : null,
       menuId: menu[0].id,
       items: items.map((i) => ({
         id: i.id,
@@ -185,6 +196,8 @@ export class FamilyDinnerService {
         remainingCapacity: i.remainingCapacity,
         recipeVersionId: i.recipeVersionId,
         status: i.status,
+        allowsSelfCook:
+          i.allowsSelfCook && isFamilyDinnerSelfCookCategory(i.category),
         available:
           i.status === "ACTIVE" &&
           (i.remainingCapacity == null || i.remainingCapacity > 0),
@@ -209,7 +222,18 @@ export class FamilyDinnerService {
     await this.assertProviderStaff(userId, locationId);
     this.assertCategoryQuotas(input.items);
 
-    const baseCheck = validateFamilyDinnerBaseMeal(
+    const serviceDate = input.serviceDate ?? defaultDinnerServiceDate();
+    const windows =
+      input.windows && input.windows.length > 0
+        ? input.windows
+        : [
+            { startsAt: "17:30", endsAt: "18:00", capacity: 12 },
+            { startsAt: "18:00", endsAt: "18:30", capacity: 15 },
+            { startsAt: "18:30", endsAt: "19:00", capacity: 15 },
+            { startsAt: "19:00", endsAt: "19:30", capacity: 10 },
+          ];
+
+    const baseCheck = validateFamilyDinnerDailyMenu(
       input.items.map((i) => ({ category: i.category, quantity: 1 })),
     );
     if (!baseCheck.ok) {
@@ -219,17 +243,36 @@ export class FamilyDinnerService {
       );
     }
 
-    return this.db.transaction(async (tx) => {
+    const locked = await this.db
+      .select({ status: familyDinnerProductionBatches.status })
+      .from(familyDinnerProductionBatches)
+      .where(
+        and(
+          eq(familyDinnerProductionBatches.providerLocationId, locationId),
+          eq(familyDinnerProductionBatches.serviceDate, serviceDate),
+          eq(familyDinnerProductionBatches.status, "LOCKED"),
+        ),
+      )
+      .limit(1);
+    if (locked[0]) {
+      throw new PickiError(
+        "FORBIDDEN",
+        "Đã chốt kế hoạch nấu — bấm «Mở lại chốt nấu» ở mục Sản xuất nếu cần sửa menu.",
+      );
+    }
+
+    await this.db.transaction(async (tx) => {
       await tx
         .insert(familyDinnerProviderSettings)
         .values({
           providerLocationId: locationId,
-          enabled: true,
+          enabled: false,
           updatedAt: new Date(),
         })
         .onConflictDoUpdate({
           target: familyDinnerProviderSettings.providerLocationId,
-          set: { enabled: true, updatedAt: new Date() },
+          // Đăng menu ≠ mở nhận đơn — chỉ bật khi bếp set giờ cutoff.
+          set: { updatedAt: new Date() },
         });
 
       const existing = await tx
@@ -238,7 +281,7 @@ export class FamilyDinnerService {
         .where(
           and(
             eq(familyDinnerDailyMenus.providerLocationId, locationId),
-            eq(familyDinnerDailyMenus.serviceDate, input.serviceDate),
+            eq(familyDinnerDailyMenus.serviceDate, serviceDate),
           ),
         )
         .limit(1);
@@ -251,7 +294,7 @@ export class FamilyDinnerService {
           .where(
             and(
               eq(familyDinnerDeliveryWindows.providerLocationId, locationId),
-              eq(familyDinnerDeliveryWindows.serviceDate, input.serviceDate),
+              eq(familyDinnerDeliveryWindows.serviceDate, serviceDate),
             ),
           );
         await tx
@@ -263,7 +306,7 @@ export class FamilyDinnerService {
           .insert(familyDinnerDailyMenus)
           .values({
             providerLocationId: locationId,
-            serviceDate: input.serviceDate,
+            serviceDate,
             status: "PUBLISHED",
             publishedAt: new Date(),
           })
@@ -284,13 +327,15 @@ export class FamilyDinnerService {
           recipeVersionId: item.recipeVersionId ?? null,
           sortOrder: item.sortOrder ?? idx,
           status: "ACTIVE" as const,
+          allowsSelfCook:
+            Boolean(item.allowsSelfCook) && isFamilyDinnerSelfCookCategory(item.category),
         })),
       );
 
       await tx.insert(familyDinnerDeliveryWindows).values(
-        input.windows.map((w) => ({
+        windows.map((w) => ({
           providerLocationId: locationId,
-          serviceDate: input.serviceDate,
+          serviceDate,
           startsAt: w.startsAt,
           endsAt: w.endsAt,
           capacity: w.capacity,
@@ -298,15 +343,23 @@ export class FamilyDinnerService {
           status: "OPEN" as const,
         })),
       );
-
-      return this.getMenu(locationId, input.serviceDate);
     });
+
+    // Không gọi getMenu trong/sau tx cho response — client tự refresh ops.
+    // Tránh lỗi phụ (settings/enabled) làm FE tưởng đăng menu thất bại.
+    return {
+      ok: true as const,
+      serviceDate,
+      status: "PUBLISHED" as const,
+      itemCount: input.items.length,
+    };
   }
 
   // ─── Phase B: provider ops ───────────────────────────────────────────────
 
   async getOps(userId: string, locationId: string, serviceDate: string) {
     await this.assertProviderStaff(userId, locationId);
+    await this.copyLastPublishedMenuIfMissing(locationId, serviceDate);
 
     const settingsRows = await this.db
       .select()
@@ -374,6 +427,10 @@ export class FamilyDinnerService {
             cutoffTime: formatTime(settings.cutoffTime),
             dailyCapacity: settings.dailyCapacity,
             procurementBufferPercent: settings.procurementBufferPercent,
+            receivingOpenedAt:
+              settings.enabled && settings.updatedAt
+                ? settings.updatedAt.toISOString()
+                : null,
           }
         : null,
       menu: menu[0]
@@ -381,6 +438,7 @@ export class FamilyDinnerService {
             id: menu[0].id,
             status: menu[0].status,
             publishedAt: menu[0].publishedAt?.toISOString() ?? null,
+            copiedFromServiceDate: menu[0].copiedFromServiceDate ?? null,
           }
         : null,
       items: items.map((i) => ({
@@ -393,6 +451,8 @@ export class FamilyDinnerService {
         recipeVersionId: i.recipeVersionId,
         status: i.status,
         sortOrder: i.sortOrder,
+        allowsSelfCook:
+          i.allowsSelfCook && isFamilyDinnerSelfCookCategory(i.category),
       })),
       windows: windows.map((w) => ({
         id: w.id,
@@ -408,6 +468,7 @@ export class FamilyDinnerService {
         byMenuItem: [...liveTotals.byMenuItem.entries()].map(([menuItemId, quantity]) => ({
           menuItemId,
           quantity,
+          selfCookQuantity: liveTotals.byMenuItemSelfCook.get(menuItemId) ?? 0,
         })),
       },
       batch: batch[0]
@@ -436,6 +497,28 @@ export class FamilyDinnerService {
   ) {
     await this.assertProviderStaff(userId, locationId);
 
+    const openingReceiving = input.enabled === true || input.cutoffTime !== undefined;
+    if (openingReceiving) {
+      const today = defaultDinnerServiceDate();
+      const menu = await this.db
+        .select({ id: familyDinnerDailyMenus.id, status: familyDinnerDailyMenus.status })
+        .from(familyDinnerDailyMenus)
+        .where(
+          and(
+            eq(familyDinnerDailyMenus.providerLocationId, locationId),
+            eq(familyDinnerDailyMenus.serviceDate, today),
+            eq(familyDinnerDailyMenus.status, "PUBLISHED"),
+          ),
+        )
+        .limit(1);
+      if (!menu[0]) {
+        throw new PickiError(
+          "FORBIDDEN",
+          "Đăng menu hôm nay trước, rồi mới mở giờ nhận đơn.",
+        );
+      }
+    }
+
     await this.db
       .insert(familyDinnerProviderSettings)
       .values({
@@ -450,7 +533,9 @@ export class FamilyDinnerService {
         target: familyDinnerProviderSettings.providerLocationId,
         set: {
           ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-          ...(input.cutoffTime !== undefined ? { cutoffTime: input.cutoffTime } : {}),
+          ...(input.cutoffTime !== undefined
+            ? { cutoffTime: input.cutoffTime, enabled: true }
+            : {}),
           ...(input.dailyCapacity !== undefined ? { dailyCapacity: input.dailyCapacity } : {}),
           ...(input.procurementBufferPercent !== undefined
             ? { procurementBufferPercent: input.procurementBufferPercent }
@@ -470,6 +555,8 @@ export class FamilyDinnerService {
       cutoffTime: formatTime(row[0]!.cutoffTime),
       dailyCapacity: row[0]!.dailyCapacity,
       procurementBufferPercent: row[0]!.procurementBufferPercent,
+      receivingOpenedAt:
+        row[0]!.enabled && row[0]!.updatedAt ? row[0]!.updatedAt.toISOString() : null,
     };
   }
 
@@ -523,7 +610,71 @@ export class FamilyDinnerService {
 
   async lockProduction(userId: string, locationId: string, serviceDate: string) {
     await this.assertProviderStaff(userId, locationId);
+    const settings = await this.db
+      .select({ cutoffTime: familyDinnerProviderSettings.cutoffTime })
+      .from(familyDinnerProviderSettings)
+      .where(eq(familyDinnerProviderSettings.providerLocationId, locationId))
+      .limit(1);
+    const cutoff = formatTime(settings[0]?.cutoffTime ?? "16:00");
+    if (!isPastCutoff(serviceDate, cutoff)) {
+      throw new PickiError(
+        "FORBIDDEN",
+        `Chỉ chốt kế hoạch nấu sau giờ nhận đơn (${cutoff}).`,
+      );
+    }
     return this.lockProductionInternal(locationId, serviceDate);
+  }
+
+  /** Provider mở lại batch để sửa/đăng menu (pilot). Không xóa đơn PAID. */
+  async unlockProduction(userId: string, locationId: string, serviceDate?: string) {
+    await this.assertProviderStaff(userId, locationId);
+    const date = serviceDate ?? defaultDinnerServiceDate();
+    const batch = await this.db
+      .select()
+      .from(familyDinnerProductionBatches)
+      .where(
+        and(
+          eq(familyDinnerProductionBatches.providerLocationId, locationId),
+          eq(familyDinnerProductionBatches.serviceDate, date),
+        ),
+      )
+      .limit(1);
+    if (!batch[0]) {
+      return { serviceDate: date, status: "PLANNING" as const, unlocked: false };
+    }
+    await this.db
+      .update(familyDinnerProductionBatches)
+      .set({
+        status: "PLANNING",
+        lockedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(familyDinnerProductionBatches.id, batch[0].id));
+
+    await this.db
+      .update(orders)
+      .set({ productionLockedAt: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(orders.providerLocationId, locationId),
+          eq(orders.serviceDate, date),
+          eq(orders.orderKind, "FAMILY_DINNER"),
+        ),
+      );
+
+    // Chốt nấu từng đóng menu → mở lại để bếp đăng/sửa được.
+    await this.db
+      .update(familyDinnerDailyMenus)
+      .set({ status: "PUBLISHED", updatedAt: new Date() })
+      .where(
+        and(
+          eq(familyDinnerDailyMenus.providerLocationId, locationId),
+          eq(familyDinnerDailyMenus.serviceDate, date),
+          eq(familyDinnerDailyMenus.status, "CLOSED"),
+        ),
+      );
+
+    return { serviceDate: date, status: "PLANNING" as const, unlocked: true };
   }
 
   /** Worker entry: lock all enabled kitchens past cutoff for today without a LOCKED batch. */
@@ -550,7 +701,8 @@ export class FamilyDinnerService {
         )
         .limit(1);
 
-      if (existing[0]?.status === "LOCKED") continue;
+      // Đã có batch hôm nay (kể cả sau khi bếp «Mở lại chốt nấu») → không auto-chốt lại.
+      if (existing[0]) continue;
 
       try {
         await this.lockProductionInternal(s.providerLocationId, today);
@@ -624,15 +776,20 @@ export class FamilyDinnerService {
 
       if (live.byMenuItem.size > 0) {
         await tx.insert(familyDinnerProductionItemTotals).values(
-          [...live.byMenuItem.entries()].map(([menuItemId, qty]) => ({
-            productionBatchId: batchId!,
-            menuItemId,
-            recipeVersionId: recipeByItem.get(menuItemId) ?? null,
-            confirmedQuantity: qty,
-            lateQuantity: 0,
-            preparedQuantity: 0,
-            remainingQuantity: qty,
-          })),
+          [...live.byMenuItem.entries()].map(([menuItemId, qty]) => {
+            const selfCook = live.byMenuItemSelfCook.get(menuItemId) ?? 0;
+            // Suất tự nấu không nằm trong kho mâm tối muộn (chỉ phần bếp nấu sẵn).
+            const remaining = Math.max(0, qty - selfCook);
+            return {
+              productionBatchId: batchId!,
+              menuItemId,
+              recipeVersionId: recipeByItem.get(menuItemId) ?? null,
+              confirmedQuantity: qty,
+              lateQuantity: 0,
+              preparedQuantity: 0,
+              remainingQuantity: remaining,
+            };
+          }),
         );
       }
 
@@ -670,11 +827,15 @@ export class FamilyDinnerService {
         status: "LOCKED" as const,
         confirmedOrders: live.orderCount,
         lockedAt: now.toISOString(),
-        itemTotals: [...live.byMenuItem.entries()].map(([menuItemId, quantity]) => ({
-          menuItemId,
-          confirmedQuantity: quantity,
-          remainingQuantity: quantity,
-        })),
+        itemTotals: [...live.byMenuItem.entries()].map(([menuItemId, quantity]) => {
+          const selfCook = live.byMenuItemSelfCook.get(menuItemId) ?? 0;
+          return {
+            menuItemId,
+            confirmedQuantity: quantity,
+            remainingQuantity: Math.max(0, quantity - selfCook),
+            selfCookQuantity: selfCook,
+          };
+        }),
       };
     });
   }
@@ -1036,6 +1197,7 @@ export class FamilyDinnerService {
     input: z.infer<typeof createLateDinnerOfferSchema>,
   ) {
     await this.assertProviderStaff(userId, locationId);
+    const serviceDate = input.serviceDate ?? defaultDinnerServiceDate();
 
     return this.db.transaction(async (tx) => {
       const batch = await tx
@@ -1044,7 +1206,7 @@ export class FamilyDinnerService {
         .where(
           and(
             eq(familyDinnerProductionBatches.providerLocationId, locationId),
-            eq(familyDinnerProductionBatches.serviceDate, input.serviceDate),
+            eq(familyDinnerProductionBatches.serviceDate, serviceDate),
             eq(familyDinnerProductionBatches.status, "LOCKED"),
           ),
         )
@@ -1107,7 +1269,7 @@ export class FamilyDinnerService {
         .insert(lateDinnerOffers)
         .values({
           providerLocationId: locationId,
-          serviceDate: input.serviceDate,
+          serviceDate,
           productionBatchId: batch[0].id,
           title: input.title,
           priceVnd: input.priceVnd,
@@ -1155,6 +1317,196 @@ export class FamilyDinnerService {
       .orderBy(desc(lateDinnerOffers.createdAt));
 
     return this.mapLateOffers(offers);
+  }
+
+  /** Provider ops — gồm cả mâm đã đóng. */
+  async listLateForProvider(userId: string, locationId: string, serviceDate: string) {
+    await this.assertProviderStaff(userId, locationId);
+    const offers = await this.db
+      .select()
+      .from(lateDinnerOffers)
+      .where(
+        and(
+          eq(lateDinnerOffers.providerLocationId, locationId),
+          eq(lateDinnerOffers.serviceDate, serviceDate),
+        ),
+      )
+      .orderBy(desc(lateDinnerOffers.createdAt));
+
+    const mapped = await this.mapLateOffers(offers);
+    const batch = await this.db
+      .select({ id: familyDinnerProductionBatches.id })
+      .from(familyDinnerProductionBatches)
+      .where(
+        and(
+          eq(familyDinnerProductionBatches.providerLocationId, locationId),
+          eq(familyDinnerProductionBatches.serviceDate, serviceDate),
+          eq(familyDinnerProductionBatches.status, "LOCKED"),
+        ),
+      )
+      .limit(1);
+
+    let maxCapacityHint: number | null = null;
+    if (batch[0]) {
+      const totals = await this.db
+        .select({
+          menuItemId: familyDinnerProductionItemTotals.menuItemId,
+          remainingQuantity: familyDinnerProductionItemTotals.remainingQuantity,
+        })
+        .from(familyDinnerProductionItemTotals)
+        .where(eq(familyDinnerProductionItemTotals.productionBatchId, batch[0].id));
+      if (totals.length > 0) {
+        maxCapacityHint = Math.max(...totals.map((t) => t.remainingQuantity), 0);
+      }
+    }
+
+    return { ...mapped, maxCapacityHint };
+  }
+
+  async closeLateOffer(userId: string, locationId: string, offerId: string) {
+    await this.assertProviderStaff(userId, locationId);
+
+    return this.db.transaction(async (tx) => {
+      const offerRows = await tx
+        .select()
+        .from(lateDinnerOffers)
+        .where(
+          and(eq(lateDinnerOffers.id, offerId), eq(lateDinnerOffers.providerLocationId, locationId)),
+        )
+        .limit(1);
+      const offer = offerRows[0];
+      if (!offer) throw new PickiError("NOT_FOUND", "Không tìm thấy mâm tối muộn");
+      if (offer.status !== "ACTIVE") {
+        return {
+          id: offer.id,
+          status: offer.status,
+          remainingCapacity: offer.remainingCapacity,
+        };
+      }
+
+      const lines = await tx
+        .select()
+        .from(lateDinnerOfferItems)
+        .where(eq(lateDinnerOfferItems.offerId, offerId));
+
+      const release = offer.remainingCapacity;
+      if (release > 0 && offer.productionBatchId) {
+        for (const line of lines) {
+          const restore = line.quantityPerTray * release;
+          await tx
+            .update(familyDinnerProductionItemTotals)
+            .set({
+              remainingQuantity: sql`${familyDinnerProductionItemTotals.remainingQuantity} + ${restore}`,
+            })
+            .where(
+              and(
+                eq(familyDinnerProductionItemTotals.productionBatchId, offer.productionBatchId),
+                eq(familyDinnerProductionItemTotals.menuItemId, line.menuItemId),
+              ),
+            );
+        }
+      }
+
+      const [updated] = await tx
+        .update(lateDinnerOffers)
+        .set({ status: "CLOSED", remainingCapacity: 0, updatedAt: new Date() })
+        .where(eq(lateDinnerOffers.id, offerId))
+        .returning();
+
+      return {
+        id: updated!.id,
+        status: updated!.status,
+        remainingCapacity: updated!.remainingCapacity,
+        releasedCapacity: release,
+      };
+    });
+  }
+
+  /**
+   * Provider «Chép menu gần nhất»:
+   * - publish=false → trả items/windows để FE đổ draft (không ghi DB menu hôm nay).
+   * - publish=true → clone + PUBLISHED như auto-copy (khi hôm nay chưa có menu).
+   */
+  async copyLastMenuForProvider(
+    userId: string,
+    locationId: string,
+    input: { serviceDate?: string; publish?: boolean },
+  ) {
+    await this.assertProviderStaff(userId, locationId);
+    const serviceDate = input.serviceDate ?? defaultDinnerServiceDate();
+
+    const last = await this.db
+      .select()
+      .from(familyDinnerDailyMenus)
+      .where(
+        and(
+          eq(familyDinnerDailyMenus.providerLocationId, locationId),
+          eq(familyDinnerDailyMenus.status, "PUBLISHED"),
+          lt(familyDinnerDailyMenus.serviceDate, serviceDate),
+        ),
+      )
+      .orderBy(desc(familyDinnerDailyMenus.serviceDate))
+      .limit(1);
+    if (!last[0]) {
+      throw new PickiError("NOT_FOUND", "Chưa có menu ngày trước để chép");
+    }
+
+    const items = await this.db
+      .select()
+      .from(familyDinnerMenuItems)
+      .where(eq(familyDinnerMenuItems.dailyMenuId, last[0].id))
+      .orderBy(asc(familyDinnerMenuItems.sortOrder), asc(familyDinnerMenuItems.name));
+
+    const windows = await this.db
+      .select()
+      .from(familyDinnerDeliveryWindows)
+      .where(
+        and(
+          eq(familyDinnerDeliveryWindows.providerLocationId, locationId),
+          eq(familyDinnerDeliveryWindows.serviceDate, last[0].serviceDate),
+        ),
+      )
+      .orderBy(asc(familyDinnerDeliveryWindows.startsAt));
+
+    const payload = {
+      sourceServiceDate: last[0].serviceDate,
+      serviceDate,
+      items: items.map((i) => ({
+        category: i.category,
+        name: i.name,
+        description: i.description,
+        priceVnd: i.priceVnd,
+        capacity: i.capacity,
+        allowsSelfCook: i.allowsSelfCook && isFamilyDinnerSelfCookCategory(i.category),
+        sortOrder: i.sortOrder,
+      })),
+      windows: windows.map((w) => ({
+        startsAt: formatTime(w.startsAt),
+        endsAt: formatTime(w.endsAt),
+        capacity: w.capacity,
+      })),
+    };
+
+    if (!input.publish) {
+      return { ...payload, published: false as const };
+    }
+
+    const today = await this.db
+      .select({ id: familyDinnerDailyMenus.id, status: familyDinnerDailyMenus.status })
+      .from(familyDinnerDailyMenus)
+      .where(
+        and(
+          eq(familyDinnerDailyMenus.providerLocationId, locationId),
+          eq(familyDinnerDailyMenus.serviceDate, serviceDate),
+        ),
+      )
+      .limit(1);
+    if (today[0]?.status === "PUBLISHED") {
+      throw new PickiError("CONFLICT", "Hôm nay đã có menu — dùng Sửa menu hoặc đăng lại");
+    }
+
+    await this.copyLastPublishedMenuIfMissing(locationId, serviceDate);
+    return { ...payload, published: true as const };
   }
 
   async listLateForZone(zoneId: string, serviceDate: string) {
@@ -1278,6 +1630,7 @@ export class FamilyDinnerService {
       );
 
     const byMenuItem = new Map<string, number>();
+    const byMenuItemSelfCook = new Map<string, number>();
     const byWindow = new Map<string, number>();
     const orderIds = paidOrders.map((o) => o.id);
 
@@ -1292,6 +1645,7 @@ export class FamilyDinnerService {
         .select({
           menuItemId: orderItems.familyDinnerMenuItemId,
           quantity: orderItems.quantity,
+          prepMode: orderItems.prepMode,
         })
         .from(orderItems)
         .where(inArray(orderItems.orderId, orderIds));
@@ -1302,10 +1656,16 @@ export class FamilyDinnerService {
           line.menuItemId,
           (byMenuItem.get(line.menuItemId) ?? 0) + line.quantity,
         );
+        if (line.prepMode === "SELF_COOK") {
+          byMenuItemSelfCook.set(
+            line.menuItemId,
+            (byMenuItemSelfCook.get(line.menuItemId) ?? 0) + line.quantity,
+          );
+        }
       }
     }
 
-    return { orderCount: paidOrders.length, orderIds, byMenuItem, byWindow };
+    return { orderCount: paidOrders.length, orderIds, byMenuItem, byMenuItemSelfCook, byWindow };
   }
 
   private async insertRecipeIngredients(
@@ -1419,6 +1779,159 @@ export class FamilyDinnerService {
       throw new PickiError("FORBIDDEN", "Chỉ nhân viên bếp mới thao tác");
     }
     return loc[0].providerId;
+  }
+
+  /**
+   * Mỗi ngày mặc định phục vụ: nếu bếp đã bật + từng có menu PUBLISHED
+   * mà hôm nay chưa có → copy menu/windows gần nhất sang ngày phục vụ hiện tại.
+   */
+  private async ensureTodayMenusForZone(zoneId: string, serviceDate: string) {
+    const kitchens = await this.db
+      .select({ locationId: familyDinnerProviderSettings.providerLocationId })
+      .from(familyDinnerProviderSettings)
+      .innerJoin(
+        providerZoneMemberships,
+        and(
+          eq(
+            providerZoneMemberships.providerLocationId,
+            familyDinnerProviderSettings.providerLocationId,
+          ),
+          eq(providerZoneMemberships.zoneId, zoneId),
+          eq(providerZoneMemberships.status, "ACTIVE"),
+        ),
+      )
+      .where(eq(familyDinnerProviderSettings.enabled, true));
+
+    for (const k of kitchens) {
+      await this.copyLastPublishedMenuIfMissing(k.locationId, serviceDate);
+    }
+  }
+
+  private async copyLastPublishedMenuIfMissing(locationId: string, serviceDate: string) {
+    const today = await this.db
+      .select({ id: familyDinnerDailyMenus.id })
+      .from(familyDinnerDailyMenus)
+      .where(
+        and(
+          eq(familyDinnerDailyMenus.providerLocationId, locationId),
+          eq(familyDinnerDailyMenus.serviceDate, serviceDate),
+          eq(familyDinnerDailyMenus.status, "PUBLISHED"),
+        ),
+      )
+      .limit(1);
+    if (today[0]) return;
+
+    const last = await this.db
+      .select()
+      .from(familyDinnerDailyMenus)
+      .where(
+        and(
+          eq(familyDinnerDailyMenus.providerLocationId, locationId),
+          eq(familyDinnerDailyMenus.status, "PUBLISHED"),
+        ),
+      )
+      .orderBy(desc(familyDinnerDailyMenus.serviceDate))
+      .limit(1);
+    if (!last[0]) return;
+
+    await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(familyDinnerDailyMenus)
+        .values({
+          providerLocationId: locationId,
+          serviceDate,
+          status: "PUBLISHED",
+          publishedAt: new Date(),
+          copiedFromServiceDate: last[0]!.serviceDate,
+        })
+        .onConflictDoNothing()
+        .returning();
+      if (!created) return;
+
+      const items = await tx
+        .select()
+        .from(familyDinnerMenuItems)
+        .where(eq(familyDinnerMenuItems.dailyMenuId, last[0]!.id));
+      if (items.length > 0) {
+        await tx.insert(familyDinnerMenuItems).values(
+          items.map((i, idx) => ({
+            dailyMenuId: created.id,
+            category: i.category,
+            name: i.name,
+            description: i.description,
+            priceVnd: i.priceVnd,
+            capacity: i.capacity,
+            remainingCapacity: i.capacity,
+            recipeVersionId: i.recipeVersionId,
+            sortOrder: i.sortOrder ?? idx,
+            status: "ACTIVE" as const,
+            allowsSelfCook: i.allowsSelfCook,
+          })),
+        );
+      }
+
+      const windows = await tx
+        .select()
+        .from(familyDinnerDeliveryWindows)
+        .where(
+          and(
+            eq(familyDinnerDeliveryWindows.providerLocationId, locationId),
+            eq(familyDinnerDeliveryWindows.serviceDate, last[0]!.serviceDate),
+          ),
+        );
+      if (windows.length > 0) {
+        await tx.insert(familyDinnerDeliveryWindows).values(
+          windows.map((w) => ({
+            providerLocationId: locationId,
+            serviceDate,
+            startsAt: w.startsAt,
+            endsAt: w.endsAt,
+            capacity: w.capacity,
+            remainingCapacity: w.capacity,
+            status: "OPEN" as const,
+          })),
+        );
+      } else {
+        await tx.insert(familyDinnerDeliveryWindows).values([
+          {
+            providerLocationId: locationId,
+            serviceDate,
+            startsAt: "17:30",
+            endsAt: "18:00",
+            capacity: 12,
+            remainingCapacity: 12,
+            status: "OPEN",
+          },
+          {
+            providerLocationId: locationId,
+            serviceDate,
+            startsAt: "18:00",
+            endsAt: "18:30",
+            capacity: 15,
+            remainingCapacity: 15,
+            status: "OPEN",
+          },
+          {
+            providerLocationId: locationId,
+            serviceDate,
+            startsAt: "18:30",
+            endsAt: "19:00",
+            capacity: 15,
+            remainingCapacity: 15,
+            status: "OPEN",
+          },
+          {
+            providerLocationId: locationId,
+            serviceDate,
+            startsAt: "19:00",
+            endsAt: "19:30",
+            capacity: 10,
+            remainingCapacity: 10,
+            status: "OPEN",
+          },
+        ]);
+      }
+    });
   }
 }
 

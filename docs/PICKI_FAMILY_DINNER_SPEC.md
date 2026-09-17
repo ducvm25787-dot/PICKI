@@ -12,8 +12,10 @@ Không phải restaurant delivery tức thì. Không combo mâm cố định do 
 
 ## Phase A (customer path)
 
-- Provider settings: `enabled`, `cutoff_time` (per location)
-- Daily menu: MAIN≤5 · SIDE≤4 · VEGETABLE≤3 · SOUP≤3 · EXTRA tùy
+- Provider: đăng menu trước → rồi mới «Mở nhận đơn tới giờ này» (cutoff 1 lần) → countdown chạy; discovery chỉ hiện bếp `enabled`
+- Daily menu: MAIN≤10 (khuyến nghị 5) · SIDE≤10 (khuyến nghị 5) · VEGETABLE≤5 (khuyến nghị 3) · SOUP≤5 (khuyến nghị 3) · RICE≤5 (khuyến nghị 2) · EXTRA tùy
+- Khách chọn ≥1 MAIN/SIDE/VEGETABLE/SOUP; Cơm tuỳ chọn (mua hoặc tự nấu)
+- Prep mode: mặc định **Nấu sẵn**; provider tick cho phép **Tự nấu** (MAIN/SIDE/VEGETABLE/SOUP); **cùng giá** V1
 - Delivery windows + capacity
 - Meal builder ≥1 mỗi nhóm bắt buộc; không min VND
 - `orders.order_kind = FAMILY_DINNER` + `service_date` + `delivery_window_id`
@@ -56,17 +58,26 @@ Không phải restaurant delivery tức thì. Không combo mâm cố định do 
 | Cancel | Block khi `production_locked_at` |
 | Recipe | Deterministic; không LLM |
 
-## Seed / migrate
+## Buffer mua sáng % (Phase C — ẩn trên UI provider)
+
+Chỉ dùng khi bếp bật procurement: % nguyên liệu mua sớm trước cutoff (vd 60% forecast).
+Pilot không cần — đã ẩn khỏi tab Bữa tối. Giữ cột DB cho Phase C nâng cao.
 
 ```bash
-# migration 0042 + 0043
+# migration 0042–0045
 pnpm --filter @picki/db migrate   # or project migrate script
 bash scripts/db-seed-family-dinner.sh
+# Demo menu + receiving: FD_SEED_DEMO=1 bash scripts/db-seed-family-dinner.sh
+
+# API E2E (cook-first PREPAY + runner sau READY)
+pnpm pilot:family-dinner:e2e
+# Checklist UI: docs/pilot/FAMILY_DINNER_E2E_CHECKLIST.md
 ```
 
 ## Out of V1 lean
 
 - AI forecast / menu suggestion
 - Advanced route solver mới (reuse Route/Lobby hiện có)
-- Copy-yesterday UX sâu / ranking “bếp hay dùng”
-- Packaging fee / platform discount
+- Ranking “bếp hay dùng” / packaging fee / platform discount
+
+**Polish (post A–D, không phase mới):** late dinner ETA + đóng mâm + max capacity; kế hoạch nấu tách nấu sẵn/tự nấu + theo khung; «Chép menu gần nhất» + banner auto-copy.

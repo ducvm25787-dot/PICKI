@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../../../lib/api";
 import { formatVnd } from "../../../lib/money";
 import { NotificationBell } from "../../components/notification-bell";
@@ -12,6 +12,7 @@ type LateOffer = {
   title: string;
   priceVnd: number;
   remainingCapacity: number;
+  capacity: number;
   etaMinutes: number;
   available: boolean;
   serviceDate: string;
@@ -40,6 +41,18 @@ export default function LateDinnerCheckoutPage() {
     totalVnd: number;
   } | null>(null);
 
+  const reloadOffer = useCallback(async () => {
+    if (!locationId) return;
+    const late = await api<{ offers: LateOffer[] }>(
+      `/locations/${locationId}/family-dinner/late`,
+    );
+    const found = late.offers.find((o) => o.id === offerId) ?? null;
+    setOffer(found);
+    if (found && qty > found.remainingCapacity) {
+      setQty(Math.max(1, found.remainingCapacity));
+    }
+  }, [locationId, offerId, qty]);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -48,15 +61,7 @@ export default function LateDinnerCheckoutPage() {
           setError("Thiếu locationId");
           return;
         }
-        const late = await api<{ offers: LateOffer[] }>(
-          `/locations/${locationId}/family-dinner/late`,
-        );
-        const found = late.offers.find((o) => o.id === offerId) ?? null;
-        if (!found) {
-          setError("Mâm tối muộn không còn");
-          return;
-        }
-        setOffer(found);
+        await reloadOffer();
         const addrs = await api<{ addresses: Address[] }>("/addresses");
         setAddresses(addrs.addresses);
         if (addrs.addresses[0]) setAddressId(addrs.addresses[0].id);
@@ -81,10 +86,15 @@ export default function LateDinnerCheckoutPage() {
         setError(e instanceof Error ? e.message : "Không tải được");
       }
     })();
-  }, [offerId, locationId, zoneId]);
+  }, [offerId, locationId, zoneId, reloadOffer]);
 
   async function checkout() {
     if (!offer || !zoneId || !locationId || !addressId) return;
+    if (offer.remainingCapacity < qty) {
+      setError("Không đủ suất còn lại");
+      await reloadOffer();
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -101,9 +111,11 @@ export default function LateDinnerCheckoutPage() {
           items: [{ quantity: qty }],
         }),
       });
-      router.push(`/orders/${order.id}`);
+      // Suất đã giữ chỗ khi tạo đơn; thanh toán trên trang đơn.
+      router.push(`/orders/${order.id}?pay=1`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Đặt thất bại");
+      await reloadOffer();
     } finally {
       setSubmitting(false);
     }
@@ -126,13 +138,28 @@ export default function LateDinnerCheckoutPage() {
       {offer ? (
         <div className="card">
           <h2 style={{ marginTop: 0 }}>{offer.title}</h2>
-          <p className="stat">
-            {formatVnd(offer.priceVnd)} · còn {offer.remainingCapacity} · ~{offer.etaMinutes} phút
+          <p style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700 }}>
+            {formatVnd(offer.priceVnd)}
+            <span className="muted" style={{ fontWeight: 500, fontSize: 14 }}>
+              {" "}
+              / mâm
+            </span>
           </p>
-          <ul>
+          <p className="stat" style={{ margin: 0 }}>
+            Còn{" "}
+            <strong>
+              {offer.remainingCapacity}/{offer.capacity}
+            </strong>{" "}
+            suất · giao khoảng <strong>~{offer.etaMinutes} phút</strong> sau khi thanh toán
+          </p>
+          <p className="section-title" style={{ marginTop: 16 }}>
+            Trong mâm
+          </p>
+          <ul style={{ marginTop: 0 }}>
             {offer.items.map((i) => (
               <li key={i.name}>
-                {i.name} ×{i.quantityPerTray}
+                {i.name}
+                {i.quantityPerTray > 1 ? ` ×${i.quantityPerTray}` : ""}
               </li>
             ))}
           </ul>
@@ -141,7 +168,7 @@ export default function LateDinnerCheckoutPage() {
             <input
               type="number"
               min={1}
-              max={offer.remainingCapacity}
+              max={Math.max(1, offer.remainingCapacity)}
               value={qty}
               onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
             />
@@ -158,17 +185,23 @@ export default function LateDinnerCheckoutPage() {
           </label>
           {quote ? (
             <p className="stat" style={{ marginTop: 12 }}>
-              Tạm tính 1 mâm: {formatVnd(quote.totalVnd)} (gồm ship)
+              1 mâm ≈ {formatVnd(quote.totalVnd)} (gồm ship) · {qty} mâm ≈{" "}
+              {formatVnd(offer.priceVnd * qty + quote.deliveryFeeVnd)}
             </p>
           ) : null}
+          <p className="muted" style={{ fontSize: 12 }}>
+            Đặt xong sẽ giữ suất; thanh toán xong suất trừ khỏi app. Hủy trước khi thanh toán hoàn suất.
+          </p>
           <button
             type="button"
             className="btn"
             style={{ marginTop: 16 }}
-            disabled={submitting || !addressId}
+            disabled={submitting || !addressId || offer.remainingCapacity < 1}
             onClick={() => void checkout()}
           >
-            {submitting ? "Đang đặt…" : `Thanh toán trước · ${formatVnd(offer.priceVnd * qty)}`}
+            {submitting
+              ? "Đang đặt…"
+              : `Đặt & thanh toán · ${formatVnd(offer.priceVnd * qty)}`}
           </button>
         </div>
       ) : !error ? (

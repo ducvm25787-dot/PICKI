@@ -13,8 +13,14 @@ export const metadata: Metadata = {
     title: "Picki Provider",
   },
   icons: {
-    icon: [{ url: "/icons/icon-provider.svg", type: "image/svg+xml" }],
-    apple: [{ url: "/icons/icon-provider.svg", type: "image/svg+xml" }],
+    icon: [
+      { url: "/icons/icon-provider-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icons/icon-provider-512.png", type: "image/png", sizes: "512x512" },
+      { url: "/icons/icon-provider.svg", type: "image/svg+xml" },
+    ],
+    apple: [
+      { url: "/icons/apple-touch-icon-provider.png", type: "image/png", sizes: "180x180" },
+    ],
   },
   manifest: "/provider/manifest.webmanifest",
 };

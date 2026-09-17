@@ -73,9 +73,30 @@ elif cmd == "first_pending_stop":
     if not route:
         sys.exit(0)
     for s in route.get("stops") or []:
-        if s.get("status") == "PENDING":
+        if s.get("status") in ("PENDING", "ARRIVED"):
             print(s["id"])
             break
+elif cmd == "pending_stop_type":
+    route = d.get("route")
+    if not route:
+        sys.exit(0)
+    for s in route.get("stops") or []:
+        if s.get("status") in ("PENDING", "ARRIVED"):
+            print(s.get("stopType") or "")
+            break
+elif cmd == "pending_stop_status":
+    route = d.get("route")
+    if not route:
+        sys.exit(0)
+    for s in route.get("stops") or []:
+        if s.get("status") in ("PENDING", "ARRIVED"):
+            print(s.get("status") or "")
+            break
+elif cmd == "lobby_order_ids":
+    for h in d.get("handoffs") or []:
+        oid = h.get("orderId")
+        if oid and h.get("customerStatus") in (None, "WAITING", "waiting"):
+            print(oid)
 elif cmd == "len_orders":
     print(len(d.get("orders", [])))
 elif cmd == "len_pool":
@@ -180,14 +201,29 @@ runner_pool_has_order() {
 complete_all_pending_stops() {
   local run_jar="$COOKIE_DIR/runner.cookies"
   local n=0
-  while [ "$n" -lt 10 ]; do
-    local route_resp stop_id
+  while [ "$n" -lt 12 ]; do
+    local route_resp stop_id stop_type stop_status
     route_resp="$(api GET "/runner/route/active" "" "$run_jar")"
     stop_id="$(echo "$route_resp" | py first_pending_stop)"
     if [ -z "$stop_id" ] || [ "$stop_id" = "None" ]; then
       break
     fi
-    log "Runner complete stop $stop_id"
+    stop_type="$(echo "$route_resp" | py pending_stop_type)"
+    stop_status="$(echo "$route_resp" | py pending_stop_status)"
+    log "Runner complete stop $stop_id ($stop_type · $stop_status)"
+    if [ "$stop_type" = "LOBBY_DROPOFF" ] || [ "$stop_type" = "PICKI_POINT" ]; then
+      if [ "$stop_status" = "PENDING" ]; then
+        api PATCH "/runner/route/stops/$stop_id/arrive" "{}" "$run_jar" >/dev/null
+      fi
+      local lobby handoff_ids oid
+      lobby="$(api GET "/runner/route/stops/$stop_id/lobby" "" "$run_jar")"
+      handoff_ids="$(echo "$lobby" | py lobby_order_ids)"
+      while IFS= read -r oid; do
+        [ -z "$oid" ] && continue
+        log "Lobby handoff received · $oid"
+        api PATCH "/runner/route/stops/$stop_id/lobby/$oid" '{"action":"received"}' "$run_jar" >/dev/null || true
+      done <<< "$handoff_ids"
+    fi
     api PATCH "/runner/route/stops/$stop_id" '{}' "$run_jar" >/dev/null
     n=$((n + 1))
   done
@@ -238,6 +274,8 @@ run_laundry_flow() {
 
   log "Runner accept return leg"
   api PATCH "/runner/presence" '{"status":"AVAILABLE"}' "$run_jar" >/dev/null
+  # Clear stale lobby stops from prior failed runs before claiming.
+  complete_all_pending_stops || true
   api PATCH "/runner/orders/$order_id" '{"action":"accept"}' "$run_jar" >/dev/null
   st="$(order_status "$order_id")"
   [ "$st" = "RETURN_RUNNER_ASSIGNED" ] || fail "Expected RETURN_RUNNER_ASSIGNED, got $st"
@@ -246,8 +284,9 @@ run_laundry_flow() {
   complete_all_pending_stops
 
   st="$(order_status "$order_id")"
-  [ "$st" = "COMPLETED" ] || fail "Expected COMPLETED, got $st"
-  ok "Laundry order $order_id completed (return leg)"
+  # Lobby receive → DELIVERED; laundry return drop may land COMPLETED.
+  [ "$st" = "COMPLETED" ] || [ "$st" = "DELIVERED" ] || fail "Expected COMPLETED/DELIVERED, got $st"
+  ok "Laundry order $order_id completed (return leg · $st)"
 }
 
 main() {
