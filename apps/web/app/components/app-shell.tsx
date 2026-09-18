@@ -9,7 +9,7 @@ import { RunnerNav } from "./runner-nav";
 
 function isCustomerRoute(path: string): boolean {
   if (path.startsWith("/provider") || path.startsWith("/runner") || path.startsWith("/admin")) return false;
-  if (path === "/login" || path === "/offline") return false;
+  if (path === "/login" || path === "/offline" || path === "/navigate") return false;
   return true;
 }
 
@@ -44,6 +44,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (showProviderChrome) mainClass += " provider-app";
   if (showRunnerChrome) mainClass += " runner-app";
   if (showAdminChrome) mainClass += " admin-app";
+  if (pathname.match(/^\/admin\/zones\/[^/]+$/)) mainClass += " admin-workspace-route";
+  if (pathname === "/navigate") mainClass += " navigate-route";
 
   const enablePush =
     showCustomerChrome || showProviderChrome || showRunnerChrome;
@@ -55,14 +57,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {showProviderChrome ? (
         <PwaInstallHint
           storageKey="picki-provider-pwa-dismiss"
-          message="Cài Picki Provider lên màn hình chính để nhận đơn nhanh hơn."
+          message="Cài Pickee Provider lên màn hình chính để nhận đơn nhanh hơn."
           variant="provider"
         />
       ) : null}
       {showRunnerChrome ? (
         <PwaInstallHint
           storageKey="picki-runner-pwa-dismiss"
-          message="Cài Picki Runner lên màn hình chính để giao hàng nhanh hơn."
+          message="Cài Pickee Runner lên màn hình chính để giao hàng nhanh hơn."
           variant="runner"
         />
       ) : null}

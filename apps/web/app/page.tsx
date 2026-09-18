@@ -125,7 +125,7 @@ export default function HomePage() {
   if (loading) {
     return (
       <div className="container">
-        <p className="tagline">Đang tải Picki…</p>
+        <p className="tagline">Đang tải Pickee…</p>
       </div>
     );
   }
@@ -145,7 +145,7 @@ export default function HomePage() {
   return (
     <div className="container">
       <div className="header-row">
-        <BrandMark subtitle="Hôm nay quanh bạn có gì?" />
+        <BrandMark subtitle="Tiện ích quanh tôi" />
         <NotificationBell audience="customer" />
       </div>
 
@@ -323,7 +323,7 @@ export default function HomePage() {
       <div className="card">
         <p className="stat">Xin chào{me?.displayName ? `, ${me.displayName}` : ""}!</p>
         <p className="stat" style={{ marginTop: 8 }}>
-          Dùng thanh tab bên dưới · cài Picki lên màn hình chính (Add to Home Screen).
+          Dùng thanh tab bên dưới · cài Pickee lên màn hình chính (Add to Home Screen).
         </p>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
           <Link href="/provider/login" className="stat">

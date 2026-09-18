@@ -15,6 +15,8 @@ type SearchResult = {
   liveStatus: string;
   offeringName: string | null;
   amountVnd: number | null;
+  lat?: number | null;
+  lng?: number | null;
 };
 
 export default function ZoneSearchPage() {
@@ -68,24 +70,37 @@ export default function ZoneSearchPage() {
         <div className="card" style={{ marginTop: 16 }}>
           <p className="section-title">{results.length} kết quả</p>
           {results.map((r, idx) => (
-            <Link
+            <div
               key={`${r.kind}-${r.locationId}-${String(idx)}`}
-              href={`/locations/${r.locationId}`}
               className="provider-card"
-              style={{ display: "block", marginBottom: 10, textDecoration: "none", color: "inherit" }}
+              style={{ marginBottom: 10 }}
             >
-              <strong>{r.brandName}</strong> · {liveStatusLabel(r.liveStatus)}
-              {r.kind === "offering" && r.offeringName ? (
-                <p style={{ margin: "4px 0 0" }}>
-                  {r.offeringName}
-                  {r.amountVnd != null ? ` · ${formatVnd(r.amountVnd)}` : ""}
-                </p>
-              ) : (
-                <p className="stat" style={{ margin: "4px 0 0" }}>
-                  {r.displayName}
-                </p>
-              )}
-            </Link>
+              <Link
+                href={`/locations/${r.locationId}`}
+                style={{ textDecoration: "none", color: "inherit" }}
+              >
+                <strong>{r.brandName}</strong> · {liveStatusLabel(r.liveStatus)}
+                {r.kind === "offering" && r.offeringName ? (
+                  <p style={{ margin: "4px 0 0" }}>
+                    {r.offeringName}
+                    {r.amountVnd != null ? ` · ${formatVnd(r.amountVnd)}` : ""}
+                  </p>
+                ) : (
+                  <p className="stat" style={{ margin: "4px 0 0" }}>
+                    {r.displayName}
+                  </p>
+                )}
+              </Link>
+              {r.lat != null && r.lng != null ? (
+                <Link
+                  href={`/zones/${params.slug}/map?locationId=${r.locationId}`}
+                  className="order-phone-link"
+                  style={{ marginTop: 8, display: "inline-flex" }}
+                >
+                  Xem trên bản đồ
+                </Link>
+              ) : null}
+            </div>
           ))}
         </div>
       )}

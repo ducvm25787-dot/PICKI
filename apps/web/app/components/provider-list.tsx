@@ -8,6 +8,7 @@ import {
   isHealthVertical,
   isMarketVertical,
   isPharmacyVertical,
+  isTransportVertical,
   isPetVertical,
   liveStatusClass,
   liveStatusLabel,
@@ -108,6 +109,8 @@ export function ProviderList({
                     ? "Xem nhà thuốc →"
                     : isMarketVertical(p.providerType)
                       ? "Xem cửa hàng →"
+                      : isTransportVertical(p.providerType)
+                        ? "Xem nhà xe →"
                       : isHealthVertical(p.providerType)
                         ? "Xem phòng khám →"
                         : isBeautyVertical(p.providerType) || isPetVertical(p.providerType)

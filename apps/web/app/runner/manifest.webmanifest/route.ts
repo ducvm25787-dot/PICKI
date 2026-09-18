@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 
 const runnerManifest = {
-  name: "Picki Runner — Giao hàng Zone",
+  name: "Pickee Runner — Giao hàng Zone",
   short_name: "Runner",
   description: "Nhận giao, route stops, lobby handoff — pilot Kim Văn Kim Lũ",
   start_url: "/runner",
   scope: "/runner",
   display: "standalone",
   orientation: "portrait",
-  background_color: "#f7f5f2",
+  background_color: "#f3f0ea",
   theme_color: "#1d4ed8",
   lang: "vi",
   categories: ["business", "navigation"],

@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   RunnerPageShell,
   lobbyStatusLabel,
   useRunnerSession,
   type RunnerOrder,
 } from "../../../components/runner-session-context";
+import { PickeeMap, type MapMarker } from "../../../components/pickee-map";
 import { api } from "../../../../lib/api";
+import { getCurrentPositionOnce, type GeoPosition } from "../../../../lib/geolocation";
+import { pickeeNavigateHref } from "../../../../lib/maps";
 
 function pickupBlockReason(mine: RunnerOrder[]): string | null {
   const active = mine.filter(
@@ -26,6 +29,7 @@ function pickupBlockReason(mine: RunnerOrder[]): string | null {
 export default function RunnerRoutePage() {
   const { route, mine, refresh } = useRunnerSession();
   const [actionError, setActionError] = useState<string | null>(null);
+  const [origin, setOrigin] = useState<GeoPosition | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -33,6 +37,12 @@ export default function RunnerRoutePage() {
     }, 15000);
     return () => window.clearInterval(timer);
   }, [refresh]);
+
+  useEffect(() => {
+    void getCurrentPositionOnce({ timeoutMs: 8000 }).then((r) => {
+      if (r.source === "gps") setOrigin(r.position);
+    });
+  }, []);
 
   async function completeStop(stopId: string) {
     setActionError(null);
@@ -71,8 +81,50 @@ export default function RunnerRoutePage() {
   const pickupBlocked =
     nextStop?.stopType === "PICKUP" ? pickupBlockReason(mine) : null;
 
+  const mapMarkers: MapMarker[] = useMemo(() => {
+    if (!route) return [];
+    const list: MapMarker[] = [];
+    if (origin) {
+      list.push({
+        id: "runner-here",
+        lat: origin.lat,
+        lng: origin.lng,
+        label: "Bạn",
+        kind: "user",
+      });
+    }
+    for (const s of route.stops) {
+      if (s.lat == null || s.lng == null) continue;
+      list.push({
+        id: s.id,
+        lat: s.lat,
+        lng: s.lng,
+        label: s.label,
+        kind: "stop",
+        sequence: s.sequence,
+      });
+    }
+    return list;
+  }, [route, origin]);
+
+  const mapCenter = useMemo(() => {
+    if (origin) return origin;
+    const first = route?.stops.find((s) => s.lat != null && s.lng != null);
+    if (first?.lat != null && first.lng != null) return { lat: first.lat, lng: first.lng };
+    return { lat: 20.9883, lng: 105.8414 };
+  }, [origin, route]);
+
   return (
     <RunnerPageShell title="Tiến trình giao hàng">
+      {route && route.stops.length > 0 && mapMarkers.length > 0 ? (
+        <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
+          <PickeeMap center={mapCenter} markers={mapMarkers} height={280} />
+          <p className="stat" style={{ margin: 0, padding: "8px 12px" }}>
+            Điểm dừng trên bản đồ · Chỉ đường trong Pickee (Bắt đầu) — GPS chỉ khi đang dẫn đường
+          </p>
+        </div>
+      ) : null}
+
       <div className="card">
         {!route || route.stops.length === 0 ? (
           <p className="stat">Chưa có tiến trình active. Nhận đơn ở tab Đơn.</p>
@@ -106,6 +158,22 @@ export default function RunnerRoutePage() {
                         ? "Đã đến sảnh"
                         : "Chờ"}
                 </p>
+                {s.lat != null && s.lng != null ? (
+                  <a
+                    className="order-phone-link"
+                    style={{ marginTop: 6, display: "inline-flex" }}
+                    href={pickeeNavigateHref({
+                      destLat: s.lat,
+                      destLng: s.lng,
+                      label: s.label,
+                      originLat: origin?.lat,
+                      originLng: origin?.lng,
+                      mode: "scooter",
+                    })}
+                  >
+                    Chỉ đường tới điểm này
+                  </a>
+                ) : null}
                 {s.handoffs?.map((h) => (
                   <div key={h.orderId} style={{ marginTop: 8, fontSize: 14 }}>
                     <strong>{h.orderNumber}</strong> · {h.apartment ?? "—"} ·{" "}

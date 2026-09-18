@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 
 const providerManifest = {
-  name: "Picki Provider — Quản lý quán",
+  name: "Pickee Provider — Quản lý quán",
   short_name: "Provider",
   description: "Nhận đơn, cập nhật trạng thái quán — pilot Kim Văn Kim Lũ",
   start_url: "/provider",
   scope: "/provider",
   display: "standalone",
   orientation: "portrait",
-  background_color: "#f7f5f2",
+  background_color: "#f3f0ea",
   theme_color: "#2d6a4f",
   lang: "vi",
   categories: ["business", "food"],

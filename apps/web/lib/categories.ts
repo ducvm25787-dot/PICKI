@@ -1,4 +1,4 @@
-/** 9 danh mục lớn — Home «TIỆN ÍCH QUANH NHÀ» + browse filter. */
+/** 10 danh mục lớn — Home «TIỆN ÍCH QUANH NHÀ» + browse filter. */
 
 export type HomeCategoryId =
   | "food"
@@ -9,7 +9,8 @@ export type HomeCategoryId =
   | "education"
   | "pet"
   | "health"
-  | "sports";
+  | "sports"
+  | "transport";
 
 export type HomeCategory = {
   id: HomeCategoryId;
@@ -130,6 +131,20 @@ export const HOME_CATEGORIES: HomeCategory[] = [
     subs: ["Pickleball", "Bóng đá", "Cầu lông", "Tennis", "Đặt sân", "Khung giờ"],
     providerTypes: ["SPORTS_FACILITY"],
   },
+  {
+    id: "transport",
+    emoji: "🚗",
+    label: "Xe đưa đón",
+    shortLabel: "Đưa đón",
+    subs: [
+      "Sân bay",
+      "Về quê",
+      "Du lịch / liên tỉnh",
+      "Đưa đón học sinh",
+      "Thuê xe có tài xế",
+    ],
+    providerTypes: ["TRANSPORT_PROVIDER"],
+  },
 ];
 
 export function getHomeCategory(id: string): HomeCategory | undefined {
@@ -169,6 +184,8 @@ export function browseHrefForDiscoveryBlock(
       return `/zones/${zoneSlug}/browse/market`;
     case "sports":
       return `/zones/${zoneSlug}/browse/sports`;
+    case "transport":
+      return `/zones/${zoneSlug}/browse/transport`;
     case "lunch":
       return `/zones/${zoneSlug}/browse/food`;
     default:

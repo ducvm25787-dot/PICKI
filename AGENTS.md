@@ -14,7 +14,11 @@ Master Spec wins on conflict. Implement **the current sprint only**.
 
 **S32 Education + Pet:** service requests cho học thử (`ONLINE`/`CUSTOMER_VISIT`) và dịch vụ pet tại nhà; seed `bash scripts/db-seed-education.sh`, `bash scripts/db-seed-pet.sh`. **S33 Classified + Give Away (GÓC KHU MÌNH):** tin thanh lý/cho tặng trong Zone + giữ chỗ + chat + ảnh (nén client, tối đa 3 ảnh < 300KB); seed `bash scripts/db-seed-classified.sh`. **S34 Auto Service:** rửa xe/bơm lốp dùng queue (`CUSTOMER_VISIT`), thay dầu/sửa chữa dùng `CONTACT_ONLY`; seed `bash scripts/db-seed-auto.sh`. **S35 Đặt sân:** service request kèm khung giờ mong muốn — không có booking engine/lịch sân (quyết định giữ lean); seed `bash scripts/db-seed-sports.sh`.
 
-**Current — S43 Góc ăn khuya / Bán khuya (ADR-048):** opt-in `late_night_provider_settings` + discovery `/late-night`. Seed `bash scripts/db-seed-late-night.sh` (cần breakfast seed trước) — Phở Gà `0908888015` bán đến 02:00. Scope: `docs/PICKI_LATE_NIGHT_SPEC.md`.
+**Current — Map Phase 2 (ADR-053):** Chỉ đường **trong Pickee** `/navigate` — OSRM + mode **Đi bộ / Xe máy / Xe đạp** (gợi ý ≤900m → đi bộ) + **Bắt đầu** / Dừng; `watchPosition` chỉ khi đang dẫn đường. Google Maps = fallback. Runner mặc định xe máy. Admin Zone Setup (ADR-052) vẫn dùng cho polygon/pin.
+
+**S44 Xe đưa đón (ADR-049):** `TRANSPORT_PROVIDER` = `LISTING` + `LIVE_STATUS` + `CONTACT` — discovery **XE ĐƯA ĐÓN** + browse `/zones/:slug/browse/transport`. Seed `bash scripts/db-seed-transport.sh` — demo **Xe Kim Văn** (`xe-kim-van`), login `0908888016`. Scope: `docs/S44_TRANSPORT.md`.
+
+**S43 Góc ăn khuya / Bán khuya (ADR-048):** opt-in `late_night_provider_settings` + discovery `/late-night`. Seed `bash scripts/db-seed-late-night.sh` (cần breakfast seed trước) — Phở Gà `0908888015` bán đến 02:00. Scope: `docs/PICKI_LATE_NIGHT_SPEC.md`.
 
 **S42 Breakfast Preorder Phase 1 (ADR-047):** Sáng mai ăn gì? — lean FD-like preorder (READY_COOKED only, PREPAY, cutoff tối hôm trước, slot 15 phút). Seed `bash scripts/db-seed-breakfast.sh` — **Phở Gà Kim Văn** (`pho-ga-kim-van`), login `0908888015`. Scope: `docs/PICKI_BREAKFAST_PREORDER_SPEC.md`.
 
@@ -30,7 +34,7 @@ Master Spec wins on conflict. Implement **the current sprint only**.
 
 **S36 Phòng khám (Health):** visit intent + nhắc tái khám nhẹ. Seed `npm run db:seed:health`. Demo phòng khám `0908888009`–`011`.
 
-**Demo accounts (seed:ops):** Food `0908888001` · Laundry `0908888004` · Home `0908888005` · Beauty `0908888006` · Auto `0908888007` · Sports `0908888008` · Phòng khám `0908888009`–`011` · Nhà thuốc `0908888012` · Tạp hóa `0908888013` · Bếp tối `0908888014` · Phở sáng `0908888015` · Runner `0908888002` · Admin `0908888003` · Customer `0901234567`
+**Demo accounts (seed:ops):** Food `0908888001` · Laundry `0908888004` · Home `0908888005` · Beauty `0908888006` · Auto `0908888007` · Sports `0908888008` · Phòng khám `0908888009`–`011` · Nhà thuốc `0908888012` · Tạp hóa `0908888013` · Bếp tối `0908888014` · Phở sáng `0908888015` · Xe đưa đón `0908888016` · Runner `0908888002` · Admin `0908888003` · Customer `0901234567` · **Geo pins:** `bash scripts/db-seed-geo-pins.sh` (provider lat/lng + customer address coords)
 
 **Pilot Zone 1:** Kim Văn – Kim Lũ (`kim-van-kim-lu`) — see `docs/pilot/KIM_VAN_KIM_LU.md`. **E2E:** `pnpm pilot:e2e` · laundry `pnpm pilot:laundry:e2e` · FD `pnpm pilot:family-dinner:e2e`. **Pilot harden + PWA icons:** `docs/pilot/PILOT_HARDEN_CHECKLIST.md` · `bash scripts/generate-pwa-icons.sh`. **Visual V1:** `docs/pilot/VISUAL_V1.md`.
 

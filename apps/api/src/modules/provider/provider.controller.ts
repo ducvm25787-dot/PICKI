@@ -2,7 +2,7 @@ import { Body, Controller, Get, Inject, Param, Patch, Query, UseGuards } from "@
 import { PickiError } from "@picki/shared";
 import { CurrentUserId } from "../auth/current-user.decorator.js";
 import { SessionAuthGuard } from "../auth/session-auth.guard.js";
-import { providerOrderActionSchema, updateLiveStatusSchema } from "./dto.js";
+import { providerOrderActionSchema, updateLiveStatusSchema, updateProviderProfileSchema } from "./dto.js";
 import { ProviderService } from "./provider.service.js";
 
 @Controller("provider")
@@ -13,6 +13,29 @@ export class ProviderController {
   @Get("locations/mine")
   async myLocations(@CurrentUserId() userId: string) {
     return this.providerService.listMyLocations(userId);
+  }
+
+  @Get("locations/:locationId/profile")
+  async getProfile(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+  ) {
+    return this.providerService.getProfile(userId, locationId);
+  }
+
+  @Patch("locations/:locationId/profile")
+  async updateProfile(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = updateProviderProfileSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Invalid profile", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.providerService.updateProfile(userId, locationId, parsed.data);
   }
 
   @Get("orders")

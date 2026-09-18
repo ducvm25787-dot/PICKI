@@ -2,14 +2,14 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Picki — Hôm nay quanh bạn có gì?",
-    short_name: "Picki",
-    description: "Đặt món, giao hàng quanh Zone — Kim Văn Kim Lũ pilot",
+    name: "Pickee — Tiện ích quanh tôi",
+    short_name: "Pickee",
+    description: "Tiện ích quanh tôi — đặt món, dịch vụ quanh Zone · Kim Văn Kim Lũ pilot",
     start_url: "/",
     scope: "/",
     display: "standalone",
     orientation: "portrait",
-    background_color: "#f7f5f2",
+    background_color: "#f3f0ea",
     theme_color: "#e85d04",
     lang: "vi",
     categories: ["food", "shopping", "lifestyle"],

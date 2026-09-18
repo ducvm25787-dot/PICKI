@@ -35,3 +35,13 @@ export const updateLiveStatusSchema = z.object({
   message: z.string().max(200).optional(),
   estimatedWaitMinutes: z.number().int().min(0).max(240).optional(),
 });
+
+export const updateProviderProfileSchema = z.object({
+  tagline: z.string().trim().max(160).optional(),
+  description: z.string().trim().max(2000).optional(),
+  logoUrl: z.string().max(500).optional(),
+  coverUrl: z.string().max(500).optional(),
+  addressLine: z.string().trim().max(300).optional(),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+});

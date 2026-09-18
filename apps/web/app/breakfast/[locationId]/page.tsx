@@ -7,6 +7,8 @@ import { api } from "../../../lib/api";
 import { formatAddressLine, type SavedAddress } from "../../../lib/addresses";
 import { formatVnd } from "../../../lib/money";
 import { NotificationBell } from "../../components/notification-bell";
+import { LocationContactActions } from "../../components/location-contact-actions";
+import { PickeeMap } from "../../components/pickee-map";
 
 type MenuItem = {
   id: string;
@@ -29,6 +31,9 @@ type WindowRow = {
 type MenuResponse = {
   brandName: string;
   displayName: string;
+  addressLine?: string | null;
+  lat?: number | null;
+  lng?: number | null;
   serviceDate: string;
   cutoffTime: string;
   openFromTime?: string;
@@ -218,6 +223,35 @@ export default function BreakfastOrderPage() {
         </div>
       ) : null}
 
+      {menu.lat != null && menu.lng != null ? (
+        <div className="card" style={{ marginBottom: 12, padding: 0, overflow: "hidden" }}>
+          <PickeeMap
+            center={{ lat: menu.lat, lng: menu.lng }}
+            markers={[
+              {
+                id: locationId,
+                lat: menu.lat,
+                lng: menu.lng,
+                label: menu.brandName,
+                kind: "provider",
+              },
+            ]}
+            height={180}
+            zoom={17}
+          />
+          <div style={{ padding: 12 }}>
+            {menu.addressLine ? <p style={{ margin: "0 0 8px" }}>{menu.addressLine}</p> : null}
+            <LocationContactActions
+              providerPhone={null}
+              providerLabel={menu.brandName}
+              lat={menu.lat}
+              lng={menu.lng}
+              addressLine={menu.addressLine}
+            />
+          </div>
+        </div>
+      ) : null}
+
       {error ? (
         <div className="card" style={{ marginBottom: 12 }}>
           <p style={{ margin: 0, color: "var(--danger, #b91c1c)" }}>{error}</p>
@@ -298,7 +332,7 @@ export default function BreakfastOrderPage() {
             Món {formatVnd(quote.subtotalVnd)} · Ship {formatVnd(quote.deliveryFeeVnd)}
           </p>
           <p style={{ margin: "8px 0 0", fontWeight: 700 }}>
-            Tổng {formatVnd(quote.totalVnd)} · thanh toán trên Picki
+            Tổng {formatVnd(quote.totalVnd)} · thanh toán trên Pickee
           </p>
         </div>
       ) : null}

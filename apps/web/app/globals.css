@@ -112,7 +112,35 @@ body {
   display: inline-flex;
   color: var(--role-accent);
   flex-shrink: 0;
-  filter: drop-shadow(0 4px 10px rgba(232, 93, 4, 0.25));
+  filter: drop-shadow(0 4px 10px rgba(232, 93, 4, 0.22));
+}
+
+.brand-mark-icon img {
+  display: block;
+}
+
+.brand-mark-symbol--provider {
+  filter: grayscale(1) sepia(1) hue-rotate(90deg) saturate(2.2) brightness(0.75);
+}
+
+.brand-mark-symbol--runner {
+  filter: grayscale(1) sepia(1) hue-rotate(180deg) saturate(2.4) brightness(0.85);
+}
+
+.brand-mark-symbol--admin {
+  filter: grayscale(1) brightness(0.55);
+}
+
+.logo--pickee {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-transform: lowercase;
+  background: linear-gradient(90deg, #ff8a1f 0%, #e85d04 45%, #d62828 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 
 .brand-mark--provider .brand-mark-icon {
@@ -140,6 +168,176 @@ body {
 
 .brand-mark-text .logo {
   line-height: 1.1;
+}
+
+.location-intro-cover {
+  margin: 0 0 16px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  background: var(--bg-accent);
+}
+
+.location-intro-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.location-intro-head {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.location-intro-logo {
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--accent-soft);
+}
+
+.location-intro-logo--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent-dark);
+}
+
+.pickee-map-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.pickee-map .leaflet-container {
+  font: inherit;
+}
+
+.navigate-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+  background: #e7e5e4;
+}
+
+.navigate-map-wrap {
+  flex: 1 1 0;
+  min-height: 0;
+  position: relative;
+}
+
+.navigate-map.pickee-map,
+.navigate-map {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  border-radius: 0 !important;
+}
+
+.navigate-map.leaflet-container,
+.navigate-map .leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  border-radius: 0;
+}
+
+.navigate-sheet {
+  flex: 0 0 auto;
+  max-height: min(48dvh, 420px);
+  overflow: auto;
+  margin: 0 !important;
+  border-radius: 16px 16px 0 0 !important;
+  border-bottom: none !important;
+  padding: 16px 16px calc(24px + env(safe-area-inset-bottom, 0px)) !important;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.08);
+  z-index: 2;
+}
+
+.navigate-mode-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.navigate-mode-chip {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  font: 600 13px/1.2 inherit;
+  padding: 8px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.navigate-mode-chip.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, #fff);
+  color: var(--accent-dark, var(--accent));
+}
+
+.app-main.navigate-route {
+  padding: 0;
+  max-width: none;
+}
+
+.map-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.map-filter-chip {
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  background: #fff;
+  color: var(--text);
+  font: 600 13px/1.2 inherit;
+  padding: 8px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.admin-vertex-marker,
+.admin-pin-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.admin-zone-map .leaflet-container {
+  font: inherit;
+}
+
+
+.location-tab {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.location-tab[aria-selected="true"] {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+  background: var(--accent-soft);
 }
 
 .customer-nav {
@@ -355,6 +553,233 @@ body {
 
 .admin-container {
   padding-bottom: 24px;
+}
+
+/* Full-bleed desktop Zone Setup workspace */
+.app-main.admin-workspace-route {
+  padding: 0;
+  max-width: none;
+}
+
+.admin-workspace-shell {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 52px);
+  margin: 0;
+  max-width: none;
+  width: 100%;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.admin-workspace-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
+  flex: 0 0 auto;
+}
+
+.admin-workspace-top-left {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  min-width: 0;
+}
+
+.admin-workspace-top .admin-logo {
+  color: #f8fafc;
+}
+
+.admin-workspace-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #cbd5e1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-workspace-body {
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.admin-workspace-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 14px 14px 20px;
+  background: #f8fafc;
+  color: var(--text);
+  border-right: 1px solid #cbd5e1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.admin-workspace-back {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 6px;
+  text-decoration: none;
+}
+
+.admin-workspace-back:hover {
+  color: #0f172a;
+}
+
+.admin-workspace-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.admin-workspace-tab {
+  appearance: none;
+  text-align: left;
+  border: 1px solid transparent;
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-workspace-tab:hover {
+  border-color: #cbd5e1;
+}
+
+.admin-workspace-tab.is-active {
+  border-color: #334155;
+  background: #f1f5f9;
+}
+
+.admin-workspace-tab-label {
+  font: 650 14px/1.2 var(--font-sans);
+  color: #0f172a;
+}
+
+.admin-workspace-tab-hint {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.admin-workspace-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.admin-workspace-panel-title {
+  margin: 8px 0 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.admin-workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.admin-workspace-actions .btn {
+  width: auto;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.admin-workspace-coords {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.admin-workspace-msg {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.admin-workspace-msg.ok {
+  color: #15803d;
+}
+
+.admin-workspace-msg.err {
+  color: #b91c1c;
+}
+
+.admin-workspace-shop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  margin-bottom: 4px;
+}
+
+.admin-workspace-shop {
+  appearance: none;
+  text-align: left;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-workspace-shop.is-active {
+  border-color: #334155;
+  background: #f1f5f9;
+}
+
+.admin-workspace-map {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: #e2e8f0;
+}
+
+.admin-zone-map--fill,
+.admin-zone-map--fill .leaflet-container {
+  height: 100% !important;
+  width: 100% !important;
+  border-radius: 0 !important;
+}
+
+@media (max-width: 900px) {
+  .admin-workspace-shell {
+    height: auto;
+    margin: 0;
+    width: 100%;
+  }
+
+  .admin-workspace-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(55vh, 70vh);
+  }
+
+  .admin-workspace-sidebar {
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid #cbd5e1;
+  }
 }
 
 .admin-logo {
@@ -1239,7 +1664,7 @@ a.provider-card:hover {
   cursor: pointer;
 }
 
-/* Visual V1 — home (BeautyX-inspired layout, Picki citrus) */
+/* Visual V1 — home (BeautyX-inspired layout, Pickee citrus) */
 .home-search {
   display: flex;
   align-items: center;

@@ -103,6 +103,15 @@ export default function CategoryBrowsePage() {
         </div>
       ) : null}
 
+      <p style={{ marginBottom: 12 }}>
+        <Link
+          href={`/zones/${slug}/map?category=${category.id}&types=${encodeURIComponent(category.providerTypes.join(","))}`}
+          className="order-phone-link"
+        >
+          Xem trên bản đồ
+        </Link>
+      </p>
+
       {category.id === "beauty" ? (
         <p className="stat" style={{ marginBottom: 12 }}>
           Đang lọc tiệm làm đẹp · tag dịch vụ con (cắt tóc, nail…) sẽ bổ sung sau.

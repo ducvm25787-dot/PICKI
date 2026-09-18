@@ -67,7 +67,17 @@ async function seed() {
         SELECT id FROM providers WHERE slug = ${demo.slug} LIMIT 1
       `;
       if (existing[0]) {
-        console.log("Provider already seeded:", demo.slug);
+        await sql`
+          UPDATE provider_locations pl SET
+            lat = ${demo.lat},
+            lng = ${demo.lng},
+            address_line = ${demo.address},
+            pin_verified_at = COALESCE(pl.pin_verified_at, now()),
+            updated_at = now()
+          FROM providers p
+          WHERE pl.provider_id = p.id AND p.slug = ${demo.slug}
+        `;
+        console.log("Provider pin refreshed:", demo.slug);
         continue;
       }
 

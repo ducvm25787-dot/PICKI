@@ -12,9 +12,11 @@ import {
   type Cart,
 } from "../../../lib/cart";
 import { LocationContactActions } from "../../components/location-contact-actions";
+import { LocationIntroPanel } from "../../components/location-intro-panel";
 import { OrderPhoneLinks } from "../../components/order-phone-links";
 import { PharmacyInquiry } from "../../components/pharmacy-inquiry";
 import { MarketInquiry } from "../../components/market-inquiry";
+import { TransportInquiry } from "../../components/transport-inquiry";
 import {
   formatBeautyPrice,
   formatHomeServicePrice,
@@ -33,6 +35,7 @@ import {
   isPetVertical,
   isPharmacyVertical,
   isMarketVertical,
+  isTransportVertical,
   isSportsVertical,
   isLaundryVertical,
   laundryPriceUnit,
@@ -49,6 +52,9 @@ type MenuResponse = {
     displayName: string;
     liveStatus: string;
     tagline: string | null;
+    description?: string | null;
+    logoUrl?: string | null;
+    coverUrl?: string | null;
     prepMinutes?: number | null;
     etaMinutes?: number | null;
     estimatedWaitMinutes?: number | null;
@@ -122,6 +128,9 @@ export default function LocationMenuPage() {
   const [visitEtaMinutes, setVisitEtaMinutes] = useState<number>(30);
   const [activeVisit, setActiveVisit] = useState<VisitIntent | null>(null);
   const [visitSubmitting, setVisitSubmitting] = useState(false);
+  const [transportDraft, setTransportDraft] = useState<string | null>(null);
+  const [transportDraftKey, setTransportDraftKey] = useState(0);
+  const [tab, setTab] = useState<"menu" | "intro">("menu");
 
   useEffect(() => {
     if (!requestItem && !visitItem) return;
@@ -336,6 +345,7 @@ export default function LocationMenuPage() {
   const isHealth = isHealthVertical(location.providerType);
   const isPharmacy = isPharmacyVertical(location.providerType);
   const isMarket = isMarketVertical(location.providerType);
+  const isTransport = isTransportVertical(location.providerType);
   const isCustomerVisit = isCustomerVisitVertical(location.providerType);
   const isEducation = isEducationVertical(location.providerType);
   const isSports = isSportsVertical(location.providerType);
@@ -385,6 +395,17 @@ export default function LocationMenuPage() {
         </h1>
         <p className="stat">{location.displayName}</p>
         {location.addressLine ? <p className="stat">{location.addressLine}</p> : null}
+        {(location.lat != null && location.lng != null) || location.addressLine ? (
+          <div style={{ marginTop: 10 }}>
+            <LocationContactActions
+              providerPhone={null}
+              providerLabel={location.brandName}
+              lat={location.lat}
+              lng={location.lng}
+              addressLine={location.addressLine}
+            />
+          </div>
+        ) : null}
         {location.tagline && <p style={{ margin: "12px 0 0" }}>{location.tagline}</p>}
         {isCustomerVisit ? (
           <p className="stat" style={{ marginTop: 8 }}>
@@ -398,17 +419,23 @@ export default function LocationMenuPage() {
         {isHealth ? (
           <p className="stat" style={{ marginTop: 8 }}>
             Xem thời gian chờ rồi báo sắp tới khám. Triệu chứng và kết quả khám trao đổi trực tiếp
-            với phòng khám — Picki không lưu thông tin bệnh án.
+            với phòng khám — Pickee không lưu thông tin bệnh án.
           </p>
         ) : null}
         {isPharmacy ? (
           <p className="stat" style={{ marginTop: 8 }}>
-            Gọi/Zalo hỏi còn hàng rồi qua lấy — Picki không bán thuốc online và không giao thuốc V1.
+            Gọi/Zalo hỏi còn hàng rồi qua lấy — Pickee không bán thuốc online và không giao thuốc V1.
           </p>
         ) : null}
         {isMarket ? (
           <p className="stat" style={{ marginTop: 8 }}>
-            Gọi/Zalo hỏi còn hàng rồi qua lấy — Picki chưa bán tạp hóa online và chưa giao hàng V1.
+            Gọi/Zalo hỏi còn hàng rồi qua lấy — Pickee chưa bán tạp hóa online và chưa giao hàng V1.
+          </p>
+        ) : null}
+        {isTransport ? (
+          <p className="stat" style={{ marginTop: 8 }}>
+            Gọi/Zalo hỏi lịch & giá — sân bay, về quê, du lịch, đưa đón học sinh. Không đặt chuyến
+            tự động trên Pickee V1.
           </p>
         ) : null}
         {isPet ? (
@@ -423,12 +450,12 @@ export default function LocationMenuPage() {
         ) : null}
         {isEducation ? (
           <p className="stat" style={{ marginTop: 8 }}>
-            Gia sư · học online · lớp tại trung tâm — đặt buổi học thử, không thu học phí qua Picki.
+            Gia sư · học online · lớp tại trung tâm — đặt buổi học thử, không thu học phí qua Pickee.
           </p>
         ) : null}
         {isSports ? (
           <p className="stat" style={{ marginTop: 8 }}>
-            Chọn sân và gửi khung giờ mong muốn — sân xác nhận qua yêu cầu, không thanh toán qua Picki V1.
+            Chọn sân và gửi khung giờ mong muốn — sân xác nhận qua yêu cầu, không thanh toán qua Pickee V1.
           </p>
         ) : null}
         {!isLaundry &&
@@ -438,6 +465,7 @@ export default function LocationMenuPage() {
           !isSports &&
           !isPharmacy &&
           !isMarket &&
+          !isTransport &&
           (location.prepMinutes != null || location.etaMinutes != null) && (
           <p className="stat" style={{ marginTop: 8 }}>
             ⏱ {location.prepMinutes ?? "?"} phút nấu · ~{location.etaMinutes ?? "?"} phút giao
@@ -468,6 +496,50 @@ export default function LocationMenuPage() {
         )}
       </div>
 
+      <div className="location-tabs" role="tablist" aria-label="Nội dung quán">
+        <button
+          type="button"
+          role="tab"
+          className="location-tab"
+          aria-selected={tab === "menu"}
+          onClick={() => setTab("menu")}
+        >
+          {isLaundry || isHomeService || isCustomerVisit || isEducation || isSports || isTransport
+            ? "Dịch vụ"
+            : isPharmacy || isMarket
+              ? "Hỏi hàng"
+              : "Menu"}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className="location-tab"
+          aria-selected={tab === "intro"}
+          onClick={() => setTab("intro")}
+        >
+          Giới thiệu
+        </button>
+      </div>
+
+      {tab === "intro" ? (
+        <LocationIntroPanel
+          brandName={location.brandName}
+          displayName={location.displayName}
+          tagline={location.tagline}
+          description={location.description}
+          logoUrl={location.logoUrl}
+          coverUrl={location.coverUrl}
+          addressLine={location.addressLine}
+          lat={location.lat}
+          lng={location.lng}
+          providerPhone={location.contacts?.provider?.phone ?? null}
+          averageRating={reviews?.averageRating ?? null}
+          reviewCount={reviews?.count ?? 0}
+        />
+      ) : null}
+
+      {tab === "menu" ? (
+      <>
       {isCustomerVisit && activeVisit ? (
         <div
           className="card"
@@ -545,7 +617,7 @@ export default function LocationMenuPage() {
         </div>
       ) : null}
 
-      {(isCustomerVisit || isEducation || isSports || isPharmacy || isMarket) &&
+      {(isCustomerVisit || isEducation || isSports || isPharmacy || isMarket || isTransport) &&
       location.contacts?.provider ? (
         <div id="location-contact" className="card" style={{ marginBottom: 16 }}>
           <p className="section-title">Liên hệ</p>
@@ -555,9 +627,11 @@ export default function LocationMenuPage() {
               : isSports
                 ? "Gọi/Zalo sân hoặc gửi yêu cầu khung giờ bên dưới."
               : isPharmacy
-                ? "Gọi/Zalo hỏi còn hàng / giá — rồi qua lấy tại hiệu. Không đặt hàng thuốc trên Picki."
+                ? "Gọi/Zalo hỏi còn hàng / giá — rồi qua lấy tại hiệu. Không đặt hàng thuốc trên Pickee."
               : isMarket
-                ? "Gọi/Zalo hỏi còn hàng / giá — rồi qua lấy tại quán. Không đặt hàng tạp hóa trên Picki V1."
+                ? "Gọi/Zalo hỏi còn hàng / giá — rồi qua lấy tại quán. Không đặt hàng tạp hóa trên Pickee V1."
+              : isTransport
+                ? "Gọi/Zalo hỏi lịch đón & giá — không giữ chỗ tự động trên Pickee V1."
               : isAuto
                 ? "Thay dầu, sửa chữa — gọi/Zalo trực tiếp. Rửa xe/bơm lốp có thể báo sắp mang xe bên dưới."
               : isHealth
@@ -598,13 +672,13 @@ export default function LocationMenuPage() {
       ) : (
       <div className="card">
         <p className="section-title">
-          {isLaundry || isHomeService || isCustomerVisit || isEducation || isSports
+          {isLaundry || isHomeService || isCustomerVisit || isEducation || isSports || isTransport
             ? "Dịch vụ"
             : "Menu"}
         </p>
         {items.length === 0 ? (
           <p className="stat">
-            {isLaundry || isHomeService || isCustomerVisit || isEducation || isSports
+            {isLaundry || isHomeService || isCustomerVisit || isEducation || isSports || isTransport
               ? "Chưa có dịch vụ — tiệm đang cập nhật."
               : "Chưa có món — provider đang cập nhật."}
           </p>
@@ -680,6 +754,12 @@ export default function LocationMenuPage() {
                           ? "Gọi hỏi còn hàng / giá"
                           : `Tham khảo từ ${formatVnd(item.amountVnd)} · Gọi trước khi qua`}
                       </p>
+                    ) : isTransport ? (
+                      <p className="stat" style={{ margin: "4px 0 0" }}>
+                        {item.pricingKind === "QUOTE_REQUIRED" || item.amountVnd <= 0
+                          ? "Gọi hỏi lịch & giá"
+                          : `Tham khảo từ ${formatVnd(item.amountVnd)} · Gọi chốt giờ`}
+                      </p>
                     ) : (
                       <strong>{formatVnd(item.amountVnd)}</strong>
                     )}
@@ -700,18 +780,28 @@ export default function LocationMenuPage() {
                       {isEducation ? "Học thử miễn phí" : isSports ? "Đặt sân" : "Gửi yêu cầu"}
                     </button>
                   ) : item.fulfillmentMode === "CONTACT_ONLY" &&
-                    (isAuto || isHealth || isPharmacy) ? (
+                    (isAuto || isHealth || isPharmacy || isTransport) ? (
                     <button
                       type="button"
                       className="btn btn-secondary"
                       style={{ width: "auto", padding: "8px 12px", flexShrink: 0 }}
                       onClick={() => {
+                        if (isTransport) {
+                          setTransportDraft(
+                            `Mình muốn hỏi về: ${item.name}.\nGiờ đón / điểm đến / số người: `,
+                          );
+                          setTransportDraftKey((k) => k + 1);
+                          document
+                            .getElementById("transport-chat")
+                            ?.scrollIntoView({ behavior: "smooth" });
+                          return;
+                        }
                         document
                           .getElementById("location-contact")
                           ?.scrollIntoView({ behavior: "smooth" });
                       }}
                     >
-                      Liên hệ
+                      {isTransport ? "Nhắn tin" : "Liên hệ"}
                     </button>
                   ) : item.fulfillmentMode === "CUSTOMER_VISIT" && isCustomerVisit ? (
                     <button
@@ -748,6 +838,16 @@ export default function LocationMenuPage() {
         )}
       </div>
       )}
+
+      {isTransport ? (
+        <TransportInquiry
+          locationId={location.id}
+          draftPrefill={transportDraft}
+          draftKey={transportDraftKey}
+        />
+      ) : null}
+      </>
+      ) : null}
 
       {visitItem ? (
         <div id="visit-intent-form" className="card service-request-form" style={{ marginTop: 16 }}>

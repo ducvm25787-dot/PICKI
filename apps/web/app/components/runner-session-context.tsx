@@ -43,6 +43,8 @@ export type RouteStop = {
   stopType: string;
   status: string;
   label: string;
+  lat?: number | null;
+  lng?: number | null;
   handoffs?: LobbyHandoff[];
 };
 
@@ -156,7 +158,7 @@ export function RunnerPageShell({
   if (loading) {
     return (
       <div className="container runner-container">
-        <p className="tagline">Picki Runner…</p>
+        <p className="tagline">Pickee Runner…</p>
       </div>
     );
   }
@@ -164,7 +166,7 @@ export function RunnerPageShell({
   if (accessError) {
     return (
       <div className="container runner-container">
-        <div className="logo runner-logo">Picki Runner</div>
+        <div className="logo runner-logo">Pickee Runner</div>
         <div className="card" style={{ marginTop: 16 }}>
           <p style={{ color: "crimson", margin: 0 }}>{accessError}</p>
           <Link href="/runner/login" className="stat" style={{ display: "block", marginTop: 12 }}>
@@ -179,7 +181,7 @@ export function RunnerPageShell({
     <div className="container runner-container">
       <div className="header-row">
         <div>
-          <div className="logo runner-logo">Picki Runner</div>
+          <div className="logo runner-logo">Pickee Runner</div>
           <div className="tagline">{title}</div>
         </div>
         <NotificationBell audience="runner" desktopAlerts />

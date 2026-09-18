@@ -1,27 +1,100 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../../../lib/api";
+import { HOME_CATEGORIES } from "../../../../lib/categories";
+import { getCurrentPositionOnce, type GeoPosition } from "../../../../lib/geolocation";
+import { pickeeNavigateHref } from "../../../../lib/maps";
 import { liveStatusClass, liveStatusLabel, type ProviderListing } from "../../../../lib/providers";
+import { PickeeMap, type MapMarker, type MapPolygonGeoJson } from "../../../components/pickee-map";
 
 type MapResponse = {
+  zoneId: string;
+  slug?: string;
+  displayName?: string;
   center: { lat: number; lng: number };
+  boundary?: MapPolygonGeoJson | null;
   markers: ProviderListing[];
 };
 
 export default function ZoneMapPage() {
   const params = useParams<{ slug: string }>();
   const router = useRouter();
+  const search = useSearchParams();
+  const focusId = search.get("locationId") ?? search.get("focus");
+  const initialOpen = search.get("open") === "1" || search.get("open") === "true";
+  const initialCategory = search.get("category") ?? "";
+  const initialTypes = search.get("types") ?? "";
+
   const [data, setData] = useState<MapResponse | null>(null);
+  const [userPos, setUserPos] = useState<GeoPosition | null>(null);
+  const [gpsNote, setGpsNote] = useState<string | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [openOnly, setOpenOnly] = useState(initialOpen);
+  const [categoryId, setCategoryId] = useState(initialCategory);
+
+  const typesParam = useMemo(() => {
+    if (initialTypes.trim()) return initialTypes.trim();
+    const cat = HOME_CATEGORIES.find((c) => c.id === categoryId);
+    return cat ? cat.providerTypes.join(",") : "";
+  }, [categoryId, initialTypes]);
+
+  const loadMap = useCallback(async () => {
+    const qs = new URLSearchParams();
+    if (openOnly) qs.set("open", "1");
+    if (typesParam) qs.set("types", typesParam);
+    const q = qs.toString();
+    const res = await api<MapResponse>(`/zones/${params.slug}/map${q ? `?${q}` : ""}`);
+    setData(res);
+  }, [params.slug, openOnly, typesParam]);
 
   useEffect(() => {
     void api("/me")
-      .then(() => api<MapResponse>(`/zones/${params.slug}/map`))
-      .then(setData)
+      .then(() => loadMap())
       .catch(() => router.replace("/login"));
-  }, [params.slug, router]);
+  }, [loadMap, router]);
+
+  async function locateMe() {
+    setLocating(true);
+    const result = await getCurrentPositionOnce({
+      fallback: data?.center ?? null,
+    });
+    setUserPos(result.position);
+    setGpsNote(
+      result.source === "gps"
+        ? "Đã gắn vị trí hiện tại (một lần — không theo dõi liên tục)"
+        : `Dùng tâm Zone — ${result.error ?? "GPS không sẵn"}`,
+    );
+    setLocating(false);
+  }
+
+  const mapMarkers: MapMarker[] = useMemo(() => {
+    if (!data) return [];
+    const list: MapMarker[] = data.markers
+      .filter((m) => m.lat != null && m.lng != null)
+      .map((m) => ({
+        id: m.locationId,
+        lat: m.lat!,
+        lng: m.lng!,
+        label: m.brandName,
+        href: `/locations/${m.locationId}`,
+        kind: "provider" as const,
+      }));
+    if (userPos) {
+      list.push({
+        id: "user",
+        lat: userPos.lat,
+        lng: userPos.lng,
+        label: "Bạn",
+        kind: "user",
+      });
+    }
+    return list;
+  }, [data, userPos]);
+
+  const center = userPos ?? data?.center ?? { lat: 20.9883, lng: 105.8414 };
 
   if (!data) {
     return (
@@ -31,72 +104,111 @@ export default function ZoneMapPage() {
     );
   }
 
-  const latSpan = 0.004;
-  const lngSpan = 0.004;
-
   return (
     <div className="container">
       <Link href="/" className="stat">
         ← Trang chủ
       </Link>
-      <h1 style={{ fontSize: 22, margin: "12px 0 8px" }}>Live Map</h1>
+      <h1 style={{ fontSize: 22, margin: "12px 0 8px" }}>
+        Bản đồ {data.displayName ?? "Zone"}
+      </h1>
       <p className="stat" style={{ marginBottom: 12 }}>
-        Quán mở trong Zone — pilot map đơn giản (S12)
+        Ranh giới Zone + quán quanh bạn · OpenStreetMap · GPS một lần
       </p>
 
-      <div
-        className="card"
-        style={{
-          position: "relative",
-          height: 320,
-          background: "linear-gradient(180deg, #e8f4ea 0%, #d4e8d8 100%)",
-          overflow: "hidden",
-        }}
-      >
-        {data.markers.map((m) => {
-          if (m.lat == null || m.lng == null) return null;
-          const top =
-            ((data.center.lat + latSpan / 2 - m.lat) / latSpan) * 100;
-          const left =
-            ((m.lng - (data.center.lng - lngSpan / 2)) / lngSpan) * 100;
-          return (
-            <Link
-              key={m.locationId}
-              href={`/locations/${m.locationId}`}
-              title={m.brandName}
-              style={{
-                position: "absolute",
-                top: `${String(Math.min(92, Math.max(4, top)))}%`,
-                left: `${String(Math.min(92, Math.max(4, left)))}%`,
-                transform: "translate(-50%, -50%)",
-                textDecoration: "none",
-                fontSize: 12,
-                fontWeight: 600,
-                padding: "6px 8px",
-                borderRadius: 8,
-                background: "white",
-                border: "2px solid var(--accent)",
-                boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
-                color: "inherit",
-              }}
-            >
-              <span className={`live-pill ${liveStatusClass(m.liveStatus)}`} style={{ marginRight: 4 }}>
-                {liveStatusLabel(m.liveStatus)}
-              </span>
-              {m.brandName.split(" ")[0]}
-            </Link>
-          );
-        })}
+      <div className="map-filter-row" aria-label="Lọc bản đồ">
+        <button
+          type="button"
+          className={`map-filter-chip ${!openOnly ? "is-active" : ""}`}
+          onClick={() => setOpenOnly(false)}
+        >
+          Tất cả
+        </button>
+        <button
+          type="button"
+          className={`map-filter-chip ${openOnly ? "is-active" : ""}`}
+          onClick={() => setOpenOnly(true)}
+        >
+          Đang mở
+        </button>
+        {HOME_CATEGORIES.slice(0, 6).map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            className={`map-filter-chip ${categoryId === c.id ? "is-active" : ""}`}
+            onClick={() => setCategoryId((prev) => (prev === c.id ? "" : c.id))}
+          >
+            {c.shortLabel}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className="btn"
+          style={{ width: "auto", padding: "8px 14px" }}
+          disabled={locating}
+          onClick={() => void locateMe()}
+        >
+          {locating ? "Đang lấy vị trí…" : userPos ? "Cập nhật vị trí" : "Gắn vị trí của tôi"}
+        </button>
+      </div>
+      {gpsNote ? <p className="stat" style={{ marginBottom: 12 }}>{gpsNote}</p> : null}
+
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <PickeeMap
+          center={center}
+          markers={mapMarkers}
+          polygon={data.boundary ?? null}
+          focusId={focusId}
+          height={360}
+        />
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
-        {data.markers.map((m) => (
-          <p key={m.locationId} className="stat" style={{ margin: "0 0 8px" }}>
-            <Link href={`/locations/${m.locationId}`}>{m.brandName}</Link> ·{" "}
-            {liveStatusLabel(m.liveStatus)}
-            {m.etaMinutes != null ? ` · ~${String(m.etaMinutes)} phút` : ""}
+        <p className="section-title">
+          Quán trên bản đồ ({data.markers.length})
+        </p>
+        {data.markers.length === 0 ? (
+          <p className="stat" style={{ margin: 0 }}>
+            Không có quán khớp bộ lọc
           </p>
-        ))}
+        ) : (
+          data.markers.map((m) => (
+            <div
+              key={m.locationId}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 8,
+                alignItems: "center",
+                marginBottom: 10,
+              }}
+            >
+              <p className="stat" style={{ margin: 0 }}>
+                <Link href={`/locations/${m.locationId}`}>{m.brandName}</Link> ·{" "}
+                <span className={`live-pill ${liveStatusClass(m.liveStatus)}`}>
+                  {liveStatusLabel(m.liveStatus)}
+                </span>
+              </p>
+              {m.lat != null && m.lng != null ? (
+                <a
+                  className="order-phone-link"
+                  href={pickeeNavigateHref({
+                    destLat: m.lat,
+                    destLng: m.lng,
+                    label: m.brandName,
+                    originLat: userPos?.lat,
+                    originLng: userPos?.lng,
+                  })}
+                >
+                  Chỉ đường
+                </a>
+              ) : null}
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

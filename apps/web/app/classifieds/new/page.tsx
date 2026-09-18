@@ -115,7 +115,7 @@ export default function NewClassifiedPage() {
         <div className="card" style={{ marginBottom: 12, background: "#f7f3ea" }}>
           <p className="stat" style={{ margin: 0, fontSize: 13 }}>
             Mỗi tài khoản đã xác thực SĐT: 1 tin đang mở · tối đa 2 lần đăng / tháng · tin tự ẩn
-            sau 7 ngày. Liên hệ trực tiếp — Picki không đặt lịch xem nhà hay nhận cọc.
+            sau 7 ngày. Liên hệ trực tiếp — Pickee không đặt lịch xem nhà hay nhận cọc.
           </p>
         </div>
       ) : null}
@@ -124,7 +124,7 @@ export default function NewClassifiedPage() {
         <div className="card" style={{ marginBottom: 12, background: "#f0f4f8" }}>
           <p className="stat" style={{ margin: 0, fontSize: 13 }}>
             SĐT đã xác thực · tối đa 2 tin đang mở · 5 lần đăng / tháng · tự ẩn sau 14 ngày. Chat
-            để liên hệ — không mua bán trên Picki.
+            để liên hệ — không mua bán trên Pickee.
           </p>
         </div>
       ) : null}

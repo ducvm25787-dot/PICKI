@@ -52,6 +52,14 @@ export class MessagingController {
     return this.messaging.getOrCreateMarketConversation(userId, locationId);
   }
 
+  @Get("transport/:locationId")
+  transportConversation(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+  ) {
+    return this.messaging.getOrCreateTransportConversation(userId, locationId);
+  }
+
   @Post("conversations/:conversationId/messages")
   sendMessage(
     @CurrentUserId() userId: string,

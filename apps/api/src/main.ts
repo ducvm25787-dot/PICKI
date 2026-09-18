@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import cookieParser from "cookie-parser";
+import { json as expressJson, urlencoded as expressUrlencoded } from "express";
 import { NestFactory } from "@nestjs/core";
 import { NestExpressApplication } from "@nestjs/platform-express";
 import path from "node:path";
@@ -9,7 +10,13 @@ import { PickiExceptionFilter } from "./shared/picki-exception.filter.js";
 
 async function bootstrap() {
   const config = loadConfig();
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Default Nest JSON limit is 100kb — photo data URLs need ~400KB+
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
+
+  app.use(expressJson({ limit: "1mb" }));
+  app.use(expressUrlencoded({ extended: true, limit: "1mb" }));
 
   app.useStaticAssets(path.join(process.cwd(), "storage", "uploads"), {
     prefix: "/v1/uploads/",

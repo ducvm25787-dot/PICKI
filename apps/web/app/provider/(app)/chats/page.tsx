@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ProviderPageShell, useProviderLocation } from "../../../components/provider-location-context";
-import { isContactLiveOnlyShop, isMarketVertical, isPharmacyVertical } from "../../../../lib/providers";
+import { isContactLiveOnlyShop, isMarketVertical, isPharmacyVertical, isTransportVertical } from "../../../../lib/providers";
 import { api } from "../../../../lib/api";
 
 type ConversationRow = {
@@ -36,8 +36,15 @@ export default function ProviderChatsPage() {
   const { locationId, activeLocation } = useProviderLocation();
   const isPharmacy = isPharmacyVertical(activeLocation?.providerType);
   const isMarket = isMarketVertical(activeLocation?.providerType);
+  const isTransport = isTransportVertical(activeLocation?.providerType);
   const contactLiveOnly = isContactLiveOnlyShop(activeLocation?.providerType);
-  const inquiryContext = isPharmacy ? "PHARMACY" : isMarket ? "MARKET" : null;
+  const inquiryContext = isPharmacy
+    ? "PHARMACY"
+    : isMarket
+      ? "MARKET"
+      : isTransport
+        ? "TRANSPORT"
+        : null;
   const searchParams = useSearchParams();
   const focusId = searchParams.get("id");
 
@@ -105,7 +112,7 @@ export default function ProviderChatsPage() {
       <ProviderPageShell title="Hỏi hàng">
         <div className="card">
           <p className="stat" style={{ margin: 0 }}>
-            Tab này dành cho nhà thuốc / tạp hóa — nhận câu hỏi kèm ảnh từ khách trong Zone.
+            Tab này dành cho nhà thuốc / tạp hóa / đưa đón — nhận câu hỏi từ khách trong Zone.
           </p>
         </div>
       </ProviderPageShell>
@@ -113,7 +120,7 @@ export default function ProviderChatsPage() {
   }
 
   return (
-    <ProviderPageShell title="Hỏi hàng">
+    <ProviderPageShell title={isTransport ? "Tin nhắn" : "Hỏi hàng"}>
       {error ? (
         <p className="stat" style={{ color: "#c0392b", marginBottom: 12 }}>
           {error}
@@ -123,8 +130,11 @@ export default function ProviderChatsPage() {
       {list.length === 0 ? (
         <div className="card">
           <p className="stat" style={{ margin: 0 }}>
-            Chưa có khách hỏi thuốc. Khi khách gửi tin + ảnh từ trang nhà thuốc, tin hiện ở đây và
-            chuông thông báo trên Picki (không tự mở Zalo).
+            {isTransport
+              ? "Chưa có khách nhắn. Khi khách gửi tin từ trang nhà xe, tin hiện ở đây và chuông thông báo trên Pickee."
+              : isMarket
+                ? "Chưa có khách hỏi hàng. Khi khách gửi tin + ảnh từ trang cửa hàng, tin hiện ở đây và chuông thông báo trên Pickee."
+                : "Chưa có khách hỏi thuốc. Khi khách gửi tin + ảnh từ trang nhà thuốc, tin hiện ở đây và chuông thông báo trên Pickee (không tự mở Zalo)."}
           </p>
         </div>
       ) : (

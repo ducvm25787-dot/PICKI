@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AdminPageShell } from "../../../components/admin-session-context";
 import { api } from "../../../../lib/api";
@@ -22,6 +23,9 @@ export default function AdminZonesPage() {
 
   return (
     <AdminPageShell title="Zones">
+      <p className="stat" style={{ marginBottom: 12 }}>
+        Setup quan trọng: chỉnh polygon, vùng lõi, neo GPS, xác nhận vị trí shop — mở từng Zone.
+      </p>
       <div className="card">
         {zones.length === 0 ? (
           <p className="stat">Chưa có Zone.</p>
@@ -35,6 +39,13 @@ export default function AdminZonesPage() {
               <p className="stat">
                 {z.memberCount} members · {z.providerLocationCount} quán
               </p>
+              <Link
+                href={`/admin/zones/${z.id}`}
+                className="order-phone-link"
+                style={{ marginTop: 8, display: "inline-flex" }}
+              >
+                Setup bản đồ (polygon · GPS · shop)
+              </Link>
             </article>
           ))
         )}

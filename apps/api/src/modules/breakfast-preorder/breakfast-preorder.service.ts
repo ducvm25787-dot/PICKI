@@ -217,6 +217,9 @@ export class BreakfastPreorderService {
         brandName: providers.brandName,
         displayName: providerLocations.displayName,
         providerType: providers.providerType,
+        addressLine: providerLocations.addressLine,
+        lat: providerLocations.lat,
+        lng: providerLocations.lng,
       })
       .from(providerLocations)
       .innerJoin(providers, eq(providers.id, providerLocations.providerId))
@@ -268,6 +271,9 @@ export class BreakfastPreorderService {
       locationId,
       brandName: loc[0].brandName,
       displayName: loc[0].displayName,
+      addressLine: loc[0].addressLine,
+      lat: loc[0].lat,
+      lng: loc[0].lng,
       serviceDate,
       cutoffTime: flags.cutoffTime,
       openFromTime: flags.openFromTime,

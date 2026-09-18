@@ -55,8 +55,19 @@ export class DiscoveryController {
   }
 
   @Get("zones/:slugOrId/map")
-  async zoneMap(@Param("slugOrId") slugOrId: string) {
-    return this.discovery.map(slugOrId);
+  async zoneMap(
+    @Param("slugOrId") slugOrId: string,
+    @Query("open") open?: string,
+    @Query("types") types?: string,
+  ) {
+    const providerTypes = (types ?? "")
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    return this.discovery.map(slugOrId, {
+      openOnly: open === "1" || open === "true",
+      providerTypes: providerTypes.length > 0 ? providerTypes : undefined,
+    });
   }
 
   @Get("locations/:locationId/reviews")

@@ -23,6 +23,9 @@ export type LocationHeaderRow = {
   display_name: string;
   live_status: string;
   tagline: string | null;
+  description: string | null;
+  logo_url: string | null;
+  cover_url: string | null;
   prep_minutes: number | null;
   eta_minutes: number | null;
   estimated_wait_minutes: number | null;
@@ -45,6 +48,9 @@ export async function getLocationHeader(
       pl.display_name,
       COALESCE(pls.status, 'OFFLINE') AS live_status,
       pp.tagline,
+      pp.description,
+      pp.logo_url,
+      pp.cover_url,
       pls.prep_minutes,
       pls.eta_minutes,
       pls.estimated_wait_minutes,

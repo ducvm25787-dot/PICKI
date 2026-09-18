@@ -20,15 +20,15 @@ const sora = Sora({
 
 export const metadata: Metadata = {
   title: {
-    default: "Picki — Hôm nay quanh bạn có gì?",
-    template: "%s · Picki",
+    default: "Pickee — Tiện ích quanh tôi",
+    template: "%s · Pickee",
   },
-  description: "Đặt món, giao hàng quanh Zone — pilot Kim Văn Kim Lũ",
-  applicationName: "Picki",
+  description: "Tiện ích quanh tôi — đặt món, dịch vụ quanh Zone · pilot Kim Văn Kim Lũ",
+  applicationName: "Pickee",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Picki",
+    title: "Pickee",
   },
   formatDetection: {
     telephone: false,

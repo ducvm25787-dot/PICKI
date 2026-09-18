@@ -14,6 +14,7 @@ import {
   listHealthProviders,
   listPharmacyProviders,
   listMarketProviders,
+  listTransportProviders,
   listPetProviders,
   listSportsProviders,
   listHomeServiceProviders,
@@ -22,10 +23,12 @@ import {
   listProvidersByTypes,
   locationReviews,
   searchZone,
+  getZoneBoundaryGeoJson,
   userFavorites,
   vnNowHhMm,
   type PickiDb,
   type PickiSql,
+  type MapProviderFilters,
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
 import { PICKI_DB, PICKI_SQL } from "../../shared/tokens.js";
@@ -204,6 +207,17 @@ export class DiscoveryService {
       });
     }
 
+    const transport = await listTransportProviders(this.sql, zone.id);
+    if (transport.length > 0) {
+      enriched.push({
+        id: "transport",
+        title: "XE ĐƯA ĐÓN",
+        subtitle: "Sân bay, về quê, du lịch, đưa đón học sinh — gọi hỏi lịch & giá",
+        foodMoments: [],
+        providers: transport.map(mapProvider),
+      });
+    }
+
     const community = await this.communitySummary(zone.id);
 
     return { zoneId: zone.id, slug: zone.slug, blocks: enriched, community };
@@ -310,18 +324,26 @@ export class DiscoveryService {
         offeringId: r.offering_id,
         offeringName: r.offering_name,
         amountVnd: r.amount_vnd,
+        lat: r.lat,
+        lng: r.lng,
       })),
     };
   }
 
-  async map(slugOrId: string) {
+  async map(slugOrId: string, filters: MapProviderFilters = {}) {
     const zone = await this.zones.findZone(slugOrId);
     if (!zone) throw new PickiError("NOT_FOUND", "Zone not found");
 
-    const rows = await listMapProviders(this.sql, zone.id);
+    const [rows, boundary] = await Promise.all([
+      listMapProviders(this.sql, zone.id, filters),
+      getZoneBoundaryGeoJson(this.sql, zone.id),
+    ]);
     return {
       zoneId: zone.id,
-      center: { lat: 20.9883, lng: 105.8414 },
+      slug: zone.slug,
+      displayName: zone.displayName,
+      center: { lat: zone.anchorLat, lng: zone.anchorLng },
+      boundary,
       markers: rows.map(mapProvider),
     };
   }

@@ -1,5 +1,5 @@
-/* Picki PWA — offline shell + Web Push */
-const CACHE = "picki-shell-v6";
+/* Pickee PWA — offline shell + Web Push */
+const CACHE = "pickee-shell-v1";
 const PRECACHE = [
   "/offline",
   "/favicon.png",
@@ -83,7 +83,7 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  let data = { title: "Picki", body: "Bạn có thông báo mới", url: "/", tag: "picki" };
+  let data = { title: "Pickee", body: "Bạn có thông báo mới", url: "/", tag: "pickee" };
   try {
     if (event.data) {
       data = { ...data, ...event.data.json() };

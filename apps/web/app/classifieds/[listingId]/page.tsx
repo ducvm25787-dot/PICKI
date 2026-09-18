@@ -130,7 +130,7 @@ export default function ClassifiedDetailPage() {
         ) : null}
         {housing ? (
           <p className="stat" style={{ marginTop: 8 }}>
-            Liên hệ trực tiếp qua chat — Picki không đặt lịch xem nhà hay nhận cọc.
+            Liên hệ trực tiếp qua chat — Pickee không đặt lịch xem nhà hay nhận cọc.
           </p>
         ) : null}
         {lost ? (

@@ -54,7 +54,7 @@ export default function ProviderLoginPage() {
       <div style={{ marginBottom: 20 }}>
         <BrandMark
           tone="provider"
-          title="Picki Provider"
+          title="Pickee Provider"
           subtitle="Food 0908888001 · Giặt 0908888004 · Nhà 0908888005 · Bếp tối 0908888014"
         />
       </div>

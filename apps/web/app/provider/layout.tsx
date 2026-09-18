@@ -2,15 +2,15 @@ import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
   title: {
-    default: "Picki Provider",
-    template: "%s · Picki Provider",
+    default: "Pickee Provider",
+    template: "%s · Pickee Provider",
   },
   description: "Quản lý đơn hàng và trạng thái quán — pilot Kim Văn Kim Lũ",
-  applicationName: "Picki Provider",
+  applicationName: "Pickee Provider",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Picki Provider",
+    title: "Pickee Provider",
   },
   icons: {
     icon: [

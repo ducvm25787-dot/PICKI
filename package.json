@@ -37,6 +37,8 @@
     "db:seed:housing": "bash scripts/db-seed-housing.sh",
     "db:seed:pharmacy": "bash scripts/db-seed-pharmacy.sh",
     "db:seed:minimart": "bash scripts/db-seed-minimart.sh",
+    "db:seed:transport": "bash scripts/db-seed-transport.sh",
+    "db:seed:geo-pins": "bash scripts/db-seed-geo-pins.sh",
     "db:seed:lost": "bash scripts/db-seed-lost.sh",
     "db:seed:family-dinner": "bash scripts/db-seed-family-dinner.sh"
   },

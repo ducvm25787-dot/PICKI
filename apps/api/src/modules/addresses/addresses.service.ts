@@ -4,6 +4,7 @@ import {
   addressVerifications,
   addresses,
   discoverZonesAtPoint,
+  getAddressLatLng,
   type PickiDb,
   type PickiSql,
   userAddresses,
@@ -61,6 +62,7 @@ export class AddressesService {
           ward: input.ward ?? null,
           city: input.city ?? "Hà Nội",
           deliveryNote: input.deliveryNote ?? null,
+          coordinates: sql`ST_SetSRID(ST_MakePoint(${gps.lng}, ${gps.lat}), 4326)`,
         })
         .returning();
 
@@ -130,32 +132,87 @@ export class AddressesService {
   async listZoneAddresses(userId: string, zoneId: string) {
     await this.assertZoneMember(userId, zoneId);
 
-    const rows = await this.db
-      .select({
-        userAddressId: userAddresses.id,
-        label: userAddresses.label,
-        address: addresses,
-      })
-      .from(userAddresses)
-      .innerJoin(addresses, eq(userAddresses.addressId, addresses.id))
-      .where(and(eq(userAddresses.userId, userId), eq(userAddresses.zoneId, zoneId)))
-      .orderBy(asc(userAddresses.createdAt));
+    const rows = await this.sql<
+      {
+        id: string;
+        label: string;
+        address_type: string;
+        building: string | null;
+        floor: string | null;
+        apartment: string | null;
+        house_number: string | null;
+        alley: string | null;
+        street: string | null;
+        ward: string | null;
+        city: string | null;
+        delivery_note: string | null;
+        lat: number | null;
+        lng: number | null;
+      }[]
+    >`
+      SELECT
+        a.id,
+        ua.label,
+        a.address_type,
+        a.building,
+        a.floor,
+        a.apartment,
+        a.house_number,
+        a.alley,
+        a.street,
+        a.ward,
+        a.city,
+        a.delivery_note,
+        CASE WHEN a.coordinates IS NULL THEN NULL ELSE ST_Y(a.coordinates)::float8 END AS lat,
+        CASE WHEN a.coordinates IS NULL THEN NULL ELSE ST_X(a.coordinates)::float8 END AS lng
+      FROM user_addresses ua
+      INNER JOIN addresses a ON a.id = ua.address_id
+      WHERE ua.user_id = ${userId}::uuid AND ua.zone_id = ${zoneId}::uuid
+      ORDER BY ua.created_at ASC
+    `;
 
     return {
       addresses: rows.map((r) => ({
-        id: r.address.id,
+        id: r.id,
         label: r.label,
-        addressType: r.address.addressType,
-        building: r.address.building,
-        floor: r.address.floor,
-        apartment: r.address.apartment,
-        houseNumber: r.address.houseNumber,
-        alley: r.address.alley,
-        street: r.address.street,
-        ward: r.address.ward,
-        city: r.address.city,
-        deliveryNote: r.address.deliveryNote,
+        addressType: r.address_type,
+        building: r.building,
+        floor: r.floor,
+        apartment: r.apartment,
+        houseNumber: r.house_number,
+        alley: r.alley,
+        street: r.street,
+        ward: r.ward,
+        city: r.city,
+        deliveryNote: r.delivery_note,
+        lat: r.lat,
+        lng: r.lng,
+        hasPin: r.lat != null && r.lng != null,
       })),
+    };
+  }
+
+  async updateAddressPin(
+    userId: string,
+    zoneId: string,
+    addressId: string,
+    gps: { lat: number; lng: number },
+  ) {
+    await this.assertZoneMember(userId, zoneId);
+    await this.assertUserAddress(userId, zoneId, addressId);
+
+    await this.sql`
+      UPDATE addresses SET
+        coordinates = ST_SetSRID(ST_MakePoint(${gps.lng}, ${gps.lat}), 4326),
+        updated_at = now()
+      WHERE id = ${addressId}::uuid
+    `;
+
+    return {
+      id: addressId,
+      lat: gps.lat,
+      lng: gps.lng,
+      hasPin: true,
     };
   }
 
@@ -361,6 +418,10 @@ export class AddressesService {
     }
 
     return row[0].address;
+  }
+
+  async getDeliveryCoords(addressId: string): Promise<{ lat: number; lng: number } | null> {
+    return getAddressLatLng(this.sql, addressId);
   }
 
   private async assertUserAddress(userId: string, zoneId: string, addressId: string) {

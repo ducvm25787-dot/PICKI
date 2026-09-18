@@ -50,6 +50,10 @@ export function isMarketVertical(providerType?: string | null) {
   );
 }
 
+export function isTransportVertical(providerType?: string | null) {
+  return providerType === "TRANSPORT_PROVIDER";
+}
+
 export function isCustomerVisitVertical(providerType?: string | null) {
   return (
     isBeautyVertical(providerType) ||
@@ -64,9 +68,13 @@ export function isQueueOnlyShop(providerType?: string | null) {
   return isBeautyVertical(providerType) || isAutoVertical(providerType) || isHealthVertical(providerType);
 }
 
-/** Nhà thuốc / tạp hóa: chỉ live + liên hệ — không đơn / queue / yêu cầu */
+/** Nhà thuốc / tạp hóa / đưa đón: chỉ live + liên hệ — không đơn / queue / yêu cầu */
 export function isContactLiveOnlyShop(providerType?: string | null) {
-  return isPharmacyVertical(providerType) || isMarketVertical(providerType);
+  return (
+    isPharmacyVertical(providerType) ||
+    isMarketVertical(providerType) ||
+    isTransportVertical(providerType)
+  );
 }
 
 export function isEducationVertical(providerType?: string | null) {
@@ -126,12 +134,16 @@ export function liveStatusLabel(
   if (isEducationVertical(providerType)) {
     return "Đang mở";
   }
-  if (isPharmacyVertical(providerType) || isMarketVertical(providerType)) {
+  if (
+    isPharmacyVertical(providerType) ||
+    isMarketVertical(providerType) ||
+    isTransportVertical(providerType)
+  ) {
     switch (status) {
       case "OPEN":
-        return "Đang mở";
+        return isTransportVertical(providerType) ? "Đang nhận chuyến" : "Đang mở";
       case "BUSY":
-        return "Đông khách";
+        return isTransportVertical(providerType) ? "Đang chạy chuyến" : "Đông khách";
       case "CLOSED":
         return "Đã đóng";
       default:
@@ -204,6 +216,7 @@ export function fulfillmentLabel(
       return "Tại tiệm";
     case "CONTACT_ONLY":
       if (isHealthVertical(providerType)) return "Liên hệ phòng khám";
+      if (isTransportVertical(providerType)) return "Gọi hỏi lịch & giá";
       if (isPharmacyVertical(providerType) || isMarketVertical(providerType)) return "Gọi hỏi / qua lấy";
       return "Liên hệ tiệm";
     case "ONLINE":

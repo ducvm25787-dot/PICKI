@@ -505,13 +505,28 @@ export default function ProviderOrdersPage() {
                 <a href="/provider/requests" style={{ color: "var(--accent-dark)" }}>
                   Yêu cầu
                 </a>
-                . Xác nhận hoặc từ chối, không thu phí qua Picki V1.
+                . Xác nhận hoặc từ chối, không thu phí qua Pickee V1.
+              </p>
+            </div>
+          ) : activeLocation?.providerType === "TRANSPORT_PROVIDER" ? (
+            <div className="card">
+              <p className="stat" style={{ margin: 0 }}>
+                Xe đưa đón trên Pickee hiện <strong>đang nhận chuyến</strong>, nhận{" "}
+                <strong>gọi / Zalo</strong> và tin nhắn hỏi lịch & giá. Cập nhật trạng thái ở tab{" "}
+                <a href="/provider/live" style={{ color: "var(--accent-dark)" }}>
+                  Trạng thái
+                </a>
+                ; tin khách ở tab{" "}
+                <a href="/provider/chats" style={{ color: "var(--accent-dark)" }}>
+                  Tin nhắn
+                </a>
+                .
               </p>
             </div>
           ) : activeLocation?.providerType === "PHARMACY" ? (
             <div className="card">
               <p className="stat" style={{ margin: 0 }}>
-                Nhà thuốc trên Picki chỉ hiện <strong>đang mở</strong> và nhận{" "}
+                Nhà thuốc trên Pickee chỉ hiện <strong>đang mở</strong> và nhận{" "}
                 <strong>gọi / Zalo</strong> — không bán thuốc qua giỏ hàng. Cập nhật trạng thái ở
                 tab{" "}
                 <a href="/provider/live" style={{ color: "var(--accent-dark)" }}>
@@ -529,7 +544,7 @@ export default function ProviderOrdersPage() {
             activeLocation?.providerType === "RETAIL_STORE" ? (
             <div className="card">
               <p className="stat" style={{ margin: 0 }}>
-                Tạp hóa / minimart trên Picki hiện <strong>đang mở</strong>, nhận{" "}
+                Tạp hóa / minimart trên Pickee hiện <strong>đang mở</strong>, nhận{" "}
                 <strong>gọi / Zalo</strong> và câu hỏi kèm ảnh — chưa bán qua giỏ hàng V1. Cập nhật
                 trạng thái ở tab{" "}
                 <a href="/provider/live" style={{ color: "var(--accent-dark)" }}>
@@ -599,7 +614,7 @@ export default function ProviderOrdersPage() {
                 {waitingRunner && o.serviceVertical !== "LAUNDRY" && !cookFirst ? (
                   <div className="runner-route-hint" style={{ margin: "8px 0", fontSize: 14 }}>
                     <strong>Bước tiếp:</strong> Runner mở app{" "}
-                    <strong>Picki Runner</strong> (0908888002) → tab <strong>Đơn chờ nhận</strong>{" "}
+                    <strong>Pickee Runner</strong> (0908888002) → tab <strong>Đơn chờ nhận</strong>{" "}
                     → bấm <strong>Nhận giao</strong>. Quán chưa nấu cho đến khi runner nhận.
                   </div>
                 ) : null}

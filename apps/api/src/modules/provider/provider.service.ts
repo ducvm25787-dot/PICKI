@@ -11,6 +11,7 @@ import {
   providerLiveStatus,
   providerLocations,
   providerMembers,
+  providerProfiles,
   providers,
   type PickiDb,
 } from "@picki/db";
@@ -28,7 +29,11 @@ import { RunnerDispatchService } from "../runner/runner-dispatch.service.js";
 import { formatTime, isPastCutoff } from "../family-dinner/family-dinner.service.js";
 import { isPastBreakfastCutoff } from "../breakfast-preorder/breakfast-preorder.service.js";
 import type { z } from "zod";
-import type { providerOrderActionSchema, updateLiveStatusSchema } from "./dto.js";
+import type {
+  providerOrderActionSchema,
+  updateLiveStatusSchema,
+  updateProviderProfileSchema,
+} from "./dto.js";
 
 @Injectable()
 export class ProviderService {
@@ -866,6 +871,96 @@ export class ProviderService {
     };
   }
 
+  async getProfile(userId: string, locationId: string) {
+    const access = await this.assertLocationAccess(userId, locationId);
+    const profile = await this.db
+      .select()
+      .from(providerProfiles)
+      .where(eq(providerProfiles.providerId, access.providerId))
+      .limit(1);
+
+    return {
+      providerId: access.providerId,
+      locationId,
+      brandName: access.brandName,
+      displayName: access.displayName,
+      addressLine: access.addressLine,
+      lat: access.lat,
+      lng: access.lng,
+      pinVerifiedAt: access.pinVerifiedAt
+        ? access.pinVerifiedAt instanceof Date
+          ? access.pinVerifiedAt.toISOString()
+          : String(access.pinVerifiedAt)
+        : null,
+      tagline: profile[0]?.tagline ?? null,
+      description: profile[0]?.description ?? null,
+      logoUrl: profile[0]?.logoUrl ?? null,
+      coverUrl: profile[0]?.coverUrl ?? null,
+    };
+  }
+
+  async updateProfile(
+    userId: string,
+    locationId: string,
+    input: z.infer<typeof updateProviderProfileSchema>,
+  ) {
+    const access = await this.assertLocationAccess(userId, locationId);
+    const tagline = input.tagline !== undefined ? input.tagline || null : undefined;
+    const description = input.description !== undefined ? input.description || null : undefined;
+    const logoUrl =
+      input.logoUrl !== undefined ? (input.logoUrl === "" ? null : input.logoUrl) : undefined;
+    const coverUrl =
+      input.coverUrl !== undefined ? (input.coverUrl === "" ? null : input.coverUrl) : undefined;
+
+    await this.db
+      .insert(providerProfiles)
+      .values({
+        providerId: access.providerId,
+        tagline: tagline ?? null,
+        description: description ?? null,
+        logoUrl: logoUrl ?? null,
+        coverUrl: coverUrl ?? null,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: providerProfiles.providerId,
+        set: {
+          ...(tagline !== undefined ? { tagline } : {}),
+          ...(description !== undefined ? { description } : {}),
+          ...(logoUrl !== undefined ? { logoUrl } : {}),
+          ...(coverUrl !== undefined ? { coverUrl } : {}),
+          updatedAt: new Date(),
+        },
+      });
+
+    if (
+      input.addressLine !== undefined ||
+      input.lat !== undefined ||
+      input.lng !== undefined
+    ) {
+      await this.db
+        .update(providerLocations)
+        .set({
+          ...(input.addressLine !== undefined
+            ? { addressLine: input.addressLine.trim() || null }
+            : {}),
+          ...(input.lat !== undefined ? { lat: input.lat } : {}),
+          ...(input.lng !== undefined ? { lng: input.lng } : {}),
+          ...(input.lat !== undefined && input.lng !== undefined
+            ? {
+                pinVerifiedAt: new Date(),
+                pinNote: "Provider tự cập nhật vị trí",
+                pinVerifiedBy: userId,
+              }
+            : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(providerLocations.id, locationId));
+    }
+
+    return this.getProfile(userId, locationId);
+  }
+
   /** Pilot food STANDARD: đơn đã nhận nhưng chưa tìm runner → tự bổ sung khi load list.
    * Family Dinner / Late Dinner: nấu trước — không auto tìm runner. */
   private async ensureRunnerSought(order: typeof orders.$inferSelect) {
@@ -892,8 +987,18 @@ export class ProviderService {
 
   private async assertLocationAccess(userId: string, locationId: string) {
     const location = await this.db
-      .select()
+      .select({
+        id: providerLocations.id,
+        providerId: providerLocations.providerId,
+        displayName: providerLocations.displayName,
+        addressLine: providerLocations.addressLine,
+        lat: providerLocations.lat,
+        lng: providerLocations.lng,
+        pinVerifiedAt: providerLocations.pinVerifiedAt,
+        brandName: providers.brandName,
+      })
       .from(providerLocations)
+      .innerJoin(providers, eq(providers.id, providerLocations.providerId))
       .where(eq(providerLocations.id, locationId))
       .limit(1);
     if (!location[0]) {
@@ -916,6 +1021,16 @@ export class ProviderService {
     if (!allowed) {
       throw new PickiError("FORBIDDEN", "Not a staff member for this location");
     }
+
+    return {
+      providerId: location[0].providerId,
+      brandName: location[0].brandName,
+      displayName: location[0].displayName,
+      addressLine: location[0].addressLine,
+      lat: location[0].lat,
+      lng: location[0].lng,
+      pinVerifiedAt: location[0].pinVerifiedAt,
+    };
   }
 }
 

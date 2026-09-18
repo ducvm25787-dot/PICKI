@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "../../../lib/api";
+import { getCurrentPositionOnce } from "../../../lib/geolocation";
 import { type ProviderListing } from "../../../lib/providers";
 import { ProviderList } from "../../components/provider-list";
 
@@ -14,8 +15,6 @@ type ZonePreview = {
   providerCount: number;
   tagline: string;
 };
-
-const KVL_GPS = { lat: 20.9883, lng: 105.8414 };
 
 export default function ZonePage() {
   const params = useParams<{ slug: string }>();
@@ -29,6 +28,7 @@ export default function ZonePage() {
   const [submitting, setSubmitting] = useState(false);
   const [providers, setProviders] = useState<ProviderListing[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [gpsHint, setGpsHint] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -61,10 +61,17 @@ export default function ZonePage() {
     setSubmitting(true);
     setError(null);
     try {
+      const geo = await getCurrentPositionOnce();
+      setGpsHint(
+        geo.source === "gps"
+          ? "Đã dùng vị trí GPS (một lần) để join Zone"
+          : `Dùng vị trí Zone — ${geo.error ?? ""}`,
+      );
       await api(`/zones/${zone.id}/join`, {
         method: "POST",
         body: JSON.stringify({
-          ...KVL_GPS,
+          lat: geo.position.lat,
+          lng: geo.position.lng,
           addressType: "RESIDENTIAL",
           label: "HOME",
           building,
@@ -115,7 +122,7 @@ export default function ZonePage() {
         </p>
         <p style={{ fontSize: 18, margin: "20px 0 8px" }}>{zone.tagline}</p>
         <p className="stat">
-          Cho Picki biết bạn ở đâu để phục vụ bạn tốt hơn — không phải xác minh cư trú.
+          Cho Pickee biết bạn ở đâu để phục vụ bạn tốt hơn — không phải xác minh cư trú.
         </p>
       </div>
 
@@ -146,10 +153,14 @@ export default function ZonePage() {
             <label htmlFor="apartment">Căn hộ</label>
             <input id="apartment" value={apartment} onChange={(e) => setApartment(e.target.value)} />
           </div>
+          {gpsHint ? <p className="stat">{gpsHint}</p> : null}
           {error && <p style={{ color: "crimson" }}>{error}</p>}
           <button type="button" className="btn" disabled={submitting} onClick={() => void join()}>
-            {submitting ? "Đang tham gia…" : "Tham gia Zone"}
+            {submitting ? "Đang tham gia…" : "Tham gia Zone (dùng GPS một lần)"}
           </button>
+          <p className="stat" style={{ marginTop: 8 }}>
+            Pickee chỉ lấy vị trí lúc join — không theo dõi liên tục.
+          </p>
         </div>
       )}
     </div>

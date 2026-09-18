@@ -124,7 +124,7 @@ export function ProviderPageShell({
   if (loading) {
     return (
       <div className="container provider-container">
-        <p className="tagline">Picki Provider…</p>
+        <p className="tagline">Pickee Provider…</p>
       </div>
     );
   }
@@ -132,7 +132,7 @@ export function ProviderPageShell({
   if (accessError) {
     return (
       <div className="container provider-container">
-        <div className="logo provider-logo">Picki Provider</div>
+        <div className="logo provider-logo">Pickee Provider</div>
         <div className="card" style={{ marginTop: 16 }}>
           <p style={{ color: "crimson", margin: 0 }}>{accessError}</p>
           <Link href="/provider/login" className="stat" style={{ display: "block", marginTop: 12 }}>
@@ -147,7 +147,7 @@ export function ProviderPageShell({
     <div className="container provider-container">
       <div className="header-row">
         <div>
-          <div className="logo provider-logo">Picki Provider</div>
+          <div className="logo provider-logo">Pickee Provider</div>
           <div className="tagline">{activeLocation?.brandName ?? title}</div>
         </div>
         <NotificationBell audience="provider" />

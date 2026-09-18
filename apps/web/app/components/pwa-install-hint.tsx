@@ -15,7 +15,7 @@ type PwaInstallHintProps = {
 
 export function PwaInstallHint({
   storageKey = "picki-pwa-dismiss",
-  message = "Cài Picki lên màn hình chính để mở nhanh như app.",
+  message = "Cài Pickee lên màn hình chính để mở nhanh như app.",
   variant = "customer",
 }: PwaInstallHintProps) {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);

@@ -324,7 +324,7 @@ export default function OrderDetailPage() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={paymentInfo.qrCode}
-                  alt="VietQR thanh toán Picki"
+                  alt="VietQR thanh toán Pickee"
                   style={{ width: "100%", maxWidth: 280, display: "block", margin: "0 auto 12px" }}
                 />
               ) : null}

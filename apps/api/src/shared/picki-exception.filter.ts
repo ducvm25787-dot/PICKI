@@ -41,8 +41,12 @@ export class PickiExceptionFilter implements ExceptionFilter {
     }
 
     this.logger.error(exception);
+    const message =
+      exception instanceof Error && /request entity too large|PayloadTooLarge/i.test(exception.message)
+        ? "Ảnh quá lớn sau khi nén — chọn ảnh khác"
+        : "Internal server error";
     res.status(500).json({
-      error: { code: "INTERNAL_ERROR", message: "Internal server error" },
+      error: { code: "INTERNAL_ERROR", message },
     });
   }
 }

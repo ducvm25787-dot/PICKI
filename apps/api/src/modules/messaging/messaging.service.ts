@@ -88,6 +88,14 @@ export class MessagingService {
             .where(eq(providerLocations.id, c.contextId))
             .limit(1);
           title = loc[0] ? `Hỏi hàng · ${loc[0].brandName}` : "Hỏi hàng";
+        } else if (c.contextType === "TRANSPORT") {
+          const loc = await this.db
+            .select({ displayName: providerLocations.displayName, brandName: providers.brandName })
+            .from(providerLocations)
+            .innerJoin(providers, eq(providers.id, providerLocations.providerId))
+            .where(eq(providerLocations.id, c.contextId))
+            .limit(1);
+          title = loc[0] ? `Đưa đón · ${loc[0].brandName}` : "Đưa đón";
         }
 
         return {
@@ -453,6 +461,93 @@ export class MessagingService {
     return this.getConversation(userId, conv.id);
   }
 
+  /** Hỏi đưa đón — 1 hội thoại / khách / location nhà xe (ADR-049). */
+  async getOrCreateTransportConversation(userId: string, locationId: string) {
+    const location = await this.db
+      .select({
+        id: providerLocations.id,
+        providerId: providerLocations.providerId,
+        providerType: providers.providerType,
+        brandName: providers.brandName,
+      })
+      .from(providerLocations)
+      .innerJoin(providers, eq(providers.id, providerLocations.providerId))
+      .where(eq(providerLocations.id, locationId))
+      .limit(1);
+
+    const loc = location[0];
+    if (!loc || loc.providerType !== "TRANSPORT_PROVIDER") {
+      throw new PickiError("NOT_FOUND", "Nhà xe không tìm thấy");
+    }
+
+    const staff = await this.db
+      .select({ userId: providerMembers.userId, role: providerMembers.role })
+      .from(providerMembers)
+      .where(eq(providerMembers.providerId, loc.providerId));
+
+    const shopUserIds = staff.map((s) => s.userId);
+    if (shopUserIds.includes(userId)) {
+      throw new PickiError("VALIDATION_ERROR", "Nhà xe không gửi tin cho chính mình");
+    }
+    if (shopUserIds.length === 0) {
+      throw new PickiError("CONFLICT", "Nhà xe chưa có nhân viên nhận tin");
+    }
+
+    const ownerId =
+      staff.find((s) => s.role === "OWNER")?.userId ?? shopUserIds[0]!;
+
+    const existing = await this.db
+      .select({ conversation: conversations })
+      .from(conversations)
+      .innerJoin(
+        conversationParticipants,
+        eq(conversationParticipants.conversationId, conversations.id),
+      )
+      .where(
+        and(
+          eq(conversations.contextType, "TRANSPORT"),
+          eq(conversations.contextId, locationId),
+          eq(conversationParticipants.userId, userId),
+        ),
+      )
+      .limit(20);
+
+    for (const row of existing) {
+      const staffInConv = await this.db
+        .select({ id: conversationParticipants.id })
+        .from(conversationParticipants)
+        .where(
+          and(
+            eq(conversationParticipants.conversationId, row.conversation.id),
+            eq(conversationParticipants.userId, ownerId),
+          ),
+        )
+        .limit(1);
+      if (staffInConv[0]) {
+        return this.getConversation(userId, row.conversation.id);
+      }
+    }
+
+    const conv = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(conversations)
+        .values({ contextType: "TRANSPORT", contextId: locationId })
+        .returning();
+      if (!created) {
+        throw new PickiError("INTERNAL_ERROR", "Failed to create conversation");
+      }
+
+      await tx.insert(conversationParticipants).values([
+        { conversationId: created.id, userId: ownerId, role: "PROVIDER" },
+        { conversationId: created.id, userId, role: "CUSTOMER" },
+      ]);
+
+      return created;
+    });
+
+    return this.getConversation(userId, conv.id);
+  }
+
   async sendMessage(
     userId: string,
     conversationId: string,
@@ -485,7 +580,7 @@ export class MessagingService {
     let listingId: string | undefined;
     let listingNumber: string | undefined;
     let locationId: string | undefined;
-    let inquiryKind: "PHARMACY" | "MARKET" | undefined;
+    let inquiryKind: "PHARMACY" | "MARKET" | "TRANSPORT" | undefined;
     if (conv[0].contextType === "ORDER") {
       const order = await this.db
         .select({ orderNumber: orders.orderNumber })
@@ -508,6 +603,9 @@ export class MessagingService {
     } else if (conv[0].contextType === "MARKET") {
       locationId = conv[0].contextId;
       inquiryKind = "MARKET";
+    } else if (conv[0].contextType === "TRANSPORT") {
+      locationId = conv[0].contextId;
+      inquiryKind = "TRANSPORT";
     }
 
     const preview =
@@ -515,7 +613,9 @@ export class MessagingService {
       (photoUrls.length > 0
         ? inquiryKind === "MARKET"
           ? `[${String(photoUrls.length)} ảnh hỏi hàng]`
-          : `[${String(photoUrls.length)} ảnh hỏi thuốc]`
+          : inquiryKind === "TRANSPORT"
+            ? `[${String(photoUrls.length)} ảnh hỏi đưa đón]`
+            : `[${String(photoUrls.length)} ảnh hỏi thuốc]`
         : "Tin nhắn mới");
 
     const message = await this.db.transaction(async (tx) => {

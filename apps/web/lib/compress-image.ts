@@ -30,6 +30,8 @@ async function compressBitmap(
   if (!ctx) {
     throw new Error("Trình duyệt không hỗ trợ xử lý ảnh");
   }
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
   ctx.drawImage(source, 0, 0, width, height);
 
   let quality = 0.82;
@@ -49,6 +51,8 @@ async function compressBitmap(
     const h = Math.max(320, Math.round(height * scale));
     canvas.width = w;
     canvas.height = h;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
     ctx.drawImage(source, 0, 0, w, h);
     blob = await canvasToJpegBlob(canvas, 0.72);
     if (blob.size <= maxBytes) {
@@ -62,11 +66,18 @@ async function compressBitmap(
 
 /** Nén ảnh trên máy user xuống dưới 300KB trước khi upload. */
 export async function compressImageFile(file: File, maxBytes = MAX_BYTES): Promise<Blob> {
-  if (!file.type.startsWith("image/")) {
-    throw new Error("Chỉ chọn file ảnh");
+  if (file.type && !file.type.startsWith("image/")) {
+    throw new Error("Chỉ chọn file ảnh (JPG/PNG/WebP)");
   }
 
-  const bitmap = await createImageBitmap(file);
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    // HEIC / corrupt / unsupported — try via <img> + object URL
+    bitmap = await loadBitmapViaImageElement(file);
+  }
+
   try {
     const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
@@ -74,6 +85,21 @@ export async function compressImageFile(file: File, maxBytes = MAX_BYTES): Promi
     return await compressBitmap(bitmap, width, height, maxBytes);
   } finally {
     bitmap.close();
+  }
+}
+
+async function loadBitmapViaImageElement(file: File): Promise<ImageBitmap> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Không đọc được ảnh — thử xuất lại JPG"));
+      el.src = url;
+    });
+    return await createImageBitmap(img);
+  } finally {
+    URL.revokeObjectURL(url);
   }
 }
 

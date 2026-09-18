@@ -13,7 +13,7 @@ function pickiAppHeader(): string | undefined {
 export class ApiUnreachableError extends Error {
   constructor() {
     super(
-      "API chưa chạy. Terminal: bash scripts/start-local.sh (cần thấy Picki API listening :3000)",
+      "API chưa chạy. Terminal: bash scripts/start-local.sh (cần thấy Pickee API listening :3000)",
     );
     this.name = "ApiUnreachableError";
   }

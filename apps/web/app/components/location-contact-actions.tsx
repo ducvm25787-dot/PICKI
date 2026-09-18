@@ -1,6 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { OrderPhoneLinks } from "./order-phone-links";
+import { getCurrentPositionOnce, type GeoPosition } from "../../lib/geolocation";
+import { mapsSearchAddressUrl, mapsSearchUrl, pickeeNavigateHref } from "../../lib/maps";
 
 type Props = {
   providerPhone: string | null;
@@ -8,6 +11,8 @@ type Props = {
   lat?: number | null;
   lng?: number | null;
   addressLine?: string | null;
+  /** Prefetch GPS once for directions origin */
+  autoLocate?: boolean;
 };
 
 export function LocationContactActions({
@@ -16,13 +21,31 @@ export function LocationContactActions({
   lat,
   lng,
   addressLine,
+  autoLocate = true,
 }: Props) {
-  const mapsHref =
+  const [origin, setOrigin] = useState<GeoPosition | null>(null);
+
+  useEffect(() => {
+    if (!autoLocate) return;
+    void getCurrentPositionOnce({ timeoutMs: 8000, enableHighAccuracy: false }).then((r) => {
+      if (r.source === "gps") setOrigin(r.position);
+    });
+  }, [autoLocate]);
+
+  const navigateHref =
     lat != null && lng != null
-      ? `https://www.google.com/maps/search/?api=1&query=${String(lat)},${String(lng)}`
+      ? pickeeNavigateHref({
+          destLat: lat,
+          destLng: lng,
+          label: providerLabel,
+          originLat: origin?.lat,
+          originLng: origin?.lng,
+        })
       : addressLine
-        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressLine)}`
+        ? mapsSearchAddressUrl(addressLine)
         : null;
+
+  const inApp = lat != null && lng != null;
 
   return (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -36,16 +59,25 @@ export function LocationContactActions({
           compact
         />
       ) : null}
-      {mapsHref ? (
+      {navigateHref ? (
         <a
-          href={mapsHref}
+          href={navigateHref}
+          className="order-phone-link"
+          {...(inApp ? {} : { target: "_blank", rel: "noopener noreferrer" })}
+          title="Chỉ đường tới tiệm"
+        >
+          <span>Chỉ đường</span>
+        </a>
+      ) : null}
+      {lat != null && lng != null ? (
+        <a
+          href={mapsSearchUrl(lat, lng)}
           className="order-phone-link"
           target="_blank"
           rel="noopener noreferrer"
-          title="Chỉ đường tới tiệm"
+          title="Xem trên bản đồ"
         >
-          <span aria-hidden>📍</span>
-          <span>Chỉ đường</span>
+          <span>Xem vị trí</span>
         </a>
       ) : null}
     </div>

@@ -112,7 +112,7 @@ export function PharmacyInquiry({ locationId }: Props) {
       <p className="section-title">Hỏi nhà thuốc</p>
       <p className="stat" style={{ margin: "0 0 12px" }}>
         Gửi tin + ảnh (tối đa 3) — ví dụ &quot;Mình có thuốc/sản phẩm này không?&quot; Nhà thuốc nhận
-        trong Picki (chuông thông báo), trả lời ngay tại đây. Không nhảy sang Zalo.
+        trong Pickee (chuông thông báo), trả lời ngay tại đây. Không nhảy sang Zalo.
       </p>
 
       {conversation && conversation.messages.length > 0 ? (

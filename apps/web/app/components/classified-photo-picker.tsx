@@ -19,18 +19,24 @@ type Props = {
   photos: ClassifiedPhoto[];
   onChange: (photos: ClassifiedPhoto[]) => void;
   disabled?: boolean;
+  maxPhotos?: number;
 };
 
-export function ClassifiedPhotoPicker({ photos, onChange, disabled = false }: Props) {
+export function ClassifiedPhotoPicker({
+  photos,
+  onChange,
+  disabled = false,
+  maxPhotos = CLASSIFIED_MAX_PHOTOS,
+}: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
-    const remaining = CLASSIFIED_MAX_PHOTOS - photos.length;
+    const remaining = maxPhotos - photos.length;
     if (remaining <= 0) {
-      setError(`Tối đa ${String(CLASSIFIED_MAX_PHOTOS)} ảnh`);
+      setError(`Tối đa ${String(maxPhotos)} ảnh`);
       return;
     }
 
@@ -69,8 +75,10 @@ export function ClassifiedPhotoPicker({ photos, onChange, disabled = false }: Pr
   return (
     <div className="classified-photo-picker">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <span>Ảnh (tối đa {CLASSIFIED_MAX_PHOTOS}, mỗi ảnh &lt; 300KB)</span>
-        <span className="stat">{photos.length}/{CLASSIFIED_MAX_PHOTOS}</span>
+        <span>Ảnh (tối đa {maxPhotos}, mỗi ảnh &lt; 300KB)</span>
+        <span className="stat">
+          {photos.length}/{maxPhotos}
+        </span>
       </div>
 
       <div className="classified-photo-grid">
@@ -91,7 +99,7 @@ export function ClassifiedPhotoPicker({ photos, onChange, disabled = false }: Pr
           </div>
         ))}
 
-        {photos.length < CLASSIFIED_MAX_PHOTOS ? (
+        {photos.length < maxPhotos ? (
           <button
             type="button"
             className="classified-photo-add"
@@ -106,15 +114,15 @@ export function ClassifiedPhotoPicker({ photos, onChange, disabled = false }: Pr
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
-        multiple
+        accept="image/jpeg,image/png,image/webp,image/*"
+        multiple={maxPhotos > 1}
         hidden
         onChange={(e) => void handleFiles(e.target.files)}
       />
 
       {error ? <p className="stat" style={{ color: "#c0392b", marginTop: 8 }}>{error}</p> : null}
       <p className="stat" style={{ marginTop: 8 }}>
-        Ảnh được nén trên máy bạn trước khi gửi lên Picki.
+        Ảnh được nén trên máy bạn trước khi gửi lên Pickee.
       </p>
     </div>
   );

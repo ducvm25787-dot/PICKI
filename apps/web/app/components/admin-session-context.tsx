@@ -56,16 +56,19 @@ export function useAdminSession() {
 export function AdminPageShell({
   title,
   children,
+  variant = "default",
 }: {
   title: string;
   children: React.ReactNode;
+  /** Full-bleed desktop workspace (Zone map setup) */
+  variant?: "default" | "workspace";
 }) {
   const { loading, accessError } = useAdminSession();
 
   if (loading) {
     return (
-      <div className="container admin-container">
-        <p className="tagline">Picki Ops…</p>
+      <div className={variant === "workspace" ? "admin-workspace-shell" : "container admin-container"}>
+        <p className="tagline">Pickee Ops…</p>
       </div>
     );
   }
@@ -73,7 +76,7 @@ export function AdminPageShell({
   if (accessError) {
     return (
       <div className="container admin-container">
-        <div className="logo admin-logo">Picki Ops</div>
+        <div className="logo admin-logo">Pickee Ops</div>
         <div className="card" style={{ marginTop: 16 }}>
           <p style={{ color: "crimson", margin: 0 }}>{accessError}</p>
           <Link href="/admin/login" className="stat" style={{ display: "block", marginTop: 12 }}>
@@ -84,11 +87,28 @@ export function AdminPageShell({
     );
   }
 
+  if (variant === "workspace") {
+    return (
+      <div className="admin-workspace-shell">
+        <header className="admin-workspace-top">
+          <div className="admin-workspace-top-left">
+            <span className="logo admin-logo" style={{ fontSize: 18 }}>
+              Pickee Ops
+            </span>
+            <span className="admin-workspace-title">{title}</span>
+          </div>
+          <span className="badge admin-badge">Admin · Desktop</span>
+        </header>
+        <div className="admin-workspace-body">{children}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="container admin-container">
       <div className="header-row">
         <div>
-          <div className="logo admin-logo">Picki Ops</div>
+          <div className="logo admin-logo">Pickee Ops</div>
           <div className="tagline">{title}</div>
         </div>
         <span className="badge admin-badge">Admin</span>

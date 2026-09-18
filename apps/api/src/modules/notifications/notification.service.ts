@@ -38,7 +38,7 @@ type MessagePayload = {
   listingId?: string;
   listingNumber?: string;
   locationId?: string;
-  inquiryKind?: "PHARMACY" | "MARKET";
+  inquiryKind?: "PHARMACY" | "MARKET" | "TRANSPORT";
   preview: string;
   recipientUserIds: string[];
 };
@@ -844,7 +844,9 @@ export class NotificationService implements OnModuleInit {
         : payload.locationId
           ? payload.inquiryKind === "MARKET"
             ? "Khách hỏi hàng"
-            : "Khách hỏi thuốc"
+            : payload.inquiryKind === "TRANSPORT"
+              ? "Khách hỏi đưa đón"
+              : "Khách hỏi thuốc"
           : "Tin nhắn mới";
     const preview =
       payload.preview.length > 120 ? `${payload.preview.slice(0, 117)}…` : payload.preview;

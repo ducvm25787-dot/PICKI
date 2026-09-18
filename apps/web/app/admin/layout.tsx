@@ -2,11 +2,11 @@ import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
   title: {
-    default: "Picki Ops",
-    template: "%s · Picki Ops",
+    default: "Pickee Ops",
+    template: "%s · Pickee Ops",
   },
   description: "Admin/Ops — pilot Kim Văn Kim Lũ",
-  applicationName: "Picki Ops",
+  applicationName: "Pickee Ops",
   icons: {
     icon: [
       { url: "/icons/icon-192.png", type: "image/png", sizes: "192x192" },

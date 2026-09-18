@@ -112,7 +112,7 @@ export function MarketInquiry({ locationId }: Props) {
       <p className="section-title">Hỏi cửa hàng</p>
       <p className="stat" style={{ margin: "0 0 12px" }}>
         Gửi tin + ảnh (tối đa 3) — ví dụ &quot;Còn sữa Ensure / bỉm size M không?&quot; Cửa hàng nhận
-        trong Picki (chuông thông báo), trả lời ngay tại đây. Không nhảy sang Zalo.
+        trong Pickee (chuông thông báo), trả lời ngay tại đây. Không nhảy sang Zalo.
       </p>
 
       {conversation && conversation.messages.length > 0 ? (

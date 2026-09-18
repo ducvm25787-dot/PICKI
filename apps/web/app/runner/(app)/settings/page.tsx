@@ -41,7 +41,7 @@ export default function RunnerSettingsPage() {
       <div className="card" style={{ marginBottom: 16 }}>
         <p className="section-title">Ứng dụng</p>
         <p className="stat" style={{ marginTop: 0 }}>
-          Cài Picki Runner lên màn hình chính (Add to Home Screen) để mở nhanh khi giao hàng.
+          Cài Pickee Runner lên màn hình chính (Add to Home Screen) để mở nhanh khi giao hàng.
         </p>
         <p className="stat">Tab Đơn và Tiến trình tự làm mới mỗi 15 giây.</p>
       </div>

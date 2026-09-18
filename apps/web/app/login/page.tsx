@@ -128,7 +128,7 @@ export default function LoginPage() {
             )}
             {error && <p style={{ color: "crimson" }}>{error}</p>}
             <button type="button" className="btn" disabled={loading} onClick={() => void verifyOtp()}>
-              {loading ? "Đang xác thực…" : "Vào Picki"}
+              {loading ? "Đang xác thực…" : "Vào Pickee"}
             </button>
           </>
         )}

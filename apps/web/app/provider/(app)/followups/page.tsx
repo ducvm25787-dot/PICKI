@@ -112,7 +112,7 @@ export default function ProviderFollowupsPage() {
       });
       setSelectedPatient(null);
       setDays(30);
-      setToast(`Đã đặt nhắc sau ${String(days)} ngày — Picki gửi một lần vào ngày đó`);
+      setToast(`Đã đặt nhắc sau ${String(days)} ngày — Pickee gửi một lần vào ngày đó`);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Không đặt được lời nhắc");
@@ -163,7 +163,7 @@ export default function ProviderFollowupsPage() {
           <strong>{data?.summary.pendingCount ?? 0}</strong> lời nhắc đang chờ gửi
         </p>
         <p className="stat" style={{ margin: "8px 0 0", fontSize: 13 }}>
-          Chỉ nhập số ngày sau lần khám. Picki nhắc khách một lần — đã nhắc thì không đặt lại
+          Chỉ nhập số ngày sau lần khám. Pickee nhắc khách một lần — đã nhắc thì không đặt lại
           cho khách đó. Không gửi kèm lý do khám.
         </p>
       </div>

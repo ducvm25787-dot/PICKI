@@ -225,8 +225,9 @@ export class OrdersService {
     const deliveryFloor = addr.floor;
     const deliveryApartment = addr.apartment;
     const deliveryNote = addr.deliveryNote;
-    const deliveryLat: number | null = null;
-    const deliveryLng: number | null = null;
+    const coords = await this.addresses.getDeliveryCoords(addr.id);
+    const deliveryLat: number | null = coords?.lat ?? null;
+    const deliveryLng: number | null = coords?.lng ?? null;
 
     let paymentMode = input.paymentMode;
     let deliveryFeeVnd = 0;

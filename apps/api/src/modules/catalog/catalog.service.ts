@@ -38,33 +38,10 @@ export class CatalogService {
 
     const familyDinnerEnabled = dinnerSettings[0]?.enabled === true;
 
-    const isBeauty = header.provider_type === "BEAUTY";
-    const isPet = header.provider_type === "PET_SERVICE";
-    const isAuto = header.provider_type === "AUTO_SERVICE";
-    const isSports = header.provider_type === "SPORTS_FACILITY";
-    const isHealth = header.provider_type === "HEALTH_PROVIDER";
-    const isPharmacy = header.provider_type === "PHARMACY";
-    const isMarket =
-      header.provider_type === "MINIMART" ||
-      header.provider_type === "MARKET_VENDOR" ||
-      header.provider_type === "RETAIL_STORE";
-    const isEducation =
-      header.provider_type === "EDUCATION_PROVIDER" || header.provider_type === "TUTOR";
-    const withContacts =
-      isBeauty ||
-      isPet ||
-      isAuto ||
-      isSports ||
-      isEducation ||
-      isHealth ||
-      isPharmacy ||
-      isMarket;
-    const [providerPhone, brandName] = withContacts
-      ? await Promise.all([
-          loadProviderContactPhone(this.db, locationId),
-          loadProviderBrand(this.db, locationId),
-        ])
-      : [null, null];
+    const [providerPhone, brandName] = await Promise.all([
+      loadProviderContactPhone(this.db, locationId),
+      loadProviderBrand(this.db, locationId),
+    ]);
 
     return {
       location: {
@@ -75,6 +52,9 @@ export class CatalogService {
         displayName: header.display_name,
         liveStatus: header.live_status,
         tagline: header.tagline,
+        description: header.description,
+        logoUrl: header.logo_url,
+        coverUrl: header.cover_url,
         prepMinutes: header.prep_minutes,
         etaMinutes: header.eta_minutes,
         estimatedWaitMinutes: header.estimated_wait_minutes,
@@ -82,14 +62,12 @@ export class CatalogService {
         addressLine: header.address_line,
         lat: header.lat,
         lng: header.lng,
-        contacts: withContacts
-          ? {
-              provider: {
-                phone: providerPhone,
-                label: brandName ?? header.brand_name,
-              },
-            }
-          : undefined,
+        contacts: {
+          provider: {
+            phone: providerPhone,
+            label: brandName ?? header.brand_name,
+          },
+        },
       },
       familyDinner: familyDinnerEnabled
         ? { enabled: true, serviceDate: defaultDinnerServiceDate() }

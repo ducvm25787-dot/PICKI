@@ -11,6 +11,9 @@ export type SavedAddress = {
   ward: string | null;
   city: string | null;
   deliveryNote: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  hasPin?: boolean;
 };
 
 export type AddressKind = "APARTMENT" | "STREET";

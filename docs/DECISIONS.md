@@ -554,3 +554,89 @@ Transactional outbox (`outbox_events`) processed by an in-process or same-deploy
 **Full scope:** `docs/PICKI_LATE_NIGHT_SPEC.md`.
 
 ---
+
+### ADR-050 — Brand: Pickee — Tiện ích quanh tôi (Phase A UI)
+
+**Status:** ACCEPTED (2026-09-18) — Phase A only
+
+**Context:** Product rename Picki → **Pickee**; tagline **Tiện ích quanh tôi**. Brand Op2 (gradient cam–đỏ) khớp Zone Citrus.
+
+**Decision:**
+
+1. User-facing brand = **Pickee** / wordmark lowercase **pickee**; tagline **Tiện ích quanh tôi**.
+2. Assets in `apps/web/public/brand/` (symbol, wordmark, lockups); PWA icons regenerated from symbol on cream.
+3. **Không** rename `@picki/*`, Docker DB `picki`, `PickiError`, `PICKI_POINT`, repo path trong Phase A.
+4. Master Spec / constitution copy có thể cập nhật dần; kỹ thuật nội bộ giữ `picki` đến Phase B (nếu cần).
+
+---
+
+### ADR-049 — Xe đưa đón lean: LISTING + LIVE + CONTACT
+
+**Status:** ACCEPTED (2026-09-18) — Phase 1 lean
+
+**Context:** Nhu cầu Zone quanh chung cư — đưa đón sân bay, về quê, du lịch/liên tỉnh, đưa đón học sinh. Không có trong homepage §94; không trùng Runner (hàng hóa) hay `AUTO_SERVICE` (rửa xe/gara).
+
+**Decision:**
+
+1. Provider type `TRANSPORT_PROVIDER`.
+2. Capabilities V1: `LISTING` + `LIVE_STATUS` + `CONTACT` — mirror ADR-043/044.
+3. Offering `CONTACT_ONLY` / báo giá — khách gọi/Zalo/chat hỏi lịch & giá; **không** booking engine, giỏ, runner, GPS track, AI dispatch, ride-hail.
+4. Home category **Xe đưa đón** (`transport`) + discovery block khi có provider trong Zone.
+5. Không scrape Grab/Be/Xanh SM; không dùng Runner cho chở khách.
+
+**Full scope:** `docs/S44_TRANSPORT.md`.
+
+---
+
+### ADR-051 — Map Phase 1: OSM + one-shot GPS + external directions
+
+**Status:** ACCEPTED (2026-09-18) — Phase 1 lean
+
+**Context:** Live Map Spec §48/S12 was CSS fake map; join used hardcoded KVL GPS. Need real map + user pin + directions without violating §22 (no continuous tracking).
+
+**Decision:**
+
+1. Client map = **Leaflet + OpenStreetMap** tiles (no Google Maps SDK key in V1).
+2. GPS = **`getCurrentPosition` one-shot only** — join Zone, pin on Live Map, optional origin for directions. **No** `watchPosition`, no runner GPS trail table.
+3. Directions = Google Maps **deep-link** (`/maps/dir`) via existing Geo adapter pattern — vendor-swappable later.
+4. Runner: expose `lat`/`lng` on active route stops; show numbered pins + per-stop Chỉ đường.
+5. Out of scope V1: continuous tracking, OSRM polylines, AI reordering, map SDK paid tier.
+
+**Phase 1.5 (2026-09-18):** Zone boundary GeoJSON on Live Map; `open` + `types` filters; GPS fallback = Zone anchor; mini-map on Intro + Breakfast; search/browse → map focus; join stores address coordinates; order copies coords → `delivery_lat/lng`; lobby stops prefer Picki Point lat/lng.
+
+---
+
+### ADR-052 — Admin Zone Setup Web (polygon / core / GPS / shop pin)
+
+**Status:** ACCEPTED (2026-09-18)
+
+**Context:** Seed KVL boundary was a crude rectangle; GPS anchor and shop pins need operator correction after real-world check. Full Zone Planner (candidates/scoring) is separate (ADR-009); Ops still need a **web Admin UI** to edit production geometry.
+
+**Decision:**
+
+1. Admin Web `/admin/zones/:id` — tabs: **Ranh giới Zone**, **Vùng trung tâm (CORE)**, **Vùng giao thoa (EXTENDED)**, **Neo GPS**, **Vị trí shop**.
+2. Membership polygon edits create a **new** `zone_boundary_versions` row (never overwrite) + `change_reason` + audit. Explicit Publish only.
+3. CORE / EXTENDED use `service_areas` upsert (pilot: one row per kind). Shared multi-zone table deferred.
+4. Zone `anchor_lat/lng` editable (fallback center / discover context).
+5. Shop pin: Admin sets `lat/lng` after field check → `pin_verified_at` / `pin_verified_by` / `pin_note` on `provider_locations`.
+6. Out of scope here: full Zone Planner scoring, auto-publish, split/merge, continuous GPS.
+
+---
+
+### ADR-053 — Map Phase 2: In-app Pickee navigation (OSRM + Bắt đầu)
+
+**Status:** ACCEPTED (2026-09-18)
+
+**Context:** Phase 1 Chỉ đường opened Google Maps (`/maps/dir`). Users expect Grab/VinBus/Xanh SM-style in-app route with **Bắt đầu** before turn-by-turn follow — still without storing a GPS trail (§22). Pickee Zone trips are short (đi bộ / xe máy / xe đạp), not car-default.
+
+**Decision:**
+
+1. **In-app** `/navigate?destLat=&destLng=&label=&mode=` — Leaflet/OSM map + **OSRM** route (polyline + steps). Adapter-ready (`lib/routing.ts`); vendor-swappable later.
+2. **Travel modes (Zone-first):** `walk` (OSRM `walking`, default gợi ý ≤~900m), `scooter` / xe máy (OSRM `driving` — chưa có profile moto riêng trên public OSRM), `bike` (OSRM `cycling`). User can switch chips trước **Bắt đầu**. Runner Chỉ đường defaults `mode=scooter`.
+3. Preview route first → user taps **Bắt đầu** → `watchPosition` only while navigating; **Dừng** / unmount clears watch. **No** GPS trail table / no server upload of path.
+4. Chỉ đường (customer location actions, Zone Live Map, Runner stops) deep-links to `/navigate`. **Google Maps** remains secondary fallback with matching `travelmode`.
+5. Out of scope: paid map SDK, dedicated motorcycle routing graph, AI re-route, voice guidance, continuous background tracking, runner auto-dispatch by GPS.
+
+**Supersedes (partial):** ADR-051 item 3 (directions = Google-only) and item 5 (OSRM out of scope) — Google remains fallback only.
+
+---

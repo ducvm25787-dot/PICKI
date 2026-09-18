@@ -31,6 +31,8 @@ export type SearchResultRow = {
   offering_id: string | null;
   offering_name: string | null;
   amount_vnd: number | null;
+  lat: number | null;
+  lng: number | null;
 };
 
 export type DailySpecialRow = {
@@ -621,6 +623,62 @@ export async function listPharmacyProviders(
   `;
 }
 
+/** XE ĐƯA ĐÓN — sân bay / về quê / du lịch / học sinh (ADR-049). */
+export async function listTransportProviders(
+  sql: PickiSql,
+  zoneId: string,
+): Promise<DiscoveryProviderRow[]> {
+  return sql<DiscoveryProviderRow[]>`
+    SELECT
+      pl.id AS location_id,
+      p.id AS provider_id,
+      p.brand_name,
+      pl.display_name,
+      p.provider_type,
+      pp.tagline,
+      COALESCE(pls.status, 'OFFLINE') AS live_status,
+      pls.prep_minutes,
+      pls.eta_minutes,
+      pls.estimated_wait_minutes,
+      pl.address_line,
+      pl.lat,
+      pl.lng,
+      (
+        SELECT ROUND(AVG(lr.rating)::numeric, 1)::text
+        FROM location_reviews lr
+        WHERE lr.provider_location_id = pl.id
+      ) AS avg_rating,
+      (
+        SELECT COUNT(*)::text FROM location_reviews lr
+        WHERE lr.provider_location_id = pl.id
+      ) AS review_count,
+      (
+        SELECT o.name FROM offerings o
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        ORDER BY o.sort_order
+        LIMIT 1
+      ) AS sample_offering
+    FROM provider_zone_memberships pzm
+    INNER JOIN provider_locations pl ON pl.id = pzm.provider_location_id
+    INNER JOIN providers p ON p.id = pl.provider_id
+    LEFT JOIN provider_profiles pp ON pp.provider_id = p.id
+    LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
+    WHERE pzm.zone_id = ${zoneId}::uuid
+      AND pzm.status = 'ACTIVE'
+      AND pl.status = 'ACTIVE'
+      AND p.status = 'ACTIVE'
+      AND p.provider_type = 'TRANSPORT_PROVIDER'
+    ORDER BY
+      CASE COALESCE(pls.status, 'OFFLINE')
+        WHEN 'OPEN' THEN 0
+        WHEN 'BUSY' THEN 1
+        WHEN 'CLOSED' THEN 2
+        ELSE 3
+      END,
+      p.brand_name
+  `;
+}
+
 /** ĐI CHỢ — minimart / tạp hóa / sạp / retail nhỏ (không license gate). */
 export async function listMarketProviders(
   sql: PickiSql,
@@ -850,7 +908,9 @@ export async function searchZone(
         COALESCE(pls.status, 'OFFLINE') AS live_status,
         NULL::uuid AS offering_id,
         NULL::text AS offering_name,
-        NULL::integer AS amount_vnd
+        NULL::integer AS amount_vnd,
+        pl.lat,
+        pl.lng
       FROM provider_zone_memberships pzm
       INNER JOIN provider_locations pl ON pl.id = pzm.provider_location_id
       INNER JOIN providers p ON p.id = pl.provider_id
@@ -869,7 +929,9 @@ export async function searchZone(
         COALESCE(pls.status, 'OFFLINE') AS live_status,
         o.id AS offering_id,
         o.name AS offering_name,
-        COALESCE(op.amount_vnd, opm.amount_vnd) AS amount_vnd
+        COALESCE(op.amount_vnd, opm.amount_vnd) AS amount_vnd,
+        pl.lat,
+        pl.lng
       FROM offerings o
       INNER JOIN providers p ON p.id = o.provider_id
       INNER JOIN provider_locations pl ON pl.provider_id = p.id
@@ -886,10 +948,22 @@ export async function searchZone(
   `;
 }
 
+export type MapProviderFilters = {
+  /** Exclude CLOSED / NOT_ACCEPTING / OFFLINE */
+  openOnly?: boolean;
+  providerTypes?: string[];
+};
+
+const OPEN_LIVE = ["AVAILABLE_NOW", "SHORT_WAIT", "BUSY", "OPEN"] as const;
+
 export async function listMapProviders(
   sql: PickiSql,
   zoneId: string,
+  filters: MapProviderFilters = {},
 ): Promise<DiscoveryProviderRow[]> {
+  const types = (filters.providerTypes ?? []).filter(Boolean);
+  const openOnly = filters.openOnly === true;
+
   return sql<DiscoveryProviderRow[]>`
     SELECT
       pl.id AS location_id,
@@ -925,6 +999,12 @@ export async function listMapProviders(
       AND pl.status = 'ACTIVE'
       AND p.status = 'ACTIVE'
       AND pl.lat IS NOT NULL AND pl.lng IS NOT NULL
+      ${types.length > 0 ? sql`AND p.provider_type = ANY(${types})` : sql``}
+      ${
+        openOnly
+          ? sql`AND COALESCE(pls.status, 'OFFLINE') = ANY(${[...OPEN_LIVE]})`
+          : sql``
+      }
     ORDER BY p.brand_name
   `;
 }

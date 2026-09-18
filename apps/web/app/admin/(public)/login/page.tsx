@@ -51,7 +51,7 @@ export default function AdminLoginPage() {
 
   return (
     <div className="container">
-      <div className="logo admin-logo">Picki Ops</div>
+      <div className="logo admin-logo">Pickee Ops</div>
       <p className="tagline">Đăng nhập Admin/Ops (demo: 0908888003)</p>
       <div className="card">
         {step === "phone" ? (

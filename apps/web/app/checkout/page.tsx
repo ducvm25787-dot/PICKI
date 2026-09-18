@@ -14,6 +14,8 @@ import {
 } from "../../lib/addresses";
 import { AddressActionsMenu } from "../components/address-actions-menu";
 import { cartTotalVnd, readCart, writeCart, type Cart } from "../../lib/cart";
+import { getCurrentPositionOnce } from "../../lib/geolocation";
+import { mapsDirectionsUrl } from "../../lib/maps";
 import { formatVnd } from "../../lib/money";
 import { isLaundryVertical, orderButtonLabel } from "../../lib/providers";
 
@@ -62,6 +64,7 @@ export default function CheckoutPage() {
   );
   const [addressMenuId, setAddressMenuId] = useState<string | null>(null);
   const [quote, setQuote] = useState<OrderQuote | null>(null);
+  const [pinUpdatingId, setPinUpdatingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!addressMenuId) return;
@@ -149,6 +152,37 @@ export default function CheckoutPage() {
     setAddressMenuId(null);
     resetAddressForm();
     setError(null);
+  }
+
+  async function refreshAddressPin(addressId: string) {
+    if (!cart) return;
+    setPinUpdatingId(addressId);
+    setError(null);
+    try {
+      const geo = await getCurrentPositionOnce({ timeoutMs: 10000 });
+      if (geo.source !== "gps") {
+        setError(geo.error ?? "Không lấy được GPS — bật vị trí và thử lại");
+        return;
+      }
+      const updated = await api<{ id: string; lat: number; lng: number; hasPin: boolean }>(
+        `/zones/${cart.zoneId}/addresses/${addressId}/pin`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(geo.position),
+        },
+      );
+      setAddresses((prev) =>
+        prev.map((a) =>
+          a.id === addressId
+            ? { ...a, lat: updated.lat, lng: updated.lng, hasPin: true }
+            : a,
+        ),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Không cập nhật được vị trí");
+    } finally {
+      setPinUpdatingId(null);
+    }
   }
 
   function startEditAddress(addr: SavedAddress) {
@@ -373,6 +407,39 @@ export default function CheckoutPage() {
                       {addr.deliveryNote}
                     </span>
                   ) : null}
+                  <span className="stat" style={{ display: "block", marginTop: 4 }}>
+                    {addr.hasPin || (addr.lat != null && addr.lng != null)
+                      ? `Pin: ${Number(addr.lat).toFixed(5)}, ${Number(addr.lng).toFixed(5)}`
+                      : "Chưa có vị trí map — bấm cập nhật GPS"}
+                  </span>
+                  <span style={{ display: "flex", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="order-phone-link"
+                      style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                      disabled={pinUpdatingId === addr.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void refreshAddressPin(addr.id);
+                      }}
+                    >
+                      {pinUpdatingId === addr.id ? "Đang lấy GPS…" : "Cập nhật GPS"}
+                    </button>
+                    {addr.lat != null && addr.lng != null ? (
+                      <a
+                        className="order-phone-link"
+                        href={mapsDirectionsUrl({
+                          destLat: addr.lat,
+                          destLng: addr.lng,
+                        })}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Xem trên map
+                      </a>
+                    ) : null}
+                  </span>
                 </span>
                 <AddressActionsMenu
                   open={addressMenuId === addr.id}

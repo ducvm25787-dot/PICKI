@@ -21,7 +21,8 @@ export const createClassifiedSchema = z.object({
 });
 
 export const uploadClassifiedPhotoSchema = z.object({
-  dataUrl: z.string().min(32).max(450_000),
+  // ~300KB JPEG → ~410KB base64 + prefix; leave headroom
+  dataUrl: z.string().min(32).max(700_000),
 });
 
 export const listClassifiedsQuerySchema = z.object({

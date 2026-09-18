@@ -54,7 +54,7 @@ export default function RunnerLoginPage() {
       <div style={{ marginBottom: 20 }}>
         <BrandMark
           tone="runner"
-          title="Picki Runner"
+          title="Pickee Runner"
           subtitle="Demo login 0908888002"
         />
       </div>

@@ -77,6 +77,24 @@ export class ZonesController {
     return this.addressesService.addZoneAddress(userId, zoneId, parsed.data);
   }
 
+  @Patch(":zoneId/addresses/:addressId/pin")
+  @UseGuards(SessionAuthGuard)
+  @HttpCode(200)
+  async updateAddressPin(
+    @CurrentUserId() userId: string,
+    @Param("zoneId") zoneId: string,
+    @Param("addressId") addressId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = discoverSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Invalid GPS coordinates", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.addressesService.updateAddressPin(userId, zoneId, addressId, parsed.data);
+  }
+
   @Patch(":zoneId/addresses/:addressId")
   @UseGuards(SessionAuthGuard)
   @HttpCode(200)

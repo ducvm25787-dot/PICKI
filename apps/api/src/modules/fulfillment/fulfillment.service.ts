@@ -145,6 +145,8 @@ export class FulfillmentService {
       label: string;
       building: string | null;
       apartment: string | null;
+      lat: number | null;
+      lng: number | null;
       arrivedAt: string | null;
       handoffs?: Awaited<ReturnType<FulfillmentService["loadHandoffsForStop"]>>;
     }> = [];
@@ -212,6 +214,8 @@ export class FulfillmentService {
             label: s.label,
             building: s.building,
             apartment: s.apartment,
+            lat: s.lat,
+            lng: s.lng,
             arrivedAt: s.arrivedAt?.toISOString() ?? null,
           };
           if (
@@ -872,6 +876,10 @@ export class FulfillmentService {
           )
           .limit(1);
         pickiPointId = point[0]?.id ?? null;
+        if (point[0]?.lat != null && point[0]?.lng != null) {
+          s.lat = point[0].lat;
+          s.lng = point[0].lng;
+        }
       }
 
       await tx.insert(routeStops).values({
