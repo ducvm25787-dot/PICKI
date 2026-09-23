@@ -12,6 +12,7 @@ import { orderStatusRich, isBreakfastPreorderOrderKind } from "../../../lib/orde
 import { formatOrderAmount, formatVnd } from "../../../lib/money";
 import { fdFormatItemQtyLabel, fdIsPastCutoff } from "../../../lib/family-dinner";
 import { bfIsPastCutoff } from "../../../lib/breakfast-preorder";
+import { loyaltyLabelClass, loyaltyLabelVi } from "../../../lib/loyalty";
 
 type DailyRunnerStats = {
   date: string;
@@ -47,6 +48,7 @@ type ProviderOrder = {
     provider: { phone: string | null; label?: string };
     runner?: { phone: string | null; displayName?: string | null } | null;
   };
+  customerLoyalty?: { label: string; completedInteractions: number };
   items: { name: string; quantity: number; familyDinnerCategory?: string | null }[];
 };
 
@@ -586,6 +588,16 @@ export default function ProviderOrdersPage() {
                   providerBrandName={o.providerBrandName}
                   right={<span>{formatOrderAmount(o.totalVnd, o.serviceVertical)}</span>}
                 />
+                {o.customerLoyalty && o.customerLoyalty.label !== "NEW" ? (
+                  <p className="stat" style={{ margin: "4px 0 0" }}>
+                    <span className={loyaltyLabelClass(o.customerLoyalty.label)}>
+                      {loyaltyLabelVi(o.customerLoyalty.label)}
+                    </span>
+                    {o.customerLoyalty.completedInteractions > 0
+                      ? ` · ${String(o.customerLoyalty.completedInteractions)} lần`
+                      : null}
+                  </p>
+                ) : null}
                 {o.serviceVertical !== "LAUNDRY" && (o.deliveryFeeVnd ?? 0) > 0 ? (
                   <p className="stat" style={{ margin: "4px 0 0", fontSize: 13 }}>
                     Hàng {formatVnd(o.subtotalVnd ?? o.totalVnd - (o.deliveryFeeVnd ?? 0))} + ship{" "}

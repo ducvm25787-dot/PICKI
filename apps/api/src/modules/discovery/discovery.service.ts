@@ -22,7 +22,14 @@ import {
   listMapProviders,
   listProvidersByTypes,
   locationReviews,
-  searchZone,
+  listFamiliarProvidersInZone,
+  listNowAroundInZone,
+  listFamilyDinnerProvidersEnabled,
+  listExploreProviders,
+  type ExploreChip,
+  searchZoneUniversal,
+  syncRelationshipFavorite,
+  hideFamiliarSuggestion,
   getZoneBoundaryGeoJson,
   userFavorites,
   vnNowHhMm,
@@ -32,6 +39,7 @@ import {
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
 import { PICKI_DB, PICKI_SQL } from "../../shared/tokens.js";
+import { AnalyticsService } from "../analytics/analytics.service.js";
 import { ZonesService } from "../zones/zones.service.js";
 import {
   defaultBreakfastServiceDate,
@@ -44,6 +52,7 @@ export class DiscoveryService {
     @Inject(PICKI_SQL) private readonly sql: PickiSql,
     @Inject(PICKI_DB) private readonly db: PickiDb,
     @Inject(ZonesService) private readonly zones: ZonesService,
+    @Inject(AnalyticsService) private readonly analytics: AnalyticsService,
   ) {}
 
   async getDiscovery(slugOrId: string) {
@@ -86,6 +95,20 @@ export class DiscoveryService {
             ...block,
             providers: breakfastAccepting.map(mapProvider),
             href: "/breakfast",
+          };
+        }
+        if (block.id === "dinner-plan" || block.id === "dinner-rescue") {
+          const kitchens = await listFamilyDinnerProvidersEnabled(this.sql, zone.id);
+          const extras = await listDiscoveryProviders(this.sql, zone.id, block.foodMoments);
+          const seen = new Set(kitchens.map((k) => k.location_id));
+          const merged = [
+            ...kitchens,
+            ...extras.filter((r) => !seen.has(r.location_id)),
+          ];
+          return {
+            ...block,
+            providers: merged.map(mapProvider),
+            href: "/family-dinner",
           };
         }
         return {
@@ -305,28 +328,81 @@ export class DiscoveryService {
     };
   }
 
-  async search(slugOrId: string, query: string) {
+  async search(slugOrId: string, query: string, userId?: string) {
     const zone = await this.zones.findZone(slugOrId);
     if (!zone) throw new PickiError("NOT_FOUND", "Zone not found");
     if (!query.trim()) {
-      return { results: [] };
+      return { groups: [], results: [], zeroResult: true };
     }
 
-    const rows = await searchZone(this.sql, zone.id, query);
+    let familiarIds: string[] = [];
+    if (userId) {
+      const familiarRows = await listFamiliarProvidersInZone(this.sql, userId, zone.id, 20);
+      familiarIds = familiarRows.map((r) => r.location_id);
+    }
+
+    const groups = await searchZoneUniversal(this.sql, {
+      zoneId: zone.id,
+      query,
+      familiarLocationIds: familiarIds,
+    });
+
+    const results = groups.flatMap((g) =>
+      g.results
+        .filter((r) => r.kind !== "category")
+        .map((r) => ({
+          kind: r.kind,
+          locationId: r.location_id,
+          providerId: r.provider_id,
+          brandName: r.brand_name,
+          displayName: r.display_name,
+          liveStatus: r.live_status,
+          itemId: r.item_id,
+          itemName: r.item_name,
+          itemSubtitle: r.item_subtitle,
+          amountVnd: r.amount_vnd,
+          href: r.href_hint,
+          lat: r.lat,
+          lng: r.lng,
+          familiar: r.familiar,
+          groupId: g.id,
+        })),
+    );
+
+    const zeroResult = groups.every((g) => g.results.length === 0);
+    const hitCount = groups.reduce((n, g) => n + g.results.length, 0);
+    this.analytics.trackFireAndForget(userId, zeroResult ? "search_zero_result" : "search_query", {
+      zoneId: zone.id,
+      properties: {
+        q: query.trim().slice(0, 80),
+        hitCount,
+        groupCount: groups.filter((g) => g.results.length > 0).length,
+      },
+    });
+
     return {
-      results: rows.map((r) => ({
-        kind: r.kind,
-        locationId: r.location_id,
-        providerId: r.provider_id,
-        brandName: r.brand_name,
-        displayName: r.display_name,
-        liveStatus: r.live_status,
-        offeringId: r.offering_id,
-        offeringName: r.offering_name,
-        amountVnd: r.amount_vnd,
-        lat: r.lat,
-        lng: r.lng,
+      groups: groups.map((g) => ({
+        id: g.id,
+        title: g.title,
+        results: g.results.map((r) => ({
+          kind: r.kind,
+          locationId: r.location_id,
+          providerId: r.provider_id,
+          brandName: r.brand_name,
+          displayName: r.display_name,
+          liveStatus: r.live_status,
+          itemId: r.item_id,
+          itemName: r.item_name,
+          itemSubtitle: r.item_subtitle,
+          amountVnd: r.amount_vnd,
+          href: r.href_hint,
+          lat: r.lat,
+          lng: r.lng,
+          familiar: r.familiar,
+        })),
       })),
+      results,
+      zeroResult,
     };
   }
 
@@ -426,6 +502,10 @@ export class DiscoveryService {
       .insert(userFavorites)
       .values({ userId, providerLocationId: locationId })
       .onConflictDoNothing();
+    await syncRelationshipFavorite(this.sql, userId, locationId, true);
+    this.analytics.trackFireAndForget(userId, "favorite_add", {
+      properties: { locationId },
+    });
     return { locationId };
   }
 
@@ -435,6 +515,143 @@ export class DiscoveryService {
       .where(
         and(eq(userFavorites.userId, userId), eq(userFavorites.providerLocationId, locationId)),
       );
+    await syncRelationshipFavorite(this.sql, userId, locationId, false);
+    this.analytics.trackFireAndForget(userId, "favorite_remove", {
+      properties: { locationId },
+    });
+  }
+
+  async hideFamiliar(userId: string, locationId: string) {
+    await hideFamiliarSuggestion(this.sql, userId, locationId);
+    return { ok: true };
+  }
+
+  /**
+   * Habit-First home: familiar · nowAround (live) · discover blocks (deduped).
+   */
+  async getHabitHome(slugOrId: string, userId: string) {
+    const zone = await this.zones.findZone(slugOrId);
+    if (!zone) throw new PickiError("NOT_FOUND", "Zone not found");
+
+    const discovery = await this.getDiscovery(slugOrId);
+    const familiarRows = await listFamiliarProvidersInZone(this.sql, userId, zone.id, 5);
+    const familiarIds = new Set(familiarRows.map((r) => r.location_id));
+    const nowRows = await listNowAroundInZone(this.sql, zone.id, 5);
+
+    const familiar = familiarRows.map((r) => ({
+      locationId: r.location_id,
+      providerId: r.provider_id,
+      brandName: r.brand_name,
+      displayName: r.display_name,
+      providerType: r.provider_type,
+      liveStatus: r.live_status,
+      estimatedWaitMinutes: r.estimated_wait_minutes,
+      completedInteractions: Number(r.completed_interactions),
+      relationshipScore: Number(r.relationship_score),
+      relationshipStatus: r.relationship_status,
+      favorite: r.favorite,
+      lastInteractionAt: r.last_interaction_at
+        ? new Date(r.last_interaction_at).toISOString()
+        : null,
+      lat: r.lat,
+      lng: r.lng,
+    }));
+
+    const nowAround = nowRows.map((r) => {
+      const headline =
+        r.update_title?.trim() ||
+        (r.estimated_wait_minutes != null && r.estimated_wait_minutes <= 5
+          ? "Ra được ngay"
+          : r.estimated_wait_minutes != null
+            ? `~${String(r.estimated_wait_minutes)} phút chờ`
+            : null) ||
+        r.live_message?.trim() ||
+        r.sample_offering ||
+        r.tagline ||
+        "Đang phục vụ quanh bạn";
+      return {
+        locationId: r.location_id,
+        providerId: r.provider_id,
+        brandName: r.brand_name,
+        displayName: r.display_name,
+        providerType: r.provider_type,
+        liveStatus: r.live_status,
+        estimatedWaitMinutes: r.estimated_wait_minutes,
+        headline,
+        detail: r.update_description,
+        source: r.source,
+        updateId: r.update_id,
+        ctaLabel: "Xem",
+        ctaHref: `/locations/${r.location_id}`,
+      };
+    });
+
+    const discoverBlocks = (
+      discovery.blocks as { id: string; providers: { locationId: string }[] }[]
+    ).map((block) => ({
+      ...block,
+      providers: block.providers
+        .filter((p) => !familiarIds.has(p.locationId))
+        .slice(0, 5),
+    }));
+
+    return {
+      zoneId: zone.id,
+      slug: zone.slug,
+      displayName: zone.displayName,
+      habitHome: true,
+      familiar,
+      nowAround,
+      /** @deprecated use nowAround */
+      today: nowAround.map((n) => ({
+        id: n.updateId ?? n.locationId,
+        locationId: n.locationId,
+        brandName: n.brandName,
+        displayName: n.displayName,
+        updateType: n.source,
+        title: n.headline,
+        description: n.detail,
+        imageUrls: [] as string[],
+        ctaLabel: n.ctaLabel,
+        ctaHref: n.ctaHref,
+        liveStatus: n.liveStatus,
+      })),
+      blocks: discoverBlocks,
+      community: discovery.community ?? null,
+      exploreChips: [
+        { id: "open", label: "Đang mở" },
+        { id: "new", label: "Mới" },
+        { id: "near", label: "Gần tôi" },
+        { id: "popular", label: "Được dùng nhiều" },
+      ],
+    };
+  }
+
+  async exploreZone(
+    slugOrId: string,
+    chip: ExploreChip,
+    userId?: string,
+  ) {
+    const zone = await this.zones.findZone(slugOrId);
+    if (!zone) throw new PickiError("NOT_FOUND", "Zone not found");
+
+    let exclude: string[] = [];
+    if (userId) {
+      const familiar = await listFamiliarProvidersInZone(this.sql, userId, zone.id, 20);
+      exclude = familiar.map((f) => f.location_id);
+    }
+
+    const rows = await listExploreProviders(this.sql, zone.id, chip, {
+      excludeLocationIds: exclude,
+      limit: 8,
+    });
+
+    return {
+      zoneId: zone.id,
+      slug: zone.slug,
+      chip,
+      providers: rows.map(mapProvider),
+    };
   }
 
   async listDailySpecials(locationId: string) {

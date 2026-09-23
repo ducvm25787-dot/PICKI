@@ -151,6 +151,24 @@ export function getHomeCategory(id: string): HomeCategory | undefined {
   return HOME_CATEGORIES.find((c) => c.id === id);
 }
 
+/** Compact Home strip — remaining categories behind «Tất cả». */
+export const HOME_CATEGORY_PRIMARY_IDS: HomeCategoryId[] = [
+  "food",
+  "market",
+  "beauty",
+  "repair",
+  "cleaning",
+];
+
+export function homeCategoriesPrimary(): HomeCategory[] {
+  return HOME_CATEGORY_PRIMARY_IDS.map((id) => getHomeCategory(id)!).filter(Boolean);
+}
+
+export function homeCategoriesSecondary(): HomeCategory[] {
+  const primary = new Set(HOME_CATEGORY_PRIMARY_IDS);
+  return HOME_CATEGORIES.filter((c) => !primary.has(c.id));
+}
+
 /** Map discovery block id → browse / deep link. */
 export function browseHrefForDiscoveryBlock(
   blockId: string,

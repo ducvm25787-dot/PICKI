@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "../../../lib/api";
+import { track } from "../../../lib/analytics";
 import {
   addToCart,
   cartItemCount,
@@ -110,12 +111,20 @@ const VISIT_ETA_PRESETS = [15, 30, 45, 60] as const;
 export default function LocationMenuPage() {
   const params = useParams<{ locationId: string }>();
   const router = useRouter();
+  const search = useSearchParams();
+  const wantRepeat = search.get("repeat") === "1";
   const [menu, setMenu] = useState<MenuResponse | null>(null);
   const [zoneId, setZoneId] = useState<string | null>(null);
   const [cart, setCart] = useState<Cart | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [repeatHint, setRepeatHint] = useState<{
+    canRepeat: boolean;
+    hint: string;
+    blockedReasons: string[];
+    items: { name: string; quantity: number; available: boolean; offeringId: string | null }[];
+  } | null>(null);
   const [reviews, setReviews] = useState<ReviewsResponse | null>(null);
   const [requestItem, setRequestItem] = useState<MenuResponse["items"][0] | null>(null);
   const [requestNote, setRequestNote] = useState("");
@@ -189,6 +198,20 @@ export default function LocationMenuPage() {
         if (isCustomerVisitVertical(data.location.providerType)) {
           await loadActiveVisit(data.location.id);
         }
+        if (wantRepeat) {
+          const hint = await api<{
+            canRepeat: boolean;
+            hint: string;
+            blockedReasons: string[];
+            items: {
+              name: string;
+              quantity: number;
+              available: boolean;
+              offeringId: string | null;
+            }[];
+          }>(`/orders/repeat/${params.locationId}`).catch(() => null);
+          setRepeatHint(hint);
+        }
         setLoading(false);
       } catch (e) {
         if (e instanceof Error && e.message !== "auth") {
@@ -198,7 +221,7 @@ export default function LocationMenuPage() {
       }
     }
     void load();
-  }, [params.locationId, router]);
+  }, [params.locationId, router, wantRepeat]);
 
   function handleAdd(item: MenuResponse["items"][0]) {
     if (!menu || !zoneId) {
@@ -371,6 +394,61 @@ export default function LocationMenuPage() {
           <p style={{ margin: 0 }}>{toast}</p>
         </div>
       )}
+
+      {repeatHint ? (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <p className="section-title" style={{ marginBottom: 6 }}>
+            Đặt lại đơn gần nhất
+          </p>
+          <p className="stat" style={{ marginBottom: 8 }}>
+            {repeatHint.hint}
+          </p>
+          <ul style={{ margin: "0 0 8px", paddingLeft: 18, fontSize: 14 }}>
+            {repeatHint.items.map((it) => (
+              <li key={`${it.name}-${String(it.quantity)}`}>
+                {it.name} ×{String(it.quantity)}
+                {!it.available ? " — không còn / đổi menu" : ""}
+              </li>
+            ))}
+          </ul>
+          {repeatHint.blockedReasons.length > 0 ? (
+            <p className="stat" style={{ color: "var(--danger, #dc2626)" }}>
+              {repeatHint.blockedReasons.join(" · ")}
+            </p>
+          ) : null}
+          {repeatHint.canRepeat ? (
+            <button
+              type="button"
+              className="btn"
+              style={{ marginTop: 8 }}
+              onClick={() => {
+                track("repeat_action_click", {
+                  properties: {
+                    locationId: params.locationId,
+                    itemCount: repeatHint.items.filter((i) => i.available).length,
+                  },
+                });
+                let next = readCart();
+                for (const it of repeatHint.items) {
+                  if (!it.offeringId || !it.available || !menu) continue;
+                  const menuItem = menu.items.find((m) => m.id === it.offeringId);
+                  if (!menuItem || menuItem.amountVnd == null) continue;
+                  next = addToCart(next, {
+                    offeringId: menuItem.id,
+                    name: menuItem.name,
+                    amountVnd: menuItem.amountVnd,
+                    quantity: it.quantity,
+                  });
+                }
+                setCart(next);
+                setToast("Đã thêm món còn bán vào giỏ — kiểm tra giá trước khi thanh toán.");
+              }}
+            >
+              Thêm món còn bán vào giỏ
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="card" style={{ marginBottom: 16 }}>
         <h1 style={{ margin: "0 0 4px", fontSize: 24 }}>

@@ -4,19 +4,27 @@ import {
   isCookFirstFoodOrder,
   breakfastPreorderProviderSettings,
   familyDinnerProviderSettings,
+  getLoyaltyProgram,
+  listLocationDailyUpdates,
+  listLoyaltyBenefits,
   loadOrderDeliveryWindow,
   orderItems,
   orders,
   providerActionToStatus,
+  providerDailyUpdates,
   providerLiveStatus,
   providerLocations,
+  providerLoyaltyBenefits,
+  providerLoyaltyPrograms,
   providerMembers,
   providerProfiles,
   providers,
+  resolveCustomerLoyaltyLabel,
   type PickiDb,
+  type PickiSql,
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
-import { PICKI_DB } from "../../shared/tokens.js";
+import { PICKI_DB, PICKI_SQL } from "../../shared/tokens.js";
 import {
   loadOrderContacts,
   loadProviderBrand,
@@ -30,15 +38,33 @@ import { formatTime, isPastCutoff } from "../family-dinner/family-dinner.service
 import { isPastBreakfastCutoff } from "../breakfast-preorder/breakfast-preorder.service.js";
 import type { z } from "zod";
 import type {
+  createDailyUpdateSchema,
   providerOrderActionSchema,
+  updateDailyUpdateSchema,
   updateLiveStatusSchema,
   updateProviderProfileSchema,
+  upsertLoyaltyBenefitSchema,
+  upsertLoyaltyProgramSchema,
 } from "./dto.js";
+
+function endOfVnDay(now = new Date()): Date {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const y = parts.find((p) => p.type === "year")?.value ?? "2026";
+  const m = parts.find((p) => p.type === "month")?.value ?? "01";
+  const d = parts.find((p) => p.type === "day")?.value ?? "01";
+  return new Date(`${y}-${m}-${d}T23:59:59+07:00`);
+}
 
 @Injectable()
 export class ProviderService {
   constructor(
     @Inject(PICKI_DB) private readonly db: PickiDb,
+    @Inject(PICKI_SQL) private readonly sql: PickiSql,
     @Inject(OrderTransitionService) private readonly transitions: OrderTransitionService,
     @Inject(OutboxService) private readonly outbox: OutboxService,
     @Inject(RunnerDispatchService) private readonly runnerDispatch: RunnerDispatchService,
@@ -165,6 +191,11 @@ export class ProviderService {
       rows.map(async (raw) => {
         const o = await this.ensureRunnerSought(raw);
         const runnerLeg = o.serviceVertical === "LAUNDRY" ? "RETURN" : "INBOUND";
+        const loyalty = await resolveCustomerLoyaltyLabel(
+          this.sql,
+          locationId,
+          o.customerUserId,
+        );
         return {
           id: o.id,
           orderNumber: o.orderNumber,
@@ -188,6 +219,10 @@ export class ProviderService {
           ...orderHandoffFields(o),
           runner: await loadRunnerSummary(this.db, o.runnerUserId),
           contacts: await loadOrderContacts(this.db, o),
+          customerLoyalty: {
+            label: loyalty.label,
+            completedInteractions: loyalty.completedInteractions,
+          },
           items: await this.db
             .select()
             .from(orderItems)
@@ -221,22 +256,33 @@ export class ProviderService {
     const providerBrandName = await loadProviderBrand(this.db, locationId);
 
     const ordersOut = await Promise.all(
-      rows.map(async (o) => ({
-        id: o.id,
-        orderNumber: o.orderNumber,
-        providerBrandName,
-        status: o.status,
-        subtotalVnd: o.subtotalVnd,
-        deliveryFeeVnd: o.deliveryFeeVnd,
-        totalVnd: o.totalVnd,
-        paymentMode: o.paymentMode,
-        completedAt: o.updatedAt.toISOString(),
-        delivery: {
-          building: o.deliveryBuilding,
-          apartment: o.deliveryApartment,
-        },
-        runner: await loadRunnerSummary(this.db, o.runnerUserId),
-      })),
+      rows.map(async (o) => {
+        const loyalty = await resolveCustomerLoyaltyLabel(
+          this.sql,
+          locationId,
+          o.customerUserId,
+        );
+        return {
+          id: o.id,
+          orderNumber: o.orderNumber,
+          providerBrandName,
+          status: o.status,
+          subtotalVnd: o.subtotalVnd,
+          deliveryFeeVnd: o.deliveryFeeVnd,
+          totalVnd: o.totalVnd,
+          paymentMode: o.paymentMode,
+          completedAt: o.updatedAt.toISOString(),
+          delivery: {
+            building: o.deliveryBuilding,
+            apartment: o.deliveryApartment,
+          },
+          runner: await loadRunnerSummary(this.db, o.runnerUserId),
+          customerLoyalty: {
+            label: loyalty.label,
+            completedInteractions: loyalty.completedInteractions,
+          },
+        };
+      }),
     );
 
     return { orders: ordersOut };
@@ -959,6 +1005,194 @@ export class ProviderService {
     }
 
     return this.getProfile(userId, locationId);
+  }
+
+  async listDailyUpdates(userId: string, locationId: string) {
+    await this.assertLocationAccess(userId, locationId);
+    const rows = await listLocationDailyUpdates(this.sql, locationId, true);
+    return {
+      updates: rows.map((r) => {
+        const urls = Array.isArray(r.image_urls)
+          ? r.image_urls
+          : r.image_url
+            ? [r.image_url]
+            : [];
+        return {
+          id: r.id,
+          updateType: r.update_type,
+          title: r.title,
+          description: r.description,
+          imageUrls: urls,
+          expiresAt: new Date(r.expires_at).toISOString(),
+          status: r.status,
+          createdAt: new Date(r.created_at).toISOString(),
+        };
+      }),
+    };
+  }
+
+  async createDailyUpdate(
+    userId: string,
+    locationId: string,
+    input: z.infer<typeof createDailyUpdateSchema>,
+  ) {
+    await this.assertLocationAccess(userId, locationId);
+    const expiresAt = input.expiresAt ? new Date(input.expiresAt) : endOfVnDay();
+    if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+      throw new PickiError("VALIDATION_ERROR", "expiresAt must be in the future");
+    }
+    const imageUrls = (input.imageUrls ?? []).slice(0, 3);
+    const [row] = await this.db
+      .insert(providerDailyUpdates)
+      .values({
+        providerLocationId: locationId,
+        updateType: input.updateType,
+        title: input.title,
+        description: input.description ?? null,
+        imageUrl: imageUrls[0] ?? null,
+        imageUrls,
+        ctaLabel: input.ctaLabel ?? null,
+        ctaHref: `/locations/${locationId}`,
+        validFrom: new Date(),
+        expiresAt,
+        status: "ACTIVE",
+        createdBy: userId,
+      })
+      .returning();
+    return {
+      id: row!.id,
+      title: row!.title,
+      expiresAt: row!.expiresAt.toISOString(),
+    };
+  }
+
+  async updateDailyUpdate(
+    userId: string,
+    locationId: string,
+    updateId: string,
+    input: z.infer<typeof updateDailyUpdateSchema>,
+  ) {
+    await this.assertLocationAccess(userId, locationId);
+    const existing = await this.db
+      .select()
+      .from(providerDailyUpdates)
+      .where(
+        and(
+          eq(providerDailyUpdates.id, updateId),
+          eq(providerDailyUpdates.providerLocationId, locationId),
+        ),
+      )
+      .limit(1);
+    if (!existing[0] || existing[0].status === "HIDDEN") {
+      throw new PickiError("NOT_FOUND", "Update not found");
+    }
+    const imageUrls =
+      input.imageUrls !== undefined ? input.imageUrls.slice(0, 3) : undefined;
+    await this.db
+      .update(providerDailyUpdates)
+      .set({
+        ...(input.updateType !== undefined ? { updateType: input.updateType } : {}),
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(input.ctaLabel !== undefined ? { ctaLabel: input.ctaLabel } : {}),
+        ...(imageUrls !== undefined
+          ? { imageUrls, imageUrl: imageUrls[0] ?? null }
+          : {}),
+        // Re-activate if editing an expired post still within day
+        status: "ACTIVE",
+        updatedAt: new Date(),
+      })
+      .where(eq(providerDailyUpdates.id, updateId));
+    return this.listDailyUpdates(userId, locationId);
+  }
+
+  async deleteDailyUpdate(userId: string, locationId: string, updateId: string) {
+    await this.assertLocationAccess(userId, locationId);
+    await this.db
+      .delete(providerDailyUpdates)
+      .where(
+        and(
+          eq(providerDailyUpdates.id, updateId),
+          eq(providerDailyUpdates.providerLocationId, locationId),
+        ),
+      );
+    return { ok: true };
+  }
+
+  async getLoyalty(userId: string, locationId: string) {
+    await this.assertLocationAccess(userId, locationId);
+    const program = await getLoyaltyProgram(this.sql, locationId);
+    const benefits = await listLoyaltyBenefits(this.sql, locationId);
+    return {
+      program: program
+        ? {
+            enabled: program.enabled,
+            regularThreshold: program.regular_threshold,
+            vipThreshold: program.vip_threshold,
+          }
+        : { enabled: false, regularThreshold: 5, vipThreshold: 15 },
+      benefits: benefits.map((b) => ({
+        id: b.id,
+        tier: b.tier,
+        benefitType: b.benefit_type,
+        title: b.title,
+        description: b.description,
+        discountPercent: b.discount_percent,
+        customText: b.custom_text,
+        active: b.active,
+      })),
+    };
+  }
+
+  async upsertLoyaltyProgram(
+    userId: string,
+    locationId: string,
+    input: z.infer<typeof upsertLoyaltyProgramSchema>,
+  ) {
+    await this.assertLocationAccess(userId, locationId);
+    const regular = input.regularThreshold ?? 5;
+    const vip = input.vipThreshold ?? 15;
+    await this.db
+      .insert(providerLoyaltyPrograms)
+      .values({
+        providerLocationId: locationId,
+        enabled: input.enabled,
+        regularThreshold: regular,
+        vipThreshold: vip,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: providerLoyaltyPrograms.providerLocationId,
+        set: {
+          enabled: input.enabled,
+          regularThreshold: regular,
+          vipThreshold: vip,
+          updatedAt: new Date(),
+        },
+      });
+    return this.getLoyalty(userId, locationId);
+  }
+
+  async addLoyaltyBenefit(
+    userId: string,
+    locationId: string,
+    input: z.infer<typeof upsertLoyaltyBenefitSchema>,
+  ) {
+    await this.assertLocationAccess(userId, locationId);
+    const [row] = await this.db
+      .insert(providerLoyaltyBenefits)
+      .values({
+        providerLocationId: locationId,
+        tier: input.tier,
+        benefitType: input.benefitType,
+        title: input.title,
+        description: input.description ?? null,
+        discountPercent: input.discountPercent ?? null,
+        customText: input.customText ?? null,
+        active: input.active ?? true,
+      })
+      .returning();
+    return { id: row!.id };
   }
 
   /** Pilot food STANDARD: đơn đã nhận nhưng chưa tìm runner → tự bổ sung khi load list.

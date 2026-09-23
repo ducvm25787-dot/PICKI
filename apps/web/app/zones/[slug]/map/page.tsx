@@ -9,6 +9,7 @@ import { getCurrentPositionOnce, type GeoPosition } from "../../../../lib/geoloc
 import { pickeeNavigateHref } from "../../../../lib/maps";
 import { liveStatusClass, liveStatusLabel, type ProviderListing } from "../../../../lib/providers";
 import { PickeeMap, type MapMarker, type MapPolygonGeoJson } from "../../../components/pickee-map";
+import { ProviderCardCompact } from "../../../components/provider-card-compact";
 
 type MapResponse = {
   zoneId: string;
@@ -34,6 +35,7 @@ export default function ZoneMapPage() {
   const [locating, setLocating] = useState(false);
   const [openOnly, setOpenOnly] = useState(initialOpen);
   const [categoryId, setCategoryId] = useState(initialCategory);
+  const [selectedId, setSelectedId] = useState<string | null>(focusId);
 
   const typesParam = useMemo(() => {
     if (initialTypes.trim()) return initialTypes.trim();
@@ -55,6 +57,10 @@ export default function ZoneMapPage() {
       .then(() => loadMap())
       .catch(() => router.replace("/login"));
   }, [loadMap, router]);
+
+  useEffect(() => {
+    if (focusId) setSelectedId(focusId);
+  }, [focusId]);
 
   async function locateMe() {
     setLocating(true);
@@ -79,8 +85,8 @@ export default function ZoneMapPage() {
         lat: m.lat!,
         lng: m.lng!,
         label: m.brandName,
-        href: `/locations/${m.locationId}`,
         kind: "provider" as const,
+        status: m.liveStatus,
       }));
     if (userPos) {
       list.push({
@@ -93,6 +99,11 @@ export default function ZoneMapPage() {
     }
     return list;
   }, [data, userPos]);
+
+  const selected = useMemo(
+    () => data?.markers.find((m) => m.locationId === selectedId) ?? null,
+    [data, selectedId],
+  );
 
   const center = userPos ?? data?.center ?? { lat: 20.9883, lng: 105.8414 };
 
@@ -113,7 +124,7 @@ export default function ZoneMapPage() {
         Bản đồ {data.displayName ?? "Zone"}
       </h1>
       <p className="stat" style={{ marginBottom: 12 }}>
-        Ranh giới Zone + quán quanh bạn · OpenStreetMap · GPS một lần
+        Chạm marker để xem nhanh · OpenStreetMap
       </p>
 
       <div className="map-filter-row" aria-label="Lọc bản đồ">
@@ -161,55 +172,81 @@ export default function ZoneMapPage() {
           center={center}
           markers={mapMarkers}
           polygon={data.boundary ?? null}
-          focusId={focusId}
+          focusId={selectedId}
           height={360}
+          compactMarkers
+          clusterThreshold={8}
+          onMarkerSelect={(id) => {
+            if (id === "user") return;
+            setSelectedId(id);
+          }}
         />
       </div>
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <p className="section-title">
-          Quán trên bản đồ ({data.markers.length})
-        </p>
-        {data.markers.length === 0 ? (
-          <p className="stat" style={{ margin: 0 }}>
-            Không có quán khớp bộ lọc
-          </p>
-        ) : (
-          data.markers.map((m) => (
-            <div
-              key={m.locationId}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 8,
-                alignItems: "center",
-                marginBottom: 10,
-              }}
-            >
-              <p className="stat" style={{ margin: 0 }}>
-                <Link href={`/locations/${m.locationId}`}>{m.brandName}</Link> ·{" "}
-                <span className={`live-pill ${liveStatusClass(m.liveStatus)}`}>
-                  {liveStatusLabel(m.liveStatus)}
-                </span>
-              </p>
-              {m.lat != null && m.lng != null ? (
-                <a
-                  className="order-phone-link"
-                  href={pickeeNavigateHref({
-                    destLat: m.lat,
-                    destLng: m.lng,
-                    label: m.brandName,
-                    originLat: userPos?.lat,
-                    originLng: userPos?.lng,
-                  })}
+      {selected ? (
+        <div className="map-bottom-sheet" role="dialog" aria-label="Xem nhanh quán">
+          <div className="map-bottom-sheet-handle" aria-hidden />
+          <button
+            type="button"
+            className="map-bottom-sheet-close"
+            aria-label="Đóng"
+            onClick={() => setSelectedId(null)}
+          >
+            ×
+          </button>
+          <ProviderCardCompact provider={selected} />
+          <div className="map-bottom-sheet-actions">
+            <Link href={`/locations/${selected.locationId}`} className="btn" style={{ flex: 1 }}>
+              Mở quán
+            </Link>
+            {selected.lat != null && selected.lng != null ? (
+              <a
+                className="btn btn-secondary"
+                style={{ flex: 1, textAlign: "center", textDecoration: "none" }}
+                href={pickeeNavigateHref({
+                  destLat: selected.lat,
+                  destLng: selected.lng,
+                  label: selected.brandName,
+                  originLat: userPos?.lat,
+                  originLng: userPos?.lng,
+                })}
+              >
+                Chỉ đường
+              </a>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <div className="card" style={{ marginTop: 16 }}>
+          <p className="section-title">Quán trên bản đồ ({data.markers.length})</p>
+          {data.markers.length === 0 ? (
+            <p className="stat" style={{ margin: 0 }}>
+              Không có quán khớp bộ lọc
+            </p>
+          ) : (
+            <div className="provider-list" style={{ marginTop: 8 }}>
+              {data.markers.slice(0, 8).map((m) => (
+                <button
+                  key={m.locationId}
+                  type="button"
+                  className="map-list-row"
+                  onClick={() => setSelectedId(m.locationId)}
                 >
-                  Chỉ đường
-                </a>
+                  <span>{m.brandName}</span>
+                  <span className={`live-pill ${liveStatusClass(m.liveStatus)}`}>
+                    {liveStatusLabel(m.liveStatus)}
+                  </span>
+                </button>
+              ))}
+              {data.markers.length > 8 ? (
+                <p className="stat" style={{ margin: "8px 0 0" }}>
+                  +{String(data.markers.length - 8)} quán — chạm marker hoặc thu phóng để xem.
+                </p>
               ) : null}
             </div>
-          ))
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -411,6 +411,23 @@ export default function ProviderSettingsPage() {
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
+        <p className="section-title">Habit-First</p>
+        <p className="stat" style={{ marginTop: 0 }}>
+          Đăng nhanh &quot;Hôm nay có&quot; cho khách trong Zone · nhãn khách quen trên đơn.
+        </p>
+        <Link href="/provider/today" className="btn" style={{ display: "block", marginBottom: 8, textAlign: "center" }}>
+          Hôm nay có →
+        </Link>
+        <Link
+          href="/provider/loyalty"
+          className="btn btn-secondary"
+          style={{ display: "block", textAlign: "center" }}
+        >
+          Khách quen / VIP →
+        </Link>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
         <p className="section-title">Ứng dụng</p>
         <p className="stat" style={{ marginTop: 0 }}>
           Cài Pickee Provider lên màn hình chính (Add to Home Screen) để mở nhanh như app native.

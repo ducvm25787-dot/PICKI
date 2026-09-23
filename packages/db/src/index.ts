@@ -13,4 +13,8 @@ export * from "./geo/index.js";
 export * from "./geometry.js";
 export * from "./migrator.js";
 export * from "./providers/index.js";
+export * from "./relationships/index.js";
+export * from "./habit/index.js";
+export * from "./search/index.js";
+export * from "./analytics/index.js";
 export * from "./schema/index.js";

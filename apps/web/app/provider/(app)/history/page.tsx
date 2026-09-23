@@ -8,6 +8,7 @@ import { api } from "../../../../lib/api";
 import { OrderNumberHeading } from "../../../components/order-number-heading";
 import { orderStatusRich } from "../../../../lib/order-display";
 import { formatOrderAmount } from "../../../../lib/money";
+import { loyaltyLabelClass, loyaltyLabelVi } from "../../../../lib/loyalty";
 
 type HistoryOrder = {
   id: string;
@@ -19,6 +20,7 @@ type HistoryOrder = {
   completedAt: string;
   delivery: { building: string | null; apartment: string | null };
   runner: { displayName: string } | null;
+  customerLoyalty?: { label: string; completedInteractions: number };
 };
 
 type VisitHistoryIntent = {
@@ -144,6 +146,16 @@ function OrderHistory() {
               providerBrandName={o.providerBrandName}
               right={<span>{formatOrderAmount(o.totalVnd, o.serviceVertical)}</span>}
             />
+            {o.customerLoyalty && o.customerLoyalty.label !== "NEW" ? (
+              <p className="stat" style={{ margin: "4px 0 0" }}>
+                <span className={loyaltyLabelClass(o.customerLoyalty.label)}>
+                  {loyaltyLabelVi(o.customerLoyalty.label)}
+                </span>
+                {o.customerLoyalty.completedInteractions > 0
+                  ? ` · ${String(o.customerLoyalty.completedInteractions)} lần`
+                  : null}
+              </p>
+            ) : null}
             <p className="stat">{orderStatusRich(o.status, { runner: o.runner })}</p>
             <p className="stat">
               {o.delivery.building}-{o.delivery.apartment}

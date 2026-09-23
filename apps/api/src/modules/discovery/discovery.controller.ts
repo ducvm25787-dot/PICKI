@@ -28,6 +28,26 @@ const favoriteSchema = z.object({
 export class DiscoveryController {
   constructor(@Inject(DiscoveryService) private readonly discovery: DiscoveryService) {}
 
+  @Get("zones/:slugOrId/home")
+  @UseGuards(SessionAuthGuard)
+  async zoneHome(@Param("slugOrId") slugOrId: string, @CurrentUserId() userId: string) {
+    return this.discovery.getHabitHome(slugOrId, userId);
+  }
+
+  @Get("zones/:slugOrId/explore")
+  @UseGuards(SessionAuthGuard)
+  async zoneExplore(
+    @Param("slugOrId") slugOrId: string,
+    @CurrentUserId() userId: string,
+    @Query("chip") chipRaw?: string,
+  ) {
+    const chip = (chipRaw ?? "open") as "new" | "open" | "near" | "popular";
+    if (!["new", "open", "near", "popular"].includes(chip)) {
+      throw new PickiError("VALIDATION_ERROR", "chip must be new|open|near|popular");
+    }
+    return this.discovery.exploreZone(slugOrId, chip, userId);
+  }
+
   @Get("zones/:slugOrId/discovery")
   async zoneDiscovery(@Param("slugOrId") slugOrId: string) {
     return this.discovery.getDiscovery(slugOrId);
@@ -50,8 +70,13 @@ export class DiscoveryController {
   }
 
   @Get("zones/:slugOrId/search")
-  async zoneSearch(@Param("slugOrId") slugOrId: string, @Query("q") q?: string) {
-    return this.discovery.search(slugOrId, q ?? "");
+  @UseGuards(SessionAuthGuard)
+  async zoneSearch(
+    @Param("slugOrId") slugOrId: string,
+    @CurrentUserId() userId: string,
+    @Query("q") q?: string,
+  ) {
+    return this.discovery.search(slugOrId, q ?? "", userId);
   }
 
   @Get("zones/:slugOrId/map")
@@ -127,5 +152,14 @@ export class DiscoveryController {
   ) {
     await this.discovery.removeFavorite(userId, locationId);
     return { ok: true };
+  }
+
+  @Post("me/familiar/:locationId/hide")
+  @UseGuards(SessionAuthGuard)
+  async hideFamiliar(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+  ) {
+    return this.discovery.hideFamiliar(userId, locationId);
   }
 }

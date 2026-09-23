@@ -6,18 +6,21 @@ import {
   orderItems,
   orders,
   orderStatusHistory,
+  upsertRelationshipFromOrders,
   type PickiDb,
+  type PickiSql,
   type LaundryPickupMode,
   type ServiceVertical,
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
 import { OutboxService } from "../outbox/outbox.service.js";
-import { PICKI_DB } from "../../shared/tokens.js";
+import { PICKI_DB, PICKI_SQL } from "../../shared/tokens.js";
 
 @Injectable()
 export class OrderTransitionService {
   constructor(
     @Inject(PICKI_DB) private readonly db: PickiDb,
+    @Inject(PICKI_SQL) private readonly sql: PickiSql,
     @Inject(OutboxService) private readonly outbox: OutboxService,
   ) {}
 
@@ -89,7 +92,7 @@ export class OrderTransitionService {
   ) {
     const orderId = order.id;
 
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       const patch: Partial<typeof orders.$inferInsert> = {
         status: toStatus,
         updatedAt: new Date(),
@@ -121,6 +124,20 @@ export class OrderTransitionService {
       const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
       return { order: updated, items };
     });
+
+    if (toStatus === "DELIVERED" || toStatus === "COMPLETED") {
+      try {
+        await upsertRelationshipFromOrders(
+          this.sql,
+          result.order.customerUserId,
+          result.order.providerLocationId,
+        );
+      } catch (err) {
+        console.error("relationship upsert failed", err);
+      }
+    }
+
+    return result;
   }
 }
 

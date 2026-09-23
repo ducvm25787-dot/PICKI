@@ -20,7 +20,7 @@ Brand: **pickee** + tagline **Tiện ích quanh tôi** — logo symbol gradient 
 
 ## Surfaces
 
-- Customer home: search → hero → quick tiles → **Tiện ích quanh nhà** (10 danh mục, gồm Thể thao + Xe đưa đón) → chips → sections
+- Customer home: search → hero theo giờ (**00–20h** Bữa tối · **20–24h** Sáng mai ăn gì?) → quick tiles → **Tiện ích quanh nhà** (10 danh mục, gồm Thể thao + Xe đưa đón) → chips → sections
 - BrandMark: symbol PNG + gradient wordmark **pickee**
 - Location tabs: **Menu/Dịch vụ** + **Giới thiệu** (ảnh, mô tả, địa chỉ, maps, rating, liên hệ)
 - **Admin Zone Setup:** `/admin/zones/:id` — polygon editor, CORE/EXTENDED, neo GPS, xác nhận pin shop

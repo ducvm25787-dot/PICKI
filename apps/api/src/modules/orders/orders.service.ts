@@ -20,8 +20,10 @@ import {
   orderItems,
   orders,
   orderStatusHistory,
+  offerings,
   pickiPoints,
   providers,
+  providerLiveStatus,
   randomOrderSuffix4,
   routeOrders,
   routeStops,
@@ -473,6 +475,117 @@ export class OrdersService {
     }
 
     return { orders: ordersOut };
+  }
+
+  /**
+   * Habit-First Repeat — do not blind-clone.
+   * Returns last completed order summary + per-item availability + blocked reasons.
+   */
+  async repeatHint(userId: string, locationId: string) {
+    const loc = await this.db
+      .select()
+      .from(providerLocations)
+      .where(eq(providerLocations.id, locationId))
+      .limit(1);
+    if (!loc[0] || loc[0].status !== "ACTIVE") {
+      throw new PickiError("NOT_FOUND", "Location not found");
+    }
+
+    const last = await this.db
+      .select()
+      .from(orders)
+      .where(
+        and(
+          eq(orders.customerUserId, userId),
+          eq(orders.providerLocationId, locationId),
+          sql`${orders.status} IN ('DELIVERED', 'COMPLETED')`,
+        ),
+      )
+      .orderBy(desc(orders.updatedAt))
+      .limit(1);
+
+    if (!last[0]) {
+      return {
+        canRepeat: false,
+        blockedReasons: ["Chưa có đơn hoàn thành tại quán này"],
+        href: `/locations/${locationId}`,
+        orderId: null,
+        items: [],
+      };
+    }
+
+    const order = last[0];
+    const items = await this.loadItems(order.id);
+    const live = await this.db
+      .select()
+      .from(providerLiveStatus)
+      .where(eq(providerLiveStatus.providerLocationId, locationId))
+      .limit(1);
+    const liveStatus = live[0]?.status ?? "OFFLINE";
+    const blockedReasons: string[] = [];
+    if (["CLOSED", "OFFLINE", "NOT_ACCEPTING"].includes(liveStatus)) {
+      blockedReasons.push("Quán hiện không nhận đơn");
+    }
+
+    const checked = [];
+    for (const item of items) {
+      let available = true;
+      let note: string | null = null;
+      if (item.offeringId) {
+        const off = await this.db
+          .select()
+          .from(offerings)
+          .where(eq(offerings.id, item.offeringId))
+          .limit(1);
+        if (!off[0] || off[0].status !== "ACTIVE") {
+          available = false;
+          note = "Món không còn trên menu";
+        }
+      } else if (item.familyDinnerMenuItemId || item.breakfastMenuItemId) {
+        available = false;
+        note = "Món theo ngày — mở trang Bữa tối / Sáng mai để đặt lại";
+      }
+      checked.push({
+        name: item.name,
+        quantity: item.quantity,
+        offeringId: item.offeringId,
+        available,
+        note,
+      });
+      if (!available && item.offeringId) {
+        blockedReasons.push(`Hết / đổi món: ${item.name}`);
+      }
+    }
+
+    const allCatalogOk = checked.every((c) => c.available || !c.offeringId);
+    const hasCatalogItems = checked.some((c) => c.offeringId);
+    const canRepeat =
+      blockedReasons.filter((r) => r.startsWith("Quán")).length === 0 &&
+      hasCatalogItems &&
+      checked.some((c) => c.offeringId && c.available);
+
+    const href =
+      order.orderKind === "FAMILY_DINNER" || order.orderKind === "LATE_DINNER"
+        ? `/family-dinner/${locationId}`
+        : order.orderKind === "BREAKFAST_PREORDER"
+          ? `/breakfast/${locationId}`
+          : `/locations/${locationId}?repeat=1`;
+
+    return {
+      canRepeat,
+      blockedReasons: [...new Set(blockedReasons)],
+      href,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      orderKind: order.orderKind,
+      liveStatus,
+      items: checked,
+      hint: canRepeat
+        ? "Có thể đặt lại các món còn trên menu — kiểm tra giá lúc checkout."
+        : allCatalogOk
+          ? "Mở trang quán / menu ngày để đặt lại."
+          : "Một số món đã đổi — chọn lại trên menu.",
+    };
   }
 
   /** Minimal DTO if enrichment fails — still show order in list. */

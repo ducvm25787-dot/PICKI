@@ -4,24 +4,21 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
-import { browseHrefForDiscoveryBlock, HOME_CATEGORIES } from "../lib/categories";
-import { type ProviderListing } from "../lib/providers";
+import {
+  browseHrefForDiscoveryBlock,
+  homeCategoriesPrimary,
+  homeCategoriesSecondary,
+} from "../lib/categories";
+import { familiarPrimaryCta } from "../lib/familiar";
+import { contextNowFor, type ContextNowContent } from "../lib/home-hero";
+import { track, trackMany } from "../lib/analytics";
+import { liveStatusClass, liveStatusLabel, type ProviderListing } from "../lib/providers";
 import { BrandMark } from "./components/brand-mark";
 import { NotificationBell } from "./components/notification-bell";
 import { ProviderList } from "./components/provider-list";
-import {
-  IconGift,
-  IconMap,
-  IconOrders,
-  IconSearch,
-  IconUsers,
-  IconWrench,
-} from "./components/nav-icons";
+import { IconSearch } from "./components/nav-icons";
 
-type Me = {
-  id: string;
-  displayName: string | null;
-};
+type Me = { id: string; displayName: string | null };
 
 type DiscoveryBlock = {
   id: string;
@@ -30,48 +27,86 @@ type DiscoveryBlock = {
   providers: ProviderListing[];
 };
 
-type CommunityListing = {
-  id: string;
-  listingType: string;
-  title: string;
-  priceVnd: number | null;
-  status: string;
-  locationLabel: string;
-};
-
-type CommunitySummary = {
-  resaleCount: number;
-  giveAwayCount: number;
-  rentCount?: number;
-  roommateCount?: number;
-  lostFoundCount?: number;
-  petLostCount?: number;
-  recentListings: CommunityListing[];
-};
-
-type MyZone = {
-  zoneId: string;
-  slug: string;
+type FamiliarCard = {
+  locationId: string;
+  brandName: string;
   displayName: string;
+  providerType: string;
+  liveStatus: string;
+  estimatedWaitMinutes: number | null;
+  completedInteractions: number;
+  favorite: boolean;
 };
+
+type NowAroundCard = {
+  locationId: string;
+  brandName: string;
+  displayName: string;
+  providerType: string;
+  liveStatus: string;
+  estimatedWaitMinutes: number | null;
+  headline: string;
+  detail: string | null;
+  source: string;
+  ctaLabel: string;
+  ctaHref: string;
+};
+
+type ExploreChipId = "new" | "open" | "near" | "popular";
+
+type MyZone = { zoneId: string; slug: string; displayName: string };
 
 const KVL_SLUG = "kim-van-kim-lu";
+
+const EXPLORE_CHIPS: { id: ExploreChipId; label: string }[] = [
+  { id: "open", label: "Đang mở" },
+  { id: "new", label: "Mới" },
+  { id: "near", label: "Gần tôi" },
+  { id: "popular", label: "Phổ biến" },
+];
 
 export default function HomePage() {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [myZones, setMyZones] = useState<MyZone[]>([]);
   const [blocks, setBlocks] = useState<DiscoveryBlock[]>([]);
-  const [community, setCommunity] = useState<CommunitySummary | null>(null);
+  const [familiar, setFamiliar] = useState<FamiliarCard[]>([]);
+  const [nowAround, setNowAround] = useState<NowAroundCard[]>([]);
+  const [zoneId, setZoneId] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [exploreChip, setExploreChip] = useState<ExploreChipId>("open");
+  const [exploreProviders, setExploreProviders] = useState<ProviderListing[]>([]);
+  const [exploreLoading, setExploreLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [contextNow, setContextNow] = useState<ContextNowContent>(() => contextNowFor());
+
+  useEffect(() => {
+    const tick = () => setContextNow(contextNowFor());
+    const id = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const loadFavorites = useCallback(async () => {
     const res = await api<{ favorites: { locationId: string }[] }>("/me/favorites").catch(
       () => ({ favorites: [] }),
     );
     setFavoriteIds(new Set(res.favorites.map((f) => f.locationId)));
+  }, []);
+
+  const loadExplore = useCallback(async (chip: ExploreChipId) => {
+    setExploreLoading(true);
+    try {
+      const res = await api<{ providers: ProviderListing[] }>(
+        `/zones/${KVL_SLUG}/explore?chip=${chip}`,
+      );
+      setExploreProviders(res.providers ?? []);
+    } catch {
+      setExploreProviders([]);
+    } finally {
+      setExploreLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -89,12 +124,52 @@ export default function HomePage() {
 
         const joined = mine.zones.some((z) => z.slug === KVL_SLUG);
         if (joined) {
-          const discovery = await api<{ blocks: DiscoveryBlock[]; community?: CommunitySummary }>(
-            `/zones/${KVL_SLUG}/discovery`,
-          );
-          setBlocks(discovery.blocks);
-          setCommunity(discovery.community ?? null);
+          const home = await api<{
+            zoneId?: string;
+            blocks: DiscoveryBlock[];
+            familiar?: FamiliarCard[];
+            nowAround?: NowAroundCard[];
+            today?: NowAroundCard[];
+          }>(`/zones/${KVL_SLUG}/home`).catch(async () => {
+            const discovery = await api<{ blocks: DiscoveryBlock[] }>(
+              `/zones/${KVL_SLUG}/discovery`,
+            );
+            return {
+              ...discovery,
+              familiar: [] as FamiliarCard[],
+              nowAround: [] as NowAroundCard[],
+            };
+          });
+          setBlocks(home.blocks);
+          setFamiliar(home.familiar ?? []);
+          setNowAround(home.nowAround ?? []);
+          if (home.zoneId) setZoneId(home.zoneId);
           await loadFavorites();
+          await loadExplore("open");
+
+          trackMany([
+            {
+              name: "home_section_impression",
+              zoneId: home.zoneId,
+              properties: { section: "context_now", hero: contextNowFor().id },
+            },
+            {
+              name: "home_section_impression",
+              zoneId: home.zoneId,
+              properties: {
+                section: "now_around",
+                count: (home.nowAround ?? []).length,
+              },
+            },
+            {
+              name: "home_section_impression",
+              zoneId: home.zoneId,
+              properties: {
+                section: "familiar",
+                count: (home.familiar ?? []).length,
+              },
+            },
+          ]);
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Lỗi tải dữ liệu");
@@ -103,7 +178,7 @@ export default function HomePage() {
       }
     }
     void load();
-  }, [router, loadFavorites]);
+  }, [router, loadFavorites, loadExplore]);
 
   async function toggleFavorite(locationId: string) {
     if (favoriteIds.has(locationId)) {
@@ -120,6 +195,11 @@ export default function HomePage() {
       });
       setFavoriteIds((prev) => new Set(prev).add(locationId));
     }
+  }
+
+  async function selectExploreChip(chip: ExploreChipId) {
+    setExploreChip(chip);
+    await loadExplore(chip);
   }
 
   if (loading) {
@@ -141,6 +221,19 @@ export default function HomePage() {
   }
 
   const joinedKvl = myZones.some((z) => z.slug === KVL_SLUG);
+  const primaryCats = homeCategoriesPrimary();
+  const secondaryCats = homeCategoriesSecondary();
+  const otherBlocks = blocks.filter(
+    (b) =>
+      ![
+        "dinner-plan",
+        "dinner-rescue",
+        "breakfast-preorder",
+        "breakfast-instant",
+        "lunch",
+        "late-snack",
+      ].includes(b.id),
+  );
 
   return (
     <div className="container">
@@ -152,7 +245,7 @@ export default function HomePage() {
       {!joinedKvl ? (
         <div className="card" style={{ marginBottom: 16 }}>
           <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>Kim Văn – Kim Lũ</h2>
-          <p className="stat">Tham gia Zone để xem discovery theo khung giờ (S14–S18).</p>
+          <p className="stat">Tham gia Zone để xem quanh nhà.</p>
           <button
             type="button"
             className="btn"
@@ -172,51 +265,122 @@ export default function HomePage() {
             <span className="home-search-icon">
               <IconSearch />
             </span>
-            <span>Tìm món, dịch vụ quanh Kim Văn…</span>
+            <span>Tìm món, sản phẩm, dịch vụ…</span>
           </Link>
 
-          <Link href="/family-dinner" className="home-hero">
-            <p className="home-hero-kicker">Bữa tối ấm cúng</p>
-            <h2 className="home-hero-title">Tối nay nhà mình ăn gì?</h2>
-            <p className="home-hero-copy">
-              Chọn mâm theo nhóm · giao khung giờ · trả trước — bếp đang nhận đơn trong Zone.
+          <p className="stat" style={{ margin: "0 0 10px" }}>
+            📍 Nhà · Kim Văn – Kim Lũ
+          </p>
+
+          <Link href={contextNow.href} className={`home-hero home-hero--${contextNow.tone}`}>
+            <p className="home-hero-kicker">{contextNow.kicker}</p>
+            <h2 className="home-hero-title">{contextNow.title}</h2>
+            <p className="home-hero-copy">{contextNow.copy}</p>
+            <span className="home-hero-cta">{contextNow.cta}</span>
+          </Link>
+
+          <section className="card today-section" aria-label="Quanh bạn lúc này">
+            <p className="section-title" style={{ marginBottom: 8 }}>
+              Quanh bạn lúc này
             </p>
-            <span className="home-hero-cta">Xem bếp nhận đơn →</span>
-          </Link>
+            {nowAround.length === 0 ? (
+              <p className="stat" style={{ margin: 0 }}>
+                Chưa có chỗ đang mở nổi bật — thử Khám phá bên dưới.
+              </p>
+            ) : (
+              <div className="home-scroll-row">
+                {nowAround.map((n) => (
+                  <Link
+                    key={`${n.locationId}-${n.headline}`}
+                    href={n.ctaHref}
+                    className="home-scroll-card"
+                    onClick={() =>
+                      track("today_offer_click", {
+                        zoneId: zoneId ?? undefined,
+                        properties: { locationId: n.locationId, source: n.source },
+                      })
+                    }
+                  >
+                    <strong>{n.brandName}</strong>
+                    <span className="stat">
+                      <span className={`live-pill ${liveStatusClass(n.liveStatus)}`}>
+                        {liveStatusLabel(n.liveStatus)}
+                      </span>
+                    </span>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>{n.headline}</span>
+                    {n.detail ? <span className="stat">{n.detail}</span> : null}
+                    <span className="familiar-cta" style={{ alignSelf: "flex-start", marginTop: 6 }}>
+                      {n.ctaLabel}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
 
-          <div className="quick-grid" aria-label="Lối tắt">
-            <Link href={`/zones/${KVL_SLUG}/classifieds`} className="quick-tile">
-              <span className="quick-tile-icon quick-tile-icon--amber">
-                <IconUsers />
-              </span>
-              Góc khu
-            </Link>
-            <Link href="/orders" className="quick-tile">
-              <span className="quick-tile-icon quick-tile-icon--green">
-                <IconOrders />
-              </span>
-              Đơn
-            </Link>
-            <Link href={`/zones/${KVL_SLUG}/map`} className="quick-tile">
-              <span className="quick-tile-icon quick-tile-icon--blue">
-                <IconMap />
-              </span>
-              Bản đồ
-            </Link>
-            <Link href="/requests" className="quick-tile">
-              <span className="quick-tile-icon">
-                <IconWrench />
-              </span>
-              Dịch vụ
-            </Link>
-          </div>
+          <section className="card familiar-section" aria-label="Chỗ quen">
+            <div className="section-head">
+              <p className="section-title" style={{ margin: 0 }}>
+                Chỗ quen của nhà mình
+              </p>
+              {familiar.length > 5 ? (
+                <Link href={`/zones/${KVL_SLUG}/browse/food`} className="section-more">
+                  Xem thêm →
+                </Link>
+              ) : null}
+            </div>
+            {familiar.length === 0 ? (
+              <p className="stat" style={{ margin: "8px 0 0" }}>
+                Lưu ♥ hoặc hoàn thành đơn — chỗ quen sẽ hiện ở đây.
+              </p>
+            ) : (
+              <div className="home-scroll-row home-scroll-row--mini" style={{ marginTop: 10 }}>
+                {familiar.map((f) => {
+                  const cta = familiarPrimaryCta({
+                    locationId: f.locationId,
+                    providerType: f.providerType,
+                    zoneSlug: KVL_SLUG,
+                  });
+                  const waitHint =
+                    f.estimatedWaitMinutes != null && f.estimatedWaitMinutes <= 5
+                      ? "Ngay"
+                      : f.estimatedWaitMinutes != null
+                        ? `~${String(f.estimatedWaitMinutes)}p`
+                        : null;
+                  return (
+                    <div key={f.locationId} className="home-scroll-card home-scroll-card--mini">
+                      <Link href={`/locations/${f.locationId}`} className="familiar-name">
+                        {f.brandName}
+                      </Link>
+                      <span className="familiar-mini-status">
+                        <span className={`live-dot ${liveStatusClass(f.liveStatus)}`} aria-hidden />
+                        {waitHint ?? liveStatusLabel(f.liveStatus)}
+                      </span>
+                      <Link
+                        href={cta.href}
+                        className="familiar-cta"
+                        onClick={() =>
+                          track("familiar_provider_click", {
+                            zoneId: zoneId ?? undefined,
+                            properties: { locationId: f.locationId, cta: cta.label },
+                          })
+                        }
+                      >
+                        {cta.label}
+                      </Link>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
 
-          <section className="home-utilities" aria-label="Tiện ích quanh nhà">
+          <section className="home-utilities" aria-label="Tiện ích quanh tôi">
             <p className="section-title" style={{ marginBottom: 12 }}>
-              Tiện ích quanh nhà
+              Tiện ích quanh tôi
             </p>
-            <div className="utility-grid">
-              {HOME_CATEGORIES.map((cat) => (
+            <div className="utility-grid utility-grid--compact">
+              {primaryCats.map((cat) => (
                 <Link
                   key={cat.id}
                   href={`/zones/${KVL_SLUG}/browse/${cat.id}`}
@@ -228,122 +392,105 @@ export default function HomePage() {
                   <span className="utility-tile-label">{cat.shortLabel}</span>
                 </Link>
               ))}
+              <button
+                type="button"
+                className="utility-tile"
+                onClick={() => setCategoriesOpen((v) => !v)}
+                aria-expanded={categoriesOpen}
+              >
+                <span className="utility-tile-emoji" aria-hidden>
+                  ▦
+                </span>
+                <span className="utility-tile-label">{categoriesOpen ? "Thu gọn" : "Tất cả"}</span>
+              </button>
             </div>
-          </section>
-
-          <div className="chip-row" aria-label="Lối tắt hôm nay">
-            <Link href="/breakfast" className="chip">
-              <span className="chip-icon">
-                <IconGift />
-              </span>
-              Sáng mai
-            </Link>
-            <Link href="/family-dinner" className="chip">
-              <span className="chip-icon">
-                <IconGift />
-              </span>
-              Bữa tối
-            </Link>
-            <Link href="/late-night" className="chip">
-              Ăn khuya
-            </Link>
-            <Link href={`/zones/${KVL_SLUG}/classifieds?type=GIVE_AWAY`} className="chip">
-              Cho tặng
-            </Link>
-          </div>
-
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="section-head">
-              <p className="section-title">Góc khu mình</p>
-              <Link href={`/zones/${KVL_SLUG}/classifieds`} className="section-more">
-                Xem thêm →
-              </Link>
-            </div>
-            <p className="stat" style={{ marginBottom: 12 }}>
-              Cho tặng · thanh lý · cho thuê · thất lạc — trong Zone
-            </p>
-            {community && community.recentListings.length > 0 ? (
-              <div className="home-scroll-row">
-                {community.recentListings.map((item) => (
-                  <Link key={item.id} href={`/classifieds/${item.id}`} className="home-scroll-card">
-                    <strong>{item.title}</strong>
-                    <span className="stat">
-                      {item.listingType === "GIVE_AWAY"
-                        ? "Miễn phí"
-                        : item.listingType === "LOST_FOUND" || item.listingType === "PET_LOST"
-                          ? "Không mua bán"
-                          : item.priceVnd != null
-                            ? `${item.priceVnd.toLocaleString("vi-VN")}đ${
-                                item.listingType === "CHO_THUE" || item.listingType === "O_GHEP"
-                                  ? "/tháng"
-                                  : ""
-                              }`
-                            : "Liên hệ"}
+            {categoriesOpen ? (
+              <div className="utility-grid" style={{ marginTop: 10 }}>
+                {secondaryCats.map((cat) => (
+                  <Link
+                    key={cat.id}
+                    href={`/zones/${KVL_SLUG}/browse/${cat.id}`}
+                    className="utility-tile"
+                  >
+                    <span className="utility-tile-emoji" aria-hidden>
+                      {cat.emoji}
                     </span>
-                    <span className="stat">{item.locationLabel}</span>
+                    <span className="utility-tile-label">{cat.shortLabel}</span>
                   </Link>
                 ))}
               </div>
-            ) : (
-              <p className="stat">Chưa có tin — mở Góc khu để đăng.</p>
-            )}
-          </div>
+            ) : null}
+          </section>
 
-          {blocks.map((block) => (
-            <div key={block.id} className="card" style={{ marginBottom: 16 }}>
-              <div className="section-head">
-                <p className="section-title">{block.title}</p>
-                <Link
-                  href={browseHrefForDiscoveryBlock(block.id, KVL_SLUG)}
-                  className="section-more"
+          <section aria-label="Khám phá quanh tôi">
+            <p className="section-title" style={{ margin: "8px 0 12px" }}>
+              Khám phá quanh tôi
+            </p>
+            <div className="filter-chip-row" aria-label="Bộ lọc khám phá">
+              {EXPLORE_CHIPS.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={
+                    exploreChip === c.id ? "filter-chip filter-chip--active" : "filter-chip"
+                  }
+                  onClick={() => void selectExploreChip(c.id)}
                 >
-                  Xem thêm →
-                </Link>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+            {exploreLoading ? (
+              <div className="explore-skeleton" aria-busy="true" aria-label="Đang tải">
+                <div className="explore-skeleton-row" />
+                <div className="explore-skeleton-row" />
+                <div className="explore-skeleton-row" />
               </div>
-              <p className="stat" style={{ marginBottom: 12 }}>
-                {block.subtitle}
+            ) : exploreProviders.length > 0 ? (
+              <div className="card" style={{ marginBottom: 16 }}>
+                <ProviderList
+                  providers={exploreProviders.slice(0, 5)}
+                  favoriteIds={favoriteIds}
+                  onToggleFavorite={(id) => void toggleFavorite(id)}
+                />
+              </div>
+            ) : (
+              <p className="stat" style={{ marginBottom: 16 }}>
+                Chưa có chỗ khớp — thử chip khác.
               </p>
-              <ProviderList
-                providers={block.providers}
-                favoriteIds={favoriteIds}
-                onToggleFavorite={(id) => void toggleFavorite(id)}
-              />
-            </div>
-          ))}
+            )}
 
-          {favoriteIds.size > 0 && (
-            <div className="card" style={{ marginBottom: 16 }}>
-              <p className="section-title">Quán yêu thích</p>
-              <p className="stat">{favoriteIds.size} quán đã lưu — ♥ trên thẻ quán.</p>
-            </div>
-          )}
+            {otherBlocks.map((block) =>
+              block.providers.length === 0 ? null : (
+                <div key={block.id} className="card" style={{ marginBottom: 16 }}>
+                  <div className="section-head">
+                    <p className="section-title">{block.title}</p>
+                    <Link
+                      href={browseHrefForDiscoveryBlock(block.id, KVL_SLUG)}
+                      className="section-more"
+                    >
+                      Xem thêm →
+                    </Link>
+                  </div>
+                  <p className="stat" style={{ marginBottom: 12 }}>
+                    {block.subtitle}
+                  </p>
+                  <ProviderList
+                    providers={block.providers.slice(0, 3)}
+                    favoriteIds={favoriteIds}
+                    onToggleFavorite={(id) => void toggleFavorite(id)}
+                  />
+                </div>
+              ),
+            )}
+          </section>
         </>
       )}
 
-      <div className="card">
-        <p className="stat">Xin chào{me?.displayName ? `, ${me.displayName}` : ""}!</p>
-        <p className="stat" style={{ marginTop: 8 }}>
-          Dùng thanh tab bên dưới · cài Pickee lên màn hình chính (Add to Home Screen).
-        </p>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
-          <Link href="/provider/login" className="stat">
-            Provider app →
-          </Link>
-          <Link href="/runner/login" className="stat">
-            Runner app →
-          </Link>
-        </div>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          style={{ marginTop: 12 }}
-          onClick={() => {
-            void api("/auth/logout", { method: "POST" }).then(() => router.replace("/login"));
-          }}
-        >
-          Đăng xuất
-        </button>
-      </div>
+      <p className="stat" style={{ marginTop: 8, marginBottom: 0 }}>
+        Xin chào{me?.displayName ? `, ${me.displayName}` : ""} ·{" "}
+        <Link href="/me">Tài khoản →</Link>
+      </p>
     </div>
   );
 }

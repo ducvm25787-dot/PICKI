@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type {
   GeoJSON as LeafletGeoJSON,
   LatLngExpression,
@@ -17,6 +17,8 @@ export type MapMarker = {
   href?: string;
   kind?: "provider" | "user" | "stop" | "default";
   sequence?: number;
+  /** Live status tint for compact provider dots */
+  status?: string | null;
 };
 
 export type MapPolygonGeoJson = {
@@ -37,6 +39,12 @@ type Props = {
   onMarkerDrag?: (id: string, pos: { lat: number; lng: number }) => void;
   /** Click map to place/move pin (when editing location) */
   onMapClick?: (pos: { lat: number; lng: number }) => void;
+  /** Prefer over href navigation — tap marker / expand cluster child */
+  onMarkerSelect?: (id: string) => void;
+  /** Compact dots + lightweight cluster (Zone map). Off for navigate/admin. */
+  compactMarkers?: boolean;
+  /** Cluster when provider markers >= this (default 8) */
+  clusterThreshold?: number;
   /** Driving route path (lat/lng) */
   routePath?: { lat: number; lng: number }[] | null;
   className?: string;
@@ -53,7 +61,39 @@ const KIND_COLOR: Record<NonNullable<MapMarker["kind"]>, string> = {
   default: "#57534e",
 };
 
-function markerHtml(m: MapMarker, focused: boolean): string {
+function statusColor(status?: string | null): string {
+  switch (status) {
+    case "OPEN":
+      return "#16a34a";
+    case "BUSY":
+      return "#d97706";
+    case "CLOSED":
+      return "#a8a29e";
+    default:
+      return KIND_COLOR.provider;
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function markerHtml(m: MapMarker, focused: boolean, compact: boolean): string {
+  if (compact && (m.kind === "provider" || m.kind === "default")) {
+    const color = statusColor(m.status);
+    const size = focused ? 18 : 14;
+    const ring = focused ? "outline:3px solid #fff; outline-offset:2px;" : "";
+    return `<div style="
+      width:${size}px;height:${size}px;border-radius:50%;
+      background:${color};border:2px solid #fff;
+      box-shadow:0 2px 6px rgba(0,0,0,.28);${ring}
+    "></div>`;
+  }
+
   const color = KIND_COLOR[m.kind ?? "default"];
   const text =
     m.sequence != null
@@ -79,12 +119,57 @@ function markerHtml(m: MapMarker, focused: boolean): string {
   ">${escapeHtml(text)}</div>`;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+function clusterHtml(count: number): string {
+  return `<div style="
+    min-width:28px;height:28px;padding:0 7px;
+    border-radius:999px;background:#c2410c;color:#fff;
+    font:700 12px/28px system-ui,sans-serif;text-align:center;
+    border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);
+  ">${String(count)}</div>`;
+}
+
+type ClusterBucket = {
+  key: string;
+  lat: number;
+  lng: number;
+  members: MapMarker[];
+};
+
+function clusterProviders(markers: MapMarker[], zoom: number, threshold: number): {
+  singles: MapMarker[];
+  clusters: ClusterBucket[];
+} {
+  const providers = markers.filter((m) => m.kind === "provider" || m.kind === "default");
+  const others = markers.filter((m) => m.kind !== "provider" && m.kind !== "default");
+  if (providers.length < threshold) {
+    return { singles: markers, clusters: [] };
+  }
+
+  // Coarser grid when zoomed out
+  const cell = zoom >= 17 ? 0.0008 : zoom >= 15 ? 0.0016 : zoom >= 13 ? 0.0035 : 0.007;
+  const buckets = new Map<string, ClusterBucket>();
+  for (const m of providers) {
+    const gk = `${Math.round(m.lat / cell)}_${Math.round(m.lng / cell)}`;
+    const existing = buckets.get(gk);
+    if (existing) {
+      existing.members.push(m);
+      existing.lat = (existing.lat * (existing.members.length - 1) + m.lat) / existing.members.length;
+      existing.lng = (existing.lng * (existing.members.length - 1) + m.lng) / existing.members.length;
+    } else {
+      buckets.set(gk, { key: gk, lat: m.lat, lng: m.lng, members: [m] });
+    }
+  }
+
+  const singles: MapMarker[] = [...others];
+  const clusters: ClusterBucket[] = [];
+  for (const b of buckets.values()) {
+    if (b.members.length === 1) {
+      singles.push(b.members[0]!);
+    } else {
+      clusters.push(b);
+    }
+  }
+  return { singles, clusters };
 }
 
 export function PickeeMap({
@@ -96,12 +181,17 @@ export function PickeeMap({
   draggableId = null,
   onMarkerDrag,
   onMapClick,
+  onMarkerSelect,
+  compactMarkers = false,
+  clusterThreshold = 8,
   routePath = null,
   className = "",
   height = 320,
   fitMarkers = true,
   followCenter = false,
 }: Props) {
+  const [liveZoom, setLiveZoom] = useState(zoom);
+  const fittedKeyRef = useRef<string>("");
   const domId = useId().replace(/:/g, "");
   const mapRef = useRef<LeafletMap | null>(null);
   const markersRef = useRef<Marker[]>([]);
@@ -110,13 +200,24 @@ export function PickeeMap({
   const draggingRef = useRef(false);
   const onMarkerDragRef = useRef(onMarkerDrag);
   const onMapClickRef = useRef(onMapClick);
+  const onMarkerSelectRef = useRef(onMarkerSelect);
   onMarkerDragRef.current = onMarkerDrag;
   onMapClickRef.current = onMapClick;
+  onMarkerSelectRef.current = onMarkerSelect;
 
   const markersKey = useMemo(
     () =>
       JSON.stringify(
-        markers.map((m) => [m.id, m.lat, m.lng, m.label ?? "", m.href ?? "", m.kind ?? "", m.sequence ?? null]),
+        markers.map((m) => [
+          m.id,
+          m.lat,
+          m.lng,
+          m.label ?? "",
+          m.href ?? "",
+          m.kind ?? "",
+          m.sequence ?? null,
+          m.status ?? "",
+        ]),
       ),
     [markers],
   );
@@ -155,15 +256,18 @@ export function PickeeMap({
         map.on("click", (e) => {
           onMapClickRef.current?.({ lat: e.latlng.lat, lng: e.latlng.lng });
         });
+        map.on("zoomend", () => {
+          setLiveZoom(map.getZoom());
+        });
 
         mapRef.current = map;
-        // Full-height navigate: Leaflet needs invalidate after layout
+        setLiveZoom(map.getZoom());
         requestAnimationFrame(() => {
           map.invalidateSize();
           setTimeout(() => map.invalidateSize(), 100);
           setTimeout(() => map.invalidateSize(), 400);
         });
-      } else if (!draggingRef.current) {
+      } else if (!draggingRef.current && !compactMarkers) {
         if (followCenter) {
           mapRef.current.setView([center.lat, center.lng], mapRef.current.getZoom(), {
             animate: true,
@@ -173,6 +277,10 @@ export function PickeeMap({
         }
         requestAnimationFrame(() => {
           mapRef.current?.invalidateSize();
+        });
+      } else if (!draggingRef.current && compactMarkers && followCenter) {
+        mapRef.current.setView([center.lat, center.lng], mapRef.current.getZoom(), {
+          animate: true,
         });
       }
 
@@ -224,14 +332,38 @@ export function PickeeMap({
       if (routePath) {
         for (const p of routePath) latLngs.push([p.lat, p.lng]);
       }
-      for (const m of markers) {
-        const focused = focusId != null && m.id === focusId;
-        const canDrag = draggableId != null && m.id === draggableId;
+
+      const currentZoom = map.getZoom();
+      const { singles, clusters } =
+        compactMarkers
+          ? clusterProviders(markers, liveZoom || currentZoom, clusterThreshold)
+          : { singles: markers, clusters: [] as ClusterBucket[] };
+
+      for (const cluster of clusters) {
         const icon = L.divIcon({
           className: "pickee-map-marker",
-          html: markerHtml(m, focused || canDrag),
-          iconSize: [80, 28],
-          iconAnchor: [40, 14],
+          html: clusterHtml(cluster.members.length),
+          iconSize: [32, 32],
+          iconAnchor: [16, 16],
+        });
+        const marker = L.marker([cluster.lat, cluster.lng], { icon, zIndexOffset: 200 });
+        marker.on("click", () => {
+          map.setView([cluster.lat, cluster.lng], Math.min(currentZoom + 2, 18), { animate: true });
+        });
+        marker.addTo(map);
+        markersRef.current.push(marker);
+        latLngs.push([cluster.lat, cluster.lng]);
+      }
+
+      for (const m of singles) {
+        const focused = focusId != null && m.id === focusId;
+        const canDrag = draggableId != null && m.id === draggableId;
+        const compact = compactMarkers && m.kind === "provider";
+        const icon = L.divIcon({
+          className: "pickee-map-marker",
+          html: markerHtml(m, focused || canDrag, compact),
+          iconSize: compact ? [18, 18] : [80, 28],
+          iconAnchor: compact ? [9, 9] : [40, 14],
         });
         const marker = L.marker([m.lat, m.lng], {
           icon,
@@ -239,7 +371,9 @@ export function PickeeMap({
           zIndexOffset: focused || canDrag ? 1000 : 0,
           autoPan: canDrag,
         });
-        if (m.label) marker.bindTooltip(m.label, { direction: "top", offset: [0, -12] });
+        if (m.label && !compact) {
+          marker.bindTooltip(m.label, { direction: "top", offset: [0, -12] });
+        }
         if (canDrag) {
           marker.on("dragstart", () => {
             draggingRef.current = true;
@@ -249,9 +383,13 @@ export function PickeeMap({
             const ll = marker.getLatLng();
             onMarkerDragRef.current?.(m.id, { lat: ll.lat, lng: ll.lng });
           });
-        } else if (m.href) {
+        } else {
           marker.on("click", () => {
-            window.location.href = m.href!;
+            if (onMarkerSelectRef.current) {
+              onMarkerSelectRef.current(m.id);
+              return;
+            }
+            if (m.href) window.location.href = m.href;
           });
         }
         marker.addTo(map);
@@ -260,22 +398,27 @@ export function PickeeMap({
       }
 
       if (!followCenter) {
-        if (polygonRef.current && latLngs.length === 0) {
-          try {
-            map.fitBounds(polygonRef.current.getBounds(), { padding: [28, 28], maxZoom: 16 });
-          } catch {
-            /* empty polygon */
+        const fitKey = `${markersKey}|${polygonKey}|${focusId ?? ""}`;
+        const alreadyFitted = fittedKeyRef.current === fitKey;
+        if (!alreadyFitted) {
+          fittedKeyRef.current = fitKey;
+          if (polygonRef.current && latLngs.length === 0) {
+            try {
+              map.fitBounds(polygonRef.current.getBounds(), { padding: [28, 28], maxZoom: 16 });
+            } catch {
+              /* empty polygon */
+            }
+          } else if (fitMarkers && latLngs.length >= 2) {
+            map.fitBounds(L.latLngBounds(latLngs), { padding: [36, 36], maxZoom: 17 });
+          } else if (fitMarkers && latLngs.length === 1) {
+            map.setView(latLngs[0]!, Math.max(zoom, 16));
           }
-        } else if (fitMarkers && latLngs.length >= 2) {
-          map.fitBounds(L.latLngBounds(latLngs), { padding: [36, 36], maxZoom: 17 });
-        } else if (fitMarkers && latLngs.length === 1) {
-          map.setView(latLngs[0]!, Math.max(zoom, 16));
-        }
 
-        if (focusId) {
-          const focused = markers.find((m) => m.id === focusId);
-          if (focused) {
-            map.setView([focused.lat, focused.lng], Math.max(zoom, 17));
+          if (focusId) {
+            const focused = markers.find((m) => m.id === focusId);
+            if (focused) {
+              map.setView([focused.lat, focused.lng], Math.max(zoom, 17));
+            }
           }
         }
       }
@@ -303,6 +446,9 @@ export function PickeeMap({
     routeKey,
     routePath,
     followCenter,
+    compactMarkers,
+    clusterThreshold,
+    liveZoom,
   ]);
 
   useEffect(() => {
@@ -315,7 +461,6 @@ export function PickeeMap({
     };
   }, []);
 
-  // Keep tiles filling flex/absolute containers (navigate full-bleed)
   useEffect(() => {
     const el = document.getElementById(`pickee-map-${domId}`);
     if (!el || typeof ResizeObserver === "undefined") return;

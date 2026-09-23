@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { IconBell } from "./nav-icons";
 import { api } from "../../lib/api";
 
 type NotificationItem = {
@@ -16,6 +17,7 @@ type NotificationItem = {
     intentId?: string;
     locationId?: string;
     listingId?: string;
+    conversationId?: string;
   };
   read: boolean;
   createdAt: string;
@@ -219,8 +221,9 @@ export function NotificationBell({
           setOpen((v) => !v);
         }}
       >
-        <span aria-hidden>🔔</span>
-        {inline ? <span className="notification-bell-label">Thông báo</span> : null}
+        <span aria-hidden className="notification-bell-icon">
+          <IconBell />
+        </span>
         {unread > 0 ? <span className="notification-badge">{unread > 9 ? "9+" : unread}</span> : null}
       </button>
 
@@ -228,11 +231,18 @@ export function NotificationBell({
         <div className="notification-panel" role="dialog" aria-label="Thông báo">
           <div className="notification-panel-head">
             <strong>Thông báo</strong>
-            {unread > 0 ? (
-              <button type="button" className="notification-mark-all" onClick={() => void markAllRead()}>
-                Đọc hết
-              </button>
-            ) : null}
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {unread > 0 ? (
+                <button type="button" className="notification-mark-all" onClick={() => void markAllRead()}>
+                  Đọc hết
+                </button>
+              ) : null}
+              {audience === "customer" ? (
+                <a href="/me/notifications" className="notification-mark-all" onClick={() => setOpen(false)}>
+                  Tất cả
+                </a>
+              ) : null}
+            </div>
           </div>
           <div className="notification-list">
             {!data || data.notifications.length === 0 ? (

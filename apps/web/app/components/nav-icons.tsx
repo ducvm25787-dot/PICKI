@@ -21,6 +21,25 @@ export function IconHome(props: IconProps) {
   );
 }
 
+export function IconActivity(props: IconProps) {
+  return (
+    <svg {...svgProps} className={props.className}>
+      <rect x="6" y="4.5" width="12" height="15" rx="2" />
+      <path d="M9 4.5V3.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 3.5v1" />
+      <path d="M9 11h6M9 14.5h4" />
+    </svg>
+  );
+}
+
+export function IconMe(props: IconProps) {
+  return (
+    <svg {...svgProps} className={props.className}>
+      <circle cx="12" cy="8" r="3.2" />
+      <path d="M5.5 19.5c1.2-3.2 3.4-4.8 6.5-4.8s5.3 1.6 6.5 4.8" />
+    </svg>
+  );
+}
+
 export function IconSearch(props: IconProps) {
   return (
     <svg {...svgProps} className={props.className}>
@@ -168,6 +187,18 @@ export function IconUsers(props: IconProps) {
       <circle cx="16.5" cy="10" r="2.5" />
       <path d="M3.5 18.5c.8-3 2.8-4.5 5.5-4.5s4.7 1.5 5.5 4.5" />
       <path d="M14 14.5c2 .2 3.6 1.3 4.3 4" />
+    </svg>
+  );
+}
+
+/** All local services — broader than a single wrench. */
+export function IconServices(props: IconProps) {
+  return (
+    <svg {...svgProps} className={props.className}>
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
     </svg>
   );
 }

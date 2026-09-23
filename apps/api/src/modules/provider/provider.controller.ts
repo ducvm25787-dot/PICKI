@@ -1,8 +1,16 @@
-import { Body, Controller, Get, Inject, Param, Patch, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { PickiError } from "@picki/shared";
 import { CurrentUserId } from "../auth/current-user.decorator.js";
 import { SessionAuthGuard } from "../auth/session-auth.guard.js";
-import { providerOrderActionSchema, updateLiveStatusSchema, updateProviderProfileSchema } from "./dto.js";
+import {
+  createDailyUpdateSchema,
+  providerOrderActionSchema,
+  updateDailyUpdateSchema,
+  updateLiveStatusSchema,
+  updateProviderProfileSchema,
+  upsertLoyaltyBenefitSchema,
+  upsertLoyaltyProgramSchema,
+} from "./dto.js";
 import { ProviderService } from "./provider.service.js";
 
 @Controller("provider")
@@ -36,6 +44,92 @@ export class ProviderController {
       });
     }
     return this.providerService.updateProfile(userId, locationId, parsed.data);
+  }
+
+  @Get("locations/:locationId/today")
+  async listToday(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+  ) {
+    return this.providerService.listDailyUpdates(userId, locationId);
+  }
+
+  @Post("locations/:locationId/today")
+  async createToday(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = createDailyUpdateSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Invalid today update", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.providerService.createDailyUpdate(userId, locationId, parsed.data);
+  }
+
+  @Patch("locations/:locationId/today/:updateId")
+  async patchToday(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Param("updateId") updateId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = updateDailyUpdateSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Invalid today update", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.providerService.updateDailyUpdate(userId, locationId, updateId, parsed.data);
+  }
+
+  @Delete("locations/:locationId/today/:updateId")
+  async deleteToday(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Param("updateId") updateId: string,
+  ) {
+    return this.providerService.deleteDailyUpdate(userId, locationId, updateId);
+  }
+
+  @Get("locations/:locationId/loyalty")
+  async getLoyalty(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+  ) {
+    return this.providerService.getLoyalty(userId, locationId);
+  }
+
+  @Patch("locations/:locationId/loyalty")
+  async patchLoyalty(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = upsertLoyaltyProgramSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Invalid loyalty program", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.providerService.upsertLoyaltyProgram(userId, locationId, parsed.data);
+  }
+
+  @Post("locations/:locationId/loyalty/benefits")
+  async addBenefit(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = upsertLoyaltyBenefitSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Invalid loyalty benefit", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.providerService.addLoyaltyBenefit(userId, locationId, parsed.data);
   }
 
   @Get("orders")

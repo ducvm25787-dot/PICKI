@@ -640,3 +640,35 @@ Transactional outbox (`outbox_events`) processed by an in-process or same-deploy
 **Supersedes (partial):** ADR-051 item 3 (directions = Google-only) and item 5 (OSRM out of scope) — Google remains fallback only.
 
 ---
+
+### ADR-054 — Habit-First Experience Layer (P0 foundation)
+
+**Status:** ACCEPTED (2026-09-23) — P0 shipped; P1 Today + lean loyalty shipped
+
+**Context:** Pilot verticals are sufficient; Home was category-first. Product addendum: `docs/PICKI_HABIT_FIRST_ADDENDUM.md`. Audit: `docs/PICKI_HABIT_FIRST_AUDIT.md`.
+
+**Decision:**
+
+1. Add `user_provider_relationships` (user × location): completed interactions from orders `DELIVERED`/`COMPLETED`, favorite sync, deterministic score/status (`NEW`/`RETURNING`/`REGULAR`/`VIP`). Weights via env (`FAMILIARITY_*`) — not hardcoded in UI.
+2. Upsert after order terminal success; sync on favorite mutate; backfill `pnpm --filter @picki/db backfill:relationships`.
+3. `GET /zones/:slug/home` (auth) returns familiar shelf + discovery blocks with familiar locations deduped.
+4. Customer Home composition: Search → Context Now (configurable windows in `home-hero.ts`) → Chỗ quen → chips/quick → Khám phá → Categories → Góc khu.
+5. Explicitly out of P0: Today updates publisher, loyalty benefits, coins/AI/ES.
+
+**Follow-on (same ADR, 2026-09-23):**
+
+6. Universal search (`searchZoneUniversal`): providers + offerings + FD/breakfast menu items + categories; VN unaccent (`picki_unaccent`) + `search_synonyms`; grouped response (Chỗ quen / Món / Quán / Danh mục / Khám phá).  
+7. Repeat lean: `GET /orders/repeat/:locationId` revalidates menu/live status; location `?repeat=1` adds available items to cart (no blind clone).
+
+**Shelf rule:** `completed_interactions ≥ 2` OR `favorite`, and not `hidden_by_user`.
+
+**P1 (same ADR, 2026-09-23):**
+
+8. `provider_daily_updates` — ephemeral “Hôm nay có”; default expire end of VN day; Home `today` section (hidden when empty); provider `/provider/today`.
+9. Lean loyalty — `provider_loyalty_programs` + `provider_loyalty_benefits` (no coins). Thresholds REGULAR/VIP; labels on provider orders; benefits are staff notes only (no auto checkout discount V1).
+
+**S-H7 analytics (same ADR, 2026-09-23):**
+
+10. `analytics_events` append-only; `POST /analytics/events` (allowlisted names); server tracks search + favorite; client tracks home/familiar/today/repeat/search clicks; Admin dashboard 7-day counts. No warehouse / no P2 personalization.
+
+---

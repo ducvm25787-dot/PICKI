@@ -1,4 +1,5 @@
 import type { PickiSql } from "../client.js";
+import { searchZoneUniversal } from "../search/universal.js";
 import type { FoodMoment } from "./blocks.js";
 
 export type DiscoveryProviderRow = {
@@ -118,6 +119,61 @@ export type LateNightDiscoveryRow = DiscoveryProviderRow & {
   late_starts_at: string;
   late_ends_at: string;
 };
+
+/** Bếp «Bữa tối ấm cúng» đang bật trong Zone. */
+export async function listFamilyDinnerProvidersEnabled(
+  sql: PickiSql,
+  zoneId: string,
+): Promise<DiscoveryProviderRow[]> {
+  return sql<DiscoveryProviderRow[]>`
+    SELECT
+      pl.id AS location_id,
+      p.id AS provider_id,
+      p.brand_name,
+      pl.display_name,
+      p.provider_type,
+      pp.tagline,
+      COALESCE(pls.status, 'OFFLINE') AS live_status,
+      pls.prep_minutes,
+      pls.eta_minutes,
+      pls.estimated_wait_minutes,
+      pl.address_line,
+      pl.lat,
+      pl.lng,
+      (
+        SELECT ROUND(AVG(lr.rating)::numeric, 1)::text
+        FROM location_reviews lr
+        WHERE lr.provider_location_id = pl.id
+      ) AS avg_rating,
+      (
+        SELECT COUNT(*)::text FROM location_reviews lr
+        WHERE lr.provider_location_id = pl.id
+      ) AS review_count,
+      (
+        SELECT fi.name FROM family_dinner_menu_items fi
+        INNER JOIN family_dinner_daily_menus fdm ON fdm.id = fi.daily_menu_id
+        WHERE fdm.provider_location_id = pl.id
+          AND fdm.service_date = (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
+          AND fdm.status = 'PUBLISHED'
+        ORDER BY fi.sort_order
+        LIMIT 1
+      ) AS sample_offering,
+      pp.logo_url
+    FROM family_dinner_provider_settings fds
+    INNER JOIN provider_locations pl ON pl.id = fds.provider_location_id
+    INNER JOIN providers p ON p.id = pl.provider_id
+    INNER JOIN provider_zone_memberships pzm
+      ON pzm.provider_location_id = pl.id
+      AND pzm.zone_id = ${zoneId}::uuid
+      AND pzm.status = 'ACTIVE'
+    LEFT JOIN provider_profiles pp ON pp.provider_id = p.id
+    LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
+    WHERE fds.enabled = true
+      AND pl.status = 'ACTIVE'
+      AND p.status = 'ACTIVE'
+    ORDER BY p.brand_name
+  `;
+}
 
 /** Quán đang bật «Sáng mai» + menu PUBLISHED (accepting filter in service). */
 export async function listBreakfastPreorderProvidersEnabled(
@@ -832,6 +888,172 @@ export async function listLaundryProviders(
   `;
 }
 
+export type ExploreChip = "new" | "open" | "near" | "popular";
+
+/**
+ * Home «Khám phá» chips — zone-scoped, no meter distance.
+ * near ≈ đang hoạt động trong Zone (OPEN/BUSY first).
+ */
+export async function listExploreProviders(
+  sql: PickiSql,
+  zoneId: string,
+  chip: ExploreChip,
+  opts?: { excludeLocationIds?: string[]; limit?: number },
+): Promise<DiscoveryProviderRow[]> {
+  const limit = opts?.limit ?? 8;
+  const exclude = opts?.excludeLocationIds ?? [];
+
+  if (chip === "open" || chip === "near") {
+    return sql<DiscoveryProviderRow[]>`
+      SELECT
+        pl.id AS location_id,
+        p.id AS provider_id,
+        p.brand_name,
+        pl.display_name,
+        p.provider_type,
+        pp.tagline,
+        COALESCE(pls.status, 'OFFLINE') AS live_status,
+        pls.prep_minutes,
+        pls.eta_minutes,
+        pls.estimated_wait_minutes,
+        pl.address_line,
+        pl.lat,
+        pl.lng,
+        (
+          SELECT ROUND(AVG(lr.rating)::numeric, 1)::text
+          FROM location_reviews lr
+          WHERE lr.provider_location_id = pl.id
+        ) AS avg_rating,
+        (
+          SELECT COUNT(*)::text FROM location_reviews lr
+          WHERE lr.provider_location_id = pl.id
+        ) AS review_count,
+        (
+          SELECT o.name FROM offerings o
+          WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+          ORDER BY o.sort_order LIMIT 1
+        ) AS sample_offering,
+        pp.logo_url
+      FROM provider_zone_memberships pzm
+      INNER JOIN provider_locations pl ON pl.id = pzm.provider_location_id
+      INNER JOIN providers p ON p.id = pl.provider_id
+      LEFT JOIN provider_profiles pp ON pp.provider_id = p.id
+      LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
+      WHERE pzm.zone_id = ${zoneId}::uuid
+        AND pzm.status = 'ACTIVE'
+        AND pl.status = 'ACTIVE'
+        AND p.status = 'ACTIVE'
+        AND COALESCE(pls.status, 'OFFLINE') IN ('OPEN', 'BUSY')
+        AND (cardinality(${exclude}::uuid[]) = 0 OR NOT (pl.id = ANY(${exclude}::uuid[])))
+      ORDER BY
+        CASE COALESCE(pls.status, 'OFFLINE') WHEN 'OPEN' THEN 0 ELSE 1 END,
+        pls.updated_at DESC NULLS LAST,
+        p.brand_name
+      LIMIT ${limit}
+    `;
+  }
+
+  if (chip === "new") {
+    return sql<DiscoveryProviderRow[]>`
+      SELECT
+        pl.id AS location_id,
+        p.id AS provider_id,
+        p.brand_name,
+        pl.display_name,
+        p.provider_type,
+        pp.tagline,
+        COALESCE(pls.status, 'OFFLINE') AS live_status,
+        pls.prep_minutes,
+        pls.eta_minutes,
+        pls.estimated_wait_minutes,
+        pl.address_line,
+        pl.lat,
+        pl.lng,
+        (
+          SELECT ROUND(AVG(lr.rating)::numeric, 1)::text
+          FROM location_reviews lr
+          WHERE lr.provider_location_id = pl.id
+        ) AS avg_rating,
+        (
+          SELECT COUNT(*)::text FROM location_reviews lr
+          WHERE lr.provider_location_id = pl.id
+        ) AS review_count,
+        (
+          SELECT o.name FROM offerings o
+          WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+          ORDER BY o.sort_order LIMIT 1
+        ) AS sample_offering,
+        pp.logo_url
+      FROM provider_zone_memberships pzm
+      INNER JOIN provider_locations pl ON pl.id = pzm.provider_location_id
+      INNER JOIN providers p ON p.id = pl.provider_id
+      LEFT JOIN provider_profiles pp ON pp.provider_id = p.id
+      LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
+      WHERE pzm.zone_id = ${zoneId}::uuid
+        AND pzm.status = 'ACTIVE'
+        AND pl.status = 'ACTIVE'
+        AND p.status = 'ACTIVE'
+        AND (cardinality(${exclude}::uuid[]) = 0 OR NOT (pl.id = ANY(${exclude}::uuid[])))
+      ORDER BY pl.created_at DESC NULLS LAST, p.brand_name
+      LIMIT ${limit}
+    `;
+  }
+
+  return sql<DiscoveryProviderRow[]>`
+    SELECT
+      pl.id AS location_id,
+      p.id AS provider_id,
+      p.brand_name,
+      pl.display_name,
+      p.provider_type,
+      pp.tagline,
+      COALESCE(pls.status, 'OFFLINE') AS live_status,
+      pls.prep_minutes,
+      pls.eta_minutes,
+      pls.estimated_wait_minutes,
+      pl.address_line,
+      pl.lat,
+      pl.lng,
+      (
+        SELECT ROUND(AVG(lr.rating)::numeric, 1)::text
+        FROM location_reviews lr
+        WHERE lr.provider_location_id = pl.id
+      ) AS avg_rating,
+      (
+        SELECT COUNT(*)::text FROM location_reviews lr
+        WHERE lr.provider_location_id = pl.id
+      ) AS review_count,
+      (
+        SELECT o.name FROM offerings o
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        ORDER BY o.sort_order LIMIT 1
+      ) AS sample_offering,
+      pp.logo_url
+    FROM provider_zone_memberships pzm
+    INNER JOIN provider_locations pl ON pl.id = pzm.provider_location_id
+    INNER JOIN providers p ON p.id = pl.provider_id
+    LEFT JOIN provider_profiles pp ON pp.provider_id = p.id
+    LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
+    WHERE pzm.zone_id = ${zoneId}::uuid
+      AND pzm.status = 'ACTIVE'
+      AND pl.status = 'ACTIVE'
+      AND p.status = 'ACTIVE'
+      AND (cardinality(${exclude}::uuid[]) = 0 OR NOT (pl.id = ANY(${exclude}::uuid[])))
+    ORDER BY
+      (
+        SELECT COUNT(*) FROM orders o
+        WHERE o.provider_location_id = pl.id
+          AND o.status IN ('DELIVERED', 'COMPLETED')
+      ) DESC,
+      (
+        SELECT COUNT(*) FROM location_reviews lr
+        WHERE lr.provider_location_id = pl.id
+      ) DESC,
+      p.brand_name
+    LIMIT ${limit}
+  `;
+}
+
 /** Browse by provider_type list (home categories). */
 export async function listProvidersByTypes(
   sql: PickiSql,
@@ -896,56 +1118,27 @@ export async function searchZone(
   zoneId: string,
   query: string,
 ): Promise<SearchResultRow[]> {
-  const q = `%${query.trim()}%`;
-  return sql<SearchResultRow[]>`
-    SELECT * FROM (
-      SELECT
-        'provider'::text AS kind,
-        pl.id AS location_id,
-        p.id AS provider_id,
-        p.brand_name,
-        pl.display_name,
-        COALESCE(pls.status, 'OFFLINE') AS live_status,
-        NULL::uuid AS offering_id,
-        NULL::text AS offering_name,
-        NULL::integer AS amount_vnd,
-        pl.lat,
-        pl.lng
-      FROM provider_zone_memberships pzm
-      INNER JOIN provider_locations pl ON pl.id = pzm.provider_location_id
-      INNER JOIN providers p ON p.id = pl.provider_id
-      LEFT JOIN provider_profiles pp ON pp.provider_id = p.id
-      LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
-      WHERE pzm.zone_id = ${zoneId}::uuid
-        AND pzm.status = 'ACTIVE' AND pl.status = 'ACTIVE' AND p.status = 'ACTIVE'
-        AND (p.brand_name ILIKE ${q} OR pl.display_name ILIKE ${q} OR pp.tagline ILIKE ${q})
-      UNION ALL
-      SELECT
-        'offering'::text AS kind,
-        pl.id AS location_id,
-        p.id AS provider_id,
-        p.brand_name,
-        pl.display_name,
-        COALESCE(pls.status, 'OFFLINE') AS live_status,
-        o.id AS offering_id,
-        o.name AS offering_name,
-        COALESCE(op.amount_vnd, opm.amount_vnd) AS amount_vnd,
-        pl.lat,
-        pl.lng
-      FROM offerings o
-      INNER JOIN providers p ON p.id = o.provider_id
-      INNER JOIN provider_locations pl ON pl.provider_id = p.id
-      INNER JOIN provider_zone_memberships pzm ON pzm.provider_location_id = pl.id
-      LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
-      LEFT JOIN offering_prices op ON op.offering_id = o.id AND op.provider_location_id = pl.id
-      LEFT JOIN offering_prices opm ON opm.offering_id = o.id AND opm.provider_location_id IS NULL
-      WHERE pzm.zone_id = ${zoneId}::uuid
-        AND pzm.status = 'ACTIVE' AND pl.status = 'ACTIVE' AND p.status = 'ACTIVE'
-        AND o.status = 'ACTIVE'
-        AND (o.name ILIKE ${q} OR o.description ILIKE ${q})
-    ) results
-    LIMIT 30
-  `;
+  const groups = await searchZoneUniversal(sql, { zoneId, query });
+  const flat: SearchResultRow[] = [];
+  for (const g of groups) {
+    for (const r of g.results) {
+      if (r.kind === "category" || !r.location_id || !r.provider_id) continue;
+      flat.push({
+        kind: r.kind === "provider" ? "provider" : "offering",
+        location_id: r.location_id,
+        provider_id: r.provider_id,
+        brand_name: r.brand_name ?? "",
+        display_name: r.display_name ?? "",
+        live_status: r.live_status ?? "OFFLINE",
+        offering_id: r.item_id,
+        offering_name: r.item_name,
+        amount_vnd: r.amount_vnd,
+        lat: r.lat,
+        lng: r.lng,
+      });
+    }
+  }
+  return flat.slice(0, 30);
 }
 
 export type MapProviderFilters = {

@@ -6,7 +6,7 @@
 
 export type GeoPosition = { lat: number; lng: number };
 
-const KVL_FALLBACK: GeoPosition = { lat: 20.9883, lng: 105.8414 };
+const KVL_FALLBACK: GeoPosition = { lat: 20.974, lng: 105.821 };
 
 export function zoneFallbackCenter(fallback?: GeoPosition | null): GeoPosition {
   return fallback ? { ...fallback } : { ...KVL_FALLBACK };

@@ -8,7 +8,7 @@ const OFFERING_TAGS: Record<string, { foodMoment: string; fulfillmentMode: strin
   "com-cha": { foodMoment: "FAMILY_MEAL", fulfillmentMode: "INSTANT", paymentPolicy: "PREPAY_REQUIRED" },
   "pho-tai": { foodMoment: "BREAKFAST_INSTANT", fulfillmentMode: "INSTANT", paymentPolicy: "PREPAY_PREFERRED" },
   "pho-nam": { foodMoment: "BREAKFAST_INSTANT", fulfillmentMode: "INSTANT", paymentPolicy: "PREPAY_PREFERRED" },
-  "pho-dac-biet": { foodMoment: "DINNER", fulfillmentMode: "INSTANT", paymentPolicy: "PREPAY_PREFERRED" },
+  "pho-dac-biet": { foodMoment: "BREAKFAST_INSTANT", fulfillmentMode: "INSTANT", paymentPolicy: "PREPAY_PREFERRED" },
   "bun-cha": { foodMoment: "LUNCH", fulfillmentMode: "PREORDER", paymentPolicy: "PREPAY_REQUIRED" },
   "nem-ran": { foodMoment: "SNACK", fulfillmentMode: "INSTANT", paymentPolicy: "COD_ALLOWED" },
 };

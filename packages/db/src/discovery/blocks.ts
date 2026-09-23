@@ -70,7 +70,7 @@ export function discoveryBlocksForNow(now = new Date()): DiscoveryBlock[] {
         id: "dinner-rescue",
         title: "CỨU BỮA TỐI",
         subtitle: "Mâm làm sẵn · giao tối",
-        foodMoments: ["DINNER", "FAMILY_MEAL", "LUNCH"],
+        foodMoments: ["DINNER", "FAMILY_MEAL"],
       },
     ];
   }

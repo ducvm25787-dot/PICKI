@@ -43,8 +43,24 @@ export class AddressesService {
     }
 
     const inside = await discoverZonesAtPoint(this.sql, gps);
+    let joinGps = gps;
     if (!inside.some((z) => z.zone_id === zoneId)) {
-      throw new PickiError("FORBIDDEN", "GPS must be inside Zone to join");
+      // Pilot / local demo: partner often joins off-site or GPS denied.
+      // Fall back to Zone anchor (must itself be inside boundary).
+      const anchor = {
+        lat: Number(zone[0].anchorLat),
+        lng: Number(zone[0].anchorLng),
+      };
+      const anchorInside = await discoverZonesAtPoint(this.sql, anchor);
+      if (
+        zone[0].status === "PILOT" &&
+        process.env.NODE_ENV !== "production" &&
+        anchorInside.some((z) => z.zone_id === zoneId)
+      ) {
+        joinGps = anchor;
+      } else {
+        throw new PickiError("FORBIDDEN", "GPS must be inside Zone to join");
+      }
     }
 
     return this.db.transaction(async (tx) => {
@@ -62,7 +78,7 @@ export class AddressesService {
           ward: input.ward ?? null,
           city: input.city ?? "Hà Nội",
           deliveryNote: input.deliveryNote ?? null,
-          coordinates: sql`ST_SetSRID(ST_MakePoint(${gps.lng}, ${gps.lat}), 4326)`,
+          coordinates: sql`ST_SetSRID(ST_MakePoint(${joinGps.lng}, ${joinGps.lat}), 4326)`,
         })
         .returning();
 

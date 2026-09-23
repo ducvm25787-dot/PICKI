@@ -14,7 +14,11 @@ Master Spec wins on conflict. Implement **the current sprint only**.
 
 **S32 Education + Pet:** service requests cho học thử (`ONLINE`/`CUSTOMER_VISIT`) và dịch vụ pet tại nhà; seed `bash scripts/db-seed-education.sh`, `bash scripts/db-seed-pet.sh`. **S33 Classified + Give Away (GÓC KHU MÌNH):** tin thanh lý/cho tặng trong Zone + giữ chỗ + chat + ảnh (nén client, tối đa 3 ảnh < 300KB); seed `bash scripts/db-seed-classified.sh`. **S34 Auto Service:** rửa xe/bơm lốp dùng queue (`CUSTOMER_VISIT`), thay dầu/sửa chữa dùng `CONTACT_ONLY`; seed `bash scripts/db-seed-auto.sh`. **S35 Đặt sân:** service request kèm khung giờ mong muốn — không có booking engine/lịch sân (quyết định giữ lean); seed `bash scripts/db-seed-sports.sh`.
 
+**Current — Habit-First Home UX V1 (ADR-054):** Home = Search → Zone → **Hero benefit theo giờ** → **Quanh bạn lúc này** (live auto) → **Chỗ quen** (horizontal) → Tiện ích (5+Tất cả) → Khám phá (chips API `explore?chip=`). No meters / no Spotlight. Nav: Trang chủ · Đơn · Dịch vụ · Góc khu · Zone(=map).
+
 **Current — Map Phase 2 (ADR-053):** Chỉ đường **trong Pickee** `/navigate` — OSRM + mode **Đi bộ / Xe máy / Xe đạp** (gợi ý ≤900m → đi bộ) + **Bắt đầu** / Dừng; `watchPosition` chỉ khi đang dẫn đường. Google Maps = fallback. Runner mặc định xe máy. Admin Zone Setup (ADR-052) vẫn dùng cho polygon/pin.
+
+**Habit-First (shipped P0–P1 + S-H7):** relationships + Home `/home` · universal search · Repeat · Today updates · lean loyalty · `analytics_events`. **Do not start P2** (AI / complex loyalty / cross-Zone) without pilot evidence.
 
 **S44 Xe đưa đón (ADR-049):** `TRANSPORT_PROVIDER` = `LISTING` + `LIVE_STATUS` + `CONTACT` — discovery **XE ĐƯA ĐÓN** + browse `/zones/:slug/browse/transport`. Seed `bash scripts/db-seed-transport.sh` — demo **Xe Kim Văn** (`xe-kim-van`), login `0908888016`. Scope: `docs/S44_TRANSPORT.md`.
 

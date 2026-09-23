@@ -40,6 +40,15 @@ export class OrdersController {
     return this.ordersService.listMine(userId);
   }
 
+  /** Habit-First Repeat: last completed order at location + availability checks */
+  @Get("repeat/:locationId")
+  async repeatHint(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+  ) {
+    return this.ordersService.repeatHint(userId, locationId);
+  }
+
   @Get(":orderId")
   async getOne(@CurrentUserId() userId: string, @Param("orderId") orderId: string) {
     return this.ordersService.getById(userId, orderId);
