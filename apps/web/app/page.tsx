@@ -12,6 +12,14 @@ import {
 import { familiarPrimaryCta } from "../lib/familiar";
 import { contextNowFor, type ContextNowContent } from "../lib/home-hero";
 import { track, trackMany } from "../lib/analytics";
+import {
+  experienceApi,
+  experienceHref,
+  formatOccurrence,
+  priceLabel,
+  type ExperienceCard,
+  type ExperienceCityRef,
+} from "../lib/experiences";
 import { liveStatusClass, liveStatusLabel, type ProviderListing } from "../lib/providers";
 import { BrandMark } from "./components/brand-mark";
 import { NotificationBell } from "./components/notification-bell";
@@ -36,6 +44,7 @@ type FamiliarCard = {
   estimatedWaitMinutes: number | null;
   completedInteractions: number;
   favorite: boolean;
+  familiarOffer?: { title: string; kindLabel: string } | null;
 };
 
 type NowAroundCard = {
@@ -50,6 +59,18 @@ type NowAroundCard = {
   source: string;
   ctaLabel: string;
   ctaHref: string;
+  badge?: string | null;
+  sponsored?: boolean;
+};
+
+type SpotlightCard = {
+  locationId: string;
+  brandName: string;
+  title: string;
+  detail: string | null;
+  kindLabel: string;
+  href: string;
+  sponsored: boolean;
 };
 
 type ExploreChipId = "new" | "open" | "near" | "popular";
@@ -72,6 +93,13 @@ export default function HomePage() {
   const [blocks, setBlocks] = useState<DiscoveryBlock[]>([]);
   const [familiar, setFamiliar] = useState<FamiliarCard[]>([]);
   const [nowAround, setNowAround] = useState<NowAroundCard[]>([]);
+  const [spotlight, setSpotlight] = useState<SpotlightCard | null>(null);
+  const [experienceHome, setExperienceHome] = useState<{
+    copy: string;
+    when: string;
+    city?: ExperienceCityRef;
+    experiences: ExperienceCard[];
+  } | null>(null);
   const [zoneId, setZoneId] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [categoriesOpen, setCategoriesOpen] = useState(false);
@@ -121,6 +149,15 @@ export default function HomePage() {
 
         const mine = await api<{ zones: MyZone[] }>("/zones/mine");
         setMyZones(mine.zones);
+        const experienceRes = await api<{
+          card: {
+            copy: string;
+            when: string;
+            city?: ExperienceCityRef;
+            experiences: ExperienceCard[];
+          } | null;
+        }>(experienceApi("hanoi", "/home-card")).catch(() => ({ card: null }));
+        setExperienceHome(experienceRes.card);
 
         const joined = mine.zones.some((z) => z.slug === KVL_SLUG);
         if (joined) {
@@ -130,6 +167,7 @@ export default function HomePage() {
             familiar?: FamiliarCard[];
             nowAround?: NowAroundCard[];
             today?: NowAroundCard[];
+            spotlight?: SpotlightCard | null;
           }>(`/zones/${KVL_SLUG}/home`).catch(async () => {
             const discovery = await api<{ blocks: DiscoveryBlock[] }>(
               `/zones/${KVL_SLUG}/discovery`,
@@ -138,11 +176,13 @@ export default function HomePage() {
               ...discovery,
               familiar: [] as FamiliarCard[],
               nowAround: [] as NowAroundCard[],
+              spotlight: null as SpotlightCard | null,
             };
           });
           setBlocks(home.blocks);
           setFamiliar(home.familiar ?? []);
           setNowAround(home.nowAround ?? []);
+          setSpotlight("spotlight" in home ? (home.spotlight ?? null) : null);
           if (home.zoneId) setZoneId(home.zoneId);
           await loadFavorites();
           await loadExplore("open");
@@ -235,6 +275,36 @@ export default function HomePage() {
       ].includes(b.id),
   );
 
+  const experienceBlock =
+    experienceHome && experienceHome.experiences.length > 0 ? (
+      <section className="card home-experience" aria-label={experienceHome.copy}>
+        <p className="section-title" style={{ marginBottom: 8 }}>
+          {experienceHome.copy}
+        </p>
+        {experienceHome.experiences.map((item) => (
+          <Link
+            key={item.id}
+            href={experienceHref(experienceHome.city?.slug ?? "hanoi", `/${item.id}`)}
+            className="home-experience-row"
+            onClick={() => track("weekend_card_open", { properties: { experienceId: item.id } })}
+          >
+            <strong>{item.title}</strong>
+            <span className="stat">
+              {item.occurrences[0] ? formatOccurrence(item.occurrences[0].startAt) : item.venue.name}
+              {" · "}
+              {priceLabel(item)}
+            </span>
+          </Link>
+        ))}
+        <Link
+          href={`${experienceHref(experienceHome.city?.slug ?? "hanoi")}?when=${experienceHome.when}`}
+          className="stat"
+        >
+          Xem trải nghiệm {experienceHome.city?.label ?? "Hà Nội"}
+        </Link>
+      </section>
+    ) : null;
+
   return (
     <div className="container">
       <div className="header-row">
@@ -243,6 +313,7 @@ export default function HomePage() {
       </div>
 
       {!joinedKvl ? (
+        <>
         <div className="card" style={{ marginBottom: 16 }}>
           <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>Kim Văn – Kim Lũ</h2>
           <p className="stat">Tham gia Zone để xem quanh nhà.</p>
@@ -255,6 +326,8 @@ export default function HomePage() {
             Tham gia Zone
           </button>
         </div>
+        {experienceBlock}
+        </>
       ) : (
         <>
           <Link
@@ -279,6 +352,17 @@ export default function HomePage() {
             <span className="home-hero-cta">{contextNow.cta}</span>
           </Link>
 
+          {experienceBlock}
+
+          {spotlight ? (
+            <Link href={spotlight.href} className="card spotlight-card">
+              <p className="fresh-badge">Tài trợ</p>
+              <strong>{spotlight.brandName}</strong>
+              <span>{spotlight.title}</span>
+              {spotlight.detail ? <span className="stat">{spotlight.detail}</span> : null}
+            </Link>
+          ) : null}
+
           <section className="card today-section" aria-label="Quanh bạn lúc này">
             <p className="section-title" style={{ marginBottom: 8 }}>
               Quanh bạn lúc này
@@ -302,6 +386,7 @@ export default function HomePage() {
                     }
                   >
                     <strong>{n.brandName}</strong>
+                    {n.badge ? <span className="fresh-badge">{n.badge}</span> : null}
                     <span className="stat">
                       <span className={`live-pill ${liveStatusClass(n.liveStatus)}`}>
                         {liveStatusLabel(n.liveStatus)}
@@ -356,6 +441,9 @@ export default function HomePage() {
                         <span className={`live-dot ${liveStatusClass(f.liveStatus)}`} aria-hidden />
                         {waitHint ?? liveStatusLabel(f.liveStatus)}
                       </span>
+                      {f.familiarOffer ? (
+                        <span className="promo-badge">{f.familiarOffer.title}</span>
+                      ) : null}
                       <Link
                         href={cta.href}
                         className="familiar-cta"

@@ -13,6 +13,7 @@ import { GeoModule } from "./modules/geo/geo.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
 import { AnalyticsModule } from "./modules/analytics/analytics.module.js";
 import { ActivityModule } from "./modules/activity/activity.module.js";
+import { ExperiencesModule } from "./modules/experiences/experiences.module.js";
 import { OrdersModule } from "./modules/orders/orders.module.js";
 import { MessagingModule } from "./modules/messaging/messaging.module.js";
 import { NotificationsModule } from "./modules/notifications/notifications.module.js";
@@ -47,6 +48,7 @@ import { ZonesModule } from "./modules/zones/zones.module.js";
     VisitIntentsModule,
     AnalyticsModule,
     ActivityModule,
+    ExperiencesModule,
   ],
   controllers: [HealthController],
 })

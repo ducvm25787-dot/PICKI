@@ -12,6 +12,7 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OutboxWorker.name);
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  private lastOpeningCheck = 0;
 
   constructor(
     @Inject(PICKI_DB) private readonly db: PickiDb,
@@ -42,6 +43,11 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
 
       for (const event of pending) {
         await this.processOne(event.id);
+      }
+      if (Date.now() - this.lastOpeningCheck > 60_000) {
+        this.lastOpeningCheck = Date.now();
+        await this.notifications.notifyDueOpenings();
+        await this.notifications.notifyDueExperienceInterests();
       }
     } catch (err) {
       this.logger.error("Outbox poll failed", err instanceof Error ? err.stack : err);

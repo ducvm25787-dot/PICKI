@@ -909,11 +909,13 @@ select {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: #fff;
+  font: inherit;
 }
 
 .logo {
@@ -2548,6 +2550,124 @@ button.utility-tile {
 
 .search-idle {
   margin-top: 4px;
+}
+
+.fresh-badge,
+.promo-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.fresh-badge {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.promo-badge {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.opening-interest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.spotlight-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.search-mark {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+.home-experience {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.home-experience-row,
+.experience-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.experience-card {
+  margin-bottom: 12px;
+}
+
+.experience-cover {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+.experience-cover--placeholder {
+  display: grid;
+  place-items: center;
+  background: var(--surface, #f6f1ea);
+  color: var(--muted);
+}
+
+.experience-import-row {
+  margin-top: 12px;
+}
+
+.experience-import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.experience-import-actions .btn {
+  width: auto;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.experience-body p,
+.experience-body h2 {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+}
+
+.experience-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.experience-gallery img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
 }
 
 @media (max-width: 360px) {

@@ -25,6 +25,12 @@ export default function ZoneMapPage() {
   const router = useRouter();
   const search = useSearchParams();
   const focusId = search.get("locationId") ?? search.get("focus");
+  const pinIds = useMemo(() => {
+    const raw = search.get("ids");
+    if (!raw) return null;
+    const ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    return ids.length > 0 ? new Set(ids) : null;
+  }, [search]);
   const initialOpen = search.get("open") === "1" || search.get("open") === "true";
   const initialCategory = search.get("category") ?? "";
   const initialTypes = search.get("types") ?? "";
@@ -76,9 +82,14 @@ export default function ZoneMapPage() {
     setLocating(false);
   }
 
-  const mapMarkers: MapMarker[] = useMemo(() => {
+  const visibleMarkers = useMemo(() => {
     if (!data) return [];
-    const list: MapMarker[] = data.markers
+    if (!pinIds) return data.markers;
+    return data.markers.filter((m) => pinIds.has(m.locationId));
+  }, [data, pinIds]);
+
+  const mapMarkers: MapMarker[] = useMemo(() => {
+    const list: MapMarker[] = visibleMarkers
       .filter((m) => m.lat != null && m.lng != null)
       .map((m) => ({
         id: m.locationId,
@@ -98,11 +109,11 @@ export default function ZoneMapPage() {
       });
     }
     return list;
-  }, [data, userPos]);
+  }, [visibleMarkers, userPos]);
 
   const selected = useMemo(
-    () => data?.markers.find((m) => m.locationId === selectedId) ?? null,
-    [data, selectedId],
+    () => visibleMarkers.find((m) => m.locationId === selectedId) ?? null,
+    [visibleMarkers, selectedId],
   );
 
   const center = userPos ?? data?.center ?? { lat: 20.9883, lng: 105.8414 };
@@ -124,7 +135,22 @@ export default function ZoneMapPage() {
         Bản đồ {data.displayName ?? "Zone"}
       </h1>
       <p className="stat" style={{ marginBottom: 12 }}>
-        Chạm marker để xem nhanh · OpenStreetMap
+        {pinIds
+          ? `Kết quả tìm kiếm (${String(visibleMarkers.length)}) · chạm marker để xem nhanh`
+          : "Chạm marker để xem nhanh · OpenStreetMap"}
+        {pinIds ? (
+          <>
+            {" · "}
+            <button
+              type="button"
+              className="order-phone-link"
+              style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
+              onClick={() => router.replace(`/zones/${params.slug}/map`)}
+            >
+              Hiện cả Zone
+            </button>
+          </>
+        ) : null}
       </p>
 
       <div className="map-filter-row" aria-label="Lọc bản đồ">
@@ -218,14 +244,14 @@ export default function ZoneMapPage() {
         </div>
       ) : (
         <div className="card" style={{ marginTop: 16 }}>
-          <p className="section-title">Quán trên bản đồ ({data.markers.length})</p>
-          {data.markers.length === 0 ? (
+          <p className="section-title">Quán trên bản đồ ({visibleMarkers.length})</p>
+          {visibleMarkers.length === 0 ? (
             <p className="stat" style={{ margin: 0 }}>
               Không có quán khớp bộ lọc
             </p>
           ) : (
             <div className="provider-list" style={{ marginTop: 8 }}>
-              {data.markers.slice(0, 8).map((m) => (
+              {visibleMarkers.slice(0, 8).map((m) => (
                 <button
                   key={m.locationId}
                   type="button"
@@ -238,9 +264,9 @@ export default function ZoneMapPage() {
                   </span>
                 </button>
               ))}
-              {data.markers.length > 8 ? (
+              {visibleMarkers.length > 8 ? (
                 <p className="stat" style={{ margin: "8px 0 0" }}>
-                  +{String(data.markers.length - 8)} quán — chạm marker hoặc thu phóng để xem.
+                  +{String(visibleMarkers.length - 8)} quán — chạm marker hoặc thu phóng để xem.
                 </p>
               ) : null}
             </div>

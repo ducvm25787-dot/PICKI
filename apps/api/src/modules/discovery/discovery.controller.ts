@@ -28,6 +28,24 @@ const favoriteSchema = z.object({
 export class DiscoveryController {
   constructor(@Inject(DiscoveryService) private readonly discovery: DiscoveryService) {}
 
+  @Get("locations/:locationId/presence")
+  @UseGuards(SessionAuthGuard)
+  locationPresence(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+  ) {
+    return this.discovery.locationPresence(userId, locationId);
+  }
+
+  @Post("locations/:locationId/opening-reminder")
+  @UseGuards(SessionAuthGuard)
+  subscribeOpening(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+  ) {
+    return this.discovery.subscribeOpening(userId, locationId);
+  }
+
   @Get("zones/:slugOrId/home")
   @UseGuards(SessionAuthGuard)
   async zoneHome(@Param("slugOrId") slugOrId: string, @CurrentUserId() userId: string) {

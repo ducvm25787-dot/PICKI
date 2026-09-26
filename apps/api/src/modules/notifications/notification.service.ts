@@ -1,7 +1,11 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import {
+  experienceCities,
+  experienceInterests,
+  experiences,
   notifications,
+  openingReminders,
   providerLocations,
   providerMembers,
   providers,
@@ -867,6 +871,76 @@ export class NotificationService implements OnModuleInit {
         },
       },
     );
+  }
+
+  async notifyDueOpenings(): Promise<void> {
+    const now = new Date();
+    const due = await this.db
+      .select({
+        id: openingReminders.id,
+        userId: openingReminders.userId,
+        locationId: openingReminders.providerLocationId,
+        brandName: providers.brandName,
+      })
+      .from(openingReminders)
+      .innerJoin(
+        providerLocations,
+        eq(providerLocations.id, openingReminders.providerLocationId),
+      )
+      .innerJoin(providers, eq(providers.id, providerLocations.providerId))
+      .where(and(isNull(openingReminders.notifiedAt), lte(providerLocations.opensAt, now)))
+      .limit(30);
+
+    for (const row of due) {
+      await this.deliver([row.userId], {
+        eventType: "opening.live",
+        channel: "WEB",
+        title: `${row.brandName} đã khai trương`,
+        body: "Quán bạn quan tâm mở cửa hôm nay.",
+        payload: { locationId: row.locationId },
+      });
+      await this.db
+        .update(openingReminders)
+        .set({ notifiedAt: now })
+        .where(eq(openingReminders.id, row.id));
+    }
+  }
+
+  async notifyDueExperienceInterests(): Promise<void> {
+    const now = new Date();
+    const due = await this.db
+      .select({
+        id: experienceInterests.id,
+        userId: experienceInterests.userId,
+        experienceId: experienceInterests.experienceId,
+        title: experiences.title,
+        citySlug: experienceCities.slug,
+      })
+      .from(experienceInterests)
+      .innerJoin(experiences, eq(experiences.id, experienceInterests.experienceId))
+      .innerJoin(experienceCities, eq(experienceCities.code, experiences.city))
+      .where(
+        and(
+          isNull(experienceInterests.notifiedAt),
+          lte(experienceInterests.remindAt, now),
+          eq(experiences.status, "PUBLISHED"),
+        ),
+      )
+      .limit(30);
+
+    for (const row of due) {
+      await this.deliver([row.userId], {
+        eventType: "experience.reminder",
+        channel: "WEB",
+        title: row.title,
+        body: "Suất bạn quan tâm sắp diễn.",
+        payload: { experienceId: row.experienceId, citySlug: row.citySlug },
+      });
+      await this.db
+        .update(experienceInterests)
+        .set({ notifiedAt: now })
+        .where(eq(experienceInterests.id, row.id));
+    }
   }
 
   private async deliver(

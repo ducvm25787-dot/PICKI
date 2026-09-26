@@ -14,6 +14,8 @@ import {
   providerDailyUpdates,
   providerLiveStatus,
   providerLocations,
+  providerPromotions,
+  providerZoneMemberships,
   providerLoyaltyBenefits,
   providerLoyaltyPrograms,
   providerMembers,
@@ -38,6 +40,7 @@ import { formatTime, isPastCutoff } from "../family-dinner/family-dinner.service
 import { isPastBreakfastCutoff } from "../breakfast-preorder/breakfast-preorder.service.js";
 import type { z } from "zod";
 import type {
+  createPromotionSchema,
   createDailyUpdateSchema,
   providerOrderActionSchema,
   updateDailyUpdateSchema,
@@ -942,6 +945,11 @@ export class ProviderService {
       description: profile[0]?.description ?? null,
       logoUrl: profile[0]?.logoUrl ?? null,
       coverUrl: profile[0]?.coverUrl ?? null,
+      opensAt: access.opensAt
+        ? access.opensAt instanceof Date
+          ? access.opensAt.toISOString()
+          : String(access.opensAt)
+        : null,
     };
   }
 
@@ -1229,6 +1237,7 @@ export class ProviderService {
         lat: providerLocations.lat,
         lng: providerLocations.lng,
         pinVerifiedAt: providerLocations.pinVerifiedAt,
+        opensAt: providerLocations.opensAt,
         brandName: providers.brandName,
       })
       .from(providerLocations)
@@ -1264,7 +1273,87 @@ export class ProviderService {
       lat: location[0].lat,
       lng: location[0].lng,
       pinVerifiedAt: location[0].pinVerifiedAt,
+      opensAt: location[0].opensAt,
     };
+  }
+
+  async setOpensAt(userId: string, locationId: string, opensAt: string | null) {
+    await this.assertLocationAccess(userId, locationId);
+    const value = opensAt ? new Date(opensAt) : null;
+    if (value && Number.isNaN(value.getTime())) {
+      throw new PickiError("VALIDATION_ERROR", "Ngày khai trương không hợp lệ");
+    }
+    await this.db
+      .update(providerLocations)
+      .set({ opensAt: value, updatedAt: new Date() })
+      .where(eq(providerLocations.id, locationId));
+    return { opensAt: value?.toISOString() ?? null };
+  }
+
+  async listPromotions(userId: string, locationId: string) {
+    await this.assertLocationAccess(userId, locationId);
+    const rows = await this.db
+      .select()
+      .from(providerPromotions)
+      .where(eq(providerPromotions.providerLocationId, locationId))
+      .orderBy(desc(providerPromotions.createdAt));
+    return {
+      promotions: rows.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        title: r.title,
+        detail: r.detail,
+        startsAt: r.startsAt.toISOString(),
+        endsAt: r.endsAt.toISOString(),
+        spotlight: r.spotlight,
+      })),
+    };
+  }
+
+  async createPromotion(
+    userId: string,
+    locationId: string,
+    input: z.infer<typeof createPromotionSchema>,
+  ) {
+    await this.assertLocationAccess(userId, locationId);
+    const zone = await this.db
+      .select({ zoneId: providerZoneMemberships.zoneId })
+      .from(providerZoneMemberships)
+      .where(eq(providerZoneMemberships.providerLocationId, locationId))
+      .limit(1);
+    if (!zone[0]) throw new PickiError("VALIDATION_ERROR", "Location chưa thuộc Zone");
+    const startsAt = new Date(input.startsAt);
+    const endsAt = new Date(input.endsAt);
+    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || endsAt <= startsAt) {
+      throw new PickiError("VALIDATION_ERROR", "Khung giờ khuyến mại không hợp lệ");
+    }
+    const [row] = await this.db
+      .insert(providerPromotions)
+      .values({
+        providerLocationId: locationId,
+        zoneId: zone[0].zoneId,
+        kind: input.kind,
+        title: input.title,
+        detail: input.detail ?? null,
+        startsAt,
+        endsAt,
+        spotlight: input.spotlight ?? false,
+      })
+      .returning();
+    return { id: row!.id };
+  }
+
+  async deletePromotion(userId: string, locationId: string, promotionId: string) {
+    await this.assertLocationAccess(userId, locationId);
+    await this.db
+      .delete(providerPromotions)
+      .where(
+        and(
+          eq(providerPromotions.id, promotionId),
+          eq(providerPromotions.providerLocationId, locationId),
+        ),
+      );
+    return { ok: true };
   }
 }
 

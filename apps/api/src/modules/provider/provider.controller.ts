@@ -7,6 +7,8 @@ import {
   providerOrderActionSchema,
   updateDailyUpdateSchema,
   updateLiveStatusSchema,
+  createPromotionSchema,
+  setOpensAtSchema,
   updateProviderProfileSchema,
   upsertLoyaltyBenefitSchema,
   upsertLoyaltyProgramSchema,
@@ -29,6 +31,53 @@ export class ProviderController {
     @Param("locationId") locationId: string,
   ) {
     return this.providerService.getProfile(userId, locationId);
+  }
+
+  @Patch("locations/:locationId/opens-at")
+  async setOpensAt(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = setOpensAtSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Invalid opening date", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.providerService.setOpensAt(userId, locationId, parsed.data.opensAt);
+  }
+
+  @Get("locations/:locationId/promotions")
+  async listPromotions(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+  ) {
+    return this.providerService.listPromotions(userId, locationId);
+  }
+
+  @Post("locations/:locationId/promotions")
+  async createPromotion(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = createPromotionSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Invalid promotion", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.providerService.createPromotion(userId, locationId, parsed.data);
+  }
+
+  @Delete("locations/:locationId/promotions/:promotionId")
+  async deletePromotion(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Param("promotionId") promotionId: string,
+  ) {
+    return this.providerService.deletePromotion(userId, locationId, promotionId);
   }
 
   @Patch("locations/:locationId/profile")

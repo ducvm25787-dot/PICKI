@@ -8,6 +8,7 @@ const tabs = [
   { href: "/admin/orders", label: "Đơn hàng", exact: false },
   { href: "/admin/audit", label: "Audit", exact: false },
   { href: "/admin/zones", label: "Zones", exact: false },
+  { href: "/admin/experiences", label: "Trải nghiệm", exact: false },
   { href: "/admin/settings", label: "Cài đặt", exact: false },
 ] as const;
 

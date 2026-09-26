@@ -1,5 +1,6 @@
 export * from "./addresses.js";
 export * from "./analytics.js";
+export * from "./experiences.js";
 export * from "./communication.js";
 export * from "./catalog.js";
 export * from "./discovery.js";
@@ -14,6 +15,7 @@ export * from "./orders.js";
 export * from "./payments.js";
 export * from "./provider-ops.js";
 export * from "./providers.js";
+export * from "./promotions.js";
 export * from "./runners.js";
 export * from "./runner-offers.js";
 export * from "./service-requests.js";

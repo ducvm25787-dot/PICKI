@@ -39,6 +39,8 @@ export const providerLocations = pgTable("provider_locations", {
   pinVerifiedAt: timestamp("pin_verified_at", { withTimezone: true, mode: "date" }),
   pinVerifiedBy: uuid("pin_verified_by"),
   pinNote: text("pin_note"),
+  /** Null = đã mở từ trước. Tương lai = sắp khai trương. Badge «Mới» tự hết sau 14 ngày. */
+  opensAt: timestamp("opens_at", { withTimezone: true, mode: "date" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

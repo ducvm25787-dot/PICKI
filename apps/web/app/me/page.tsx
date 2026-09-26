@@ -74,6 +74,18 @@ export default function MePage() {
           <span>Thông báo</span>
           <span aria-hidden>→</span>
         </Link>
+        <Link href="/hanoi/experiences?saved=1" className="me-menu-item">
+          <span>Trải nghiệm đã lưu</span>
+          <span aria-hidden>→</span>
+        </Link>
+        <Link href="/hanoi/experiences?interested=1" className="me-menu-item">
+          <span>Trải nghiệm đang quan tâm</span>
+          <span aria-hidden>→</span>
+        </Link>
+        <Link href="/hanoi/experiences/mine" className="me-menu-item">
+          <span>Trải nghiệm tôi đăng</span>
+          <span aria-hidden>→</span>
+        </Link>
         <Link href={`/zones/${KVL}/map`} className="me-menu-item">
           <span>Vị trí &amp; Zone</span>
           <span aria-hidden>→</span>

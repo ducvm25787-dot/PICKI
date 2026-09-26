@@ -13,6 +13,7 @@ import {
   type Cart,
 } from "../../../lib/cart";
 import { LocationContactActions } from "../../components/location-contact-actions";
+import { OpeningInterest } from "../../components/opening-interest";
 import { LocationIntroPanel } from "../../components/location-intro-panel";
 import { OrderPhoneLinks } from "../../components/order-phone-links";
 import { PharmacyInquiry } from "../../components/pharmacy-inquiry";
@@ -451,7 +452,8 @@ export default function LocationMenuPage() {
       ) : null}
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <h1 style={{ margin: "0 0 4px", fontSize: 24 }}>
+        <OpeningInterest locationId={location.id} />
+        <h1 style={{ margin: "8px 0 4px", fontSize: 24 }}>
           {location.brandName}
           <span
             className={`live-pill ${liveStatusClass(

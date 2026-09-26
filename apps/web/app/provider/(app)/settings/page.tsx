@@ -11,6 +11,7 @@ import {
 import { api } from "../../../../lib/api";
 import { getCurrentPositionOnce } from "../../../../lib/geolocation";
 import { PickeeMap } from "../../../components/pickee-map";
+import { ProviderOpeningForm } from "./opening-form";
 
 type Profile = {
   providerId: string;
@@ -426,6 +427,8 @@ export default function ProviderSettingsPage() {
           Khách quen / VIP →
         </Link>
       </div>
+
+      {locationId ? <ProviderOpeningForm locationId={locationId} /> : null}
 
       <div className="card" style={{ marginBottom: 16 }}>
         <p className="section-title">Ứng dụng</p>

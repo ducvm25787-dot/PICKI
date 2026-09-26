@@ -18,6 +18,7 @@ type NotificationItem = {
     locationId?: string;
     listingId?: string;
     conversationId?: string;
+    experienceId?: string;
   };
   read: boolean;
   createdAt: string;
@@ -51,6 +52,22 @@ function orderHref(orderId: string, audience: Audience): string {
 }
 
 function notificationTargetHref(n: NotificationItem, audience: Audience): string | null {
+  if (n.eventType === "opening.live") {
+    const locationId = n.payload?.locationId;
+    if (typeof locationId === "string") return `/locations/${locationId}`;
+    return null;
+  }
+
+  if (n.eventType === "experience.reminder") {
+    const experienceId = n.payload?.experienceId;
+    if (typeof experienceId === "string") {
+      const citySlug = n.payload?.citySlug;
+      const slug = typeof citySlug === "string" && citySlug ? citySlug : "hanoi";
+      return `/${slug}/experiences/${experienceId}`;
+    }
+    return null;
+  }
+
   if (n.eventType.startsWith("visit_intent.")) {
     if (audience === "provider") return "/provider/incoming";
     if (

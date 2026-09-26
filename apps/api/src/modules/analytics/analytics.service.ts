@@ -17,6 +17,22 @@ const ALLOWED = new Set([
   "favorite_remove",
   "loyalty_benefit_used",
   "provider_contact",
+  "weekend_card_open",
+  "experience_detail",
+  "experience_save",
+  "experience_interest",
+  "ticket_outbound_click",
+  "filter_zero_result",
+  "experience_import_single",
+  "experience_import_batch",
+  "experience_import_validation_error",
+  "experience_duplicate_warning",
+  "experience_draft_created",
+  "experience_source_attached",
+  "experience_publish",
+  "experience_reject",
+  "experience_share",
+  "experience_submit",
 ]);
 
 @Injectable()

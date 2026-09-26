@@ -26,12 +26,18 @@ import {
   listNowAroundInZone,
   listFamilyDinnerProvidersEnabled,
   listExploreProviders,
+  listLiveDealInZone,
+  listOrganicFreshInZone,
+  listPresenceForLocations,
+  listSpotlightInZone,
   type ExploreChip,
+  type PresenceCard,
   searchZoneUniversal,
   syncRelationshipFavorite,
   hideFamiliarSuggestion,
   getZoneBoundaryGeoJson,
   userFavorites,
+  openingReminders,
   vnNowHhMm,
   type PickiDb,
   type PickiSql,
@@ -346,6 +352,10 @@ export class DiscoveryService {
       query,
       familiarLocationIds: familiarIds,
     });
+    const presence = await listPresenceForLocations(
+      this.sql,
+      groups.flatMap((g) => g.results.map((r) => r.location_id).filter((id): id is string => Boolean(id))),
+    );
 
     const results = groups.flatMap((g) =>
       g.results
@@ -366,6 +376,8 @@ export class DiscoveryService {
           lng: r.lng,
           familiar: r.familiar,
           groupId: g.id,
+          freshnessLabel: r.location_id ? (presence.get(r.location_id)?.freshnessLabel ?? null) : null,
+          promotionLabel: promoLabel(presence.get(r.location_id ?? "")),
         })),
     );
 
@@ -399,6 +411,8 @@ export class DiscoveryService {
           lat: r.lat,
           lng: r.lng,
           familiar: r.familiar,
+          freshnessLabel: r.location_id ? (presence.get(r.location_id)?.freshnessLabel ?? null) : null,
+          promotionLabel: promoLabel(presence.get(r.location_id ?? "")),
         })),
       })),
       results,
@@ -537,6 +551,15 @@ export class DiscoveryService {
     const familiarRows = await listFamiliarProvidersInZone(this.sql, userId, zone.id, 5);
     const familiarIds = new Set(familiarRows.map((r) => r.location_id));
     const nowRows = await listNowAroundInZone(this.sql, zone.id, 5);
+    const [organicFresh, liveDeal, spotlight] = await Promise.all([
+      listOrganicFreshInZone(this.sql, zone.id),
+      listLiveDealInZone(this.sql, zone.id),
+      listSpotlightInZone(this.sql, zone.id),
+    ]);
+    const familiarPresence = await listPresenceForLocations(
+      this.sql,
+      familiarRows.map((r) => r.location_id),
+    );
 
     const familiar = familiarRows.map((r) => ({
       locationId: r.location_id,
@@ -555,6 +578,10 @@ export class DiscoveryService {
         : null,
       lat: r.lat,
       lng: r.lng,
+      familiarOffer:
+        familiarPresence.get(r.location_id)?.promotion?.kind === "FAMILIAR"
+          ? familiarPresence.get(r.location_id)?.promotion
+          : null,
     }));
 
     const nowAround = nowRows.map((r) => {
@@ -583,8 +610,26 @@ export class DiscoveryService {
         updateId: r.update_id,
         ctaLabel: "Xem",
         ctaHref: `/locations/${r.location_id}`,
+        badge: null as string | null,
+        sponsored: false,
       };
     });
+
+    const seen = new Set(nowAround.map((n) => n.locationId));
+    const injected: typeof nowAround = [];
+    if (organicFresh && !seen.has(organicFresh.locationId)) {
+      injected.push(presenceToNow(organicFresh, organicFresh.freshnessLabel));
+      seen.add(organicFresh.locationId);
+    }
+    if (
+      liveDeal &&
+      liveDeal.promotion &&
+      !seen.has(liveDeal.locationId) &&
+      liveDeal.locationId !== organicFresh?.locationId
+    ) {
+      injected.push(presenceToNow(liveDeal, liveDeal.promotion.kindLabel));
+    }
+    const mergedNow = [...injected, ...nowAround].slice(0, 5);
 
     const discoverBlocks = (
       discovery.blocks as { id: string; providers: { locationId: string }[] }[]
@@ -601,9 +646,20 @@ export class DiscoveryService {
       displayName: zone.displayName,
       habitHome: true,
       familiar,
-      nowAround,
+      nowAround: mergedNow,
+      spotlight: spotlight
+        ? {
+            locationId: spotlight.locationId,
+            brandName: spotlight.brandName,
+            title: spotlight.promotion?.title ?? spotlight.brandName,
+            detail: spotlight.promotion?.detail,
+            kindLabel: spotlight.promotion?.kindLabel ?? "Tài trợ",
+            href: `/locations/${spotlight.locationId}`,
+            sponsored: true,
+          }
+        : null,
       /** @deprecated use nowAround */
-      today: nowAround.map((n) => ({
+      today: mergedNow.map((n) => ({
         id: n.updateId ?? n.locationId,
         locationId: n.locationId,
         brandName: n.brandName,
@@ -645,13 +701,45 @@ export class DiscoveryService {
       excludeLocationIds: exclude,
       limit: 8,
     });
+    const providers = rows.map(mapProvider);
+    const presence = await listPresenceForLocations(
+      this.sql,
+      providers.map((p) => p.locationId),
+    );
 
     return {
       zoneId: zone.id,
       slug: zone.slug,
       chip,
-      providers: rows.map(mapProvider),
+      providers: providers.map((p) => decorateProvider(p, presence.get(p.locationId))),
     };
+  }
+
+  async locationPresence(userId: string, locationId: string) {
+    const presence = await listPresenceForLocations(this.sql, [locationId]);
+    const card = presence.get(locationId) ?? null;
+    const reminder = await this.db
+      .select({ id: openingReminders.id })
+      .from(openingReminders)
+      .where(
+        and(eq(openingReminders.userId, userId), eq(openingReminders.providerLocationId, locationId)),
+      )
+      .limit(1);
+    return {
+      freshnessLabel: card?.freshnessLabel ?? null,
+      opensAt: card?.opensAt ?? null,
+      promotion: card?.promotion ?? null,
+      reminding: Boolean(reminder[0]),
+    };
+  }
+
+  async subscribeOpening(userId: string, locationId: string) {
+    await this.addFavorite(userId, locationId);
+    await this.db
+      .insert(openingReminders)
+      .values({ userId, providerLocationId: locationId })
+      .onConflictDoNothing();
+    return { ok: true };
   }
 
   async listDailySpecials(locationId: string) {
@@ -708,5 +796,41 @@ function mapProvider(r: {
     reviewCount: Number(r.review_count),
     sampleOffering: r.sample_offering,
     logoUrl: r.logo_url ?? null,
+  };
+}
+
+function decorateProvider<T extends { locationId: string }>(
+  provider: T,
+  card: PresenceCard | undefined,
+) {
+  return {
+    ...provider,
+    freshnessLabel: card?.freshnessLabel ?? null,
+    promotionLabel: promoLabel(card),
+  };
+}
+
+function promoLabel(card: PresenceCard | undefined): string | null {
+  if (!card?.promotion || card.promotion.spotlight) return null;
+  return card.promotion.title;
+}
+
+function presenceToNow(card: PresenceCard, badge: string | null) {
+  return {
+    locationId: card.locationId,
+    providerId: card.locationId,
+    brandName: card.brandName,
+    displayName: card.brandName,
+    providerType: card.providerType,
+    liveStatus: card.liveStatus,
+    estimatedWaitMinutes: null,
+    headline: card.promotion?.title || card.sampleOffering || card.freshnessLabel || card.brandName,
+    detail: card.promotion?.detail ?? null,
+    source: "LIVE" as const,
+    updateId: null,
+    ctaLabel: card.freshness === "UPCOMING" ? "Xem trước" : "Xem",
+    ctaHref: `/locations/${card.locationId}`,
+    badge,
+    sponsored: false,
   };
 }

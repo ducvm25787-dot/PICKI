@@ -1,0 +1,93 @@
+import { Body, Controller, Get, Inject, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { PickiError } from "@picki/shared";
+import { AdminRoleGuard } from "../auth/admin-role.guard.js";
+import { CurrentUserId } from "../auth/current-user.decorator.js";
+import { SessionAuthGuard } from "../auth/session-auth.guard.js";
+import { experiencePatchSchema, importCommitSchema, importPreviewSchema } from "./dto.js";
+import { ExperiencePhotoService } from "./experience-photo.service.js";
+import { ExperiencesService } from "./experiences.service.js";
+
+@Controller("admin/experiences")
+@UseGuards(SessionAuthGuard, AdminRoleGuard)
+export class ExperiencesAdminController {
+  constructor(
+    @Inject(ExperiencesService) private readonly experiences: ExperiencesService,
+    @Inject(ExperiencePhotoService) private readonly photos: ExperiencePhotoService,
+  ) {}
+
+  @Post("photos")
+  async uploadPhoto(@Body() body: { dataUrl?: string }) {
+    if (!body?.dataUrl) throw new PickiError("VALIDATION_ERROR", "Thiếu ảnh");
+    const url = await this.photos.saveFromDataUrl(body.dataUrl);
+    return { url };
+  }
+
+  @Post("organizers/:organizerId/members")
+  async attachMember(
+    @CurrentUserId() userId: string,
+    @Param("organizerId") organizerId: string,
+    @Body() body: { phone?: string },
+  ) {
+    if (!body?.phone?.trim()) throw new PickiError("VALIDATION_ERROR", "Thiếu số điện thoại");
+    return this.experiences.attachOrganizerMember(userId, organizerId, body.phone);
+  }
+
+  @Get()
+  async list(@Query("status") status?: string) {
+    return this.experiences.listAdmin(status);
+  }
+
+  @Post("import/preview")
+  async preview(@CurrentUserId() userId: string, @Body() body: unknown) {
+    const parsed = importPreviewSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "JSON import không hợp lệ", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.experiences.preview(userId, parsed.data.items);
+  }
+
+  @Post("import/commit")
+  async commit(@CurrentUserId() userId: string, @Body() body: unknown) {
+    const parsed = importCommitSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Không ghi được draft", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.experiences.commit(
+      userId,
+      parsed.data.items.map((item) => ({
+        decision: item.decision,
+        experience: item.experience ?? null,
+      })),
+    );
+  }
+
+  @Get(":id")
+  async detail(@Param("id") id: string) {
+    return this.experiences.getAdmin(id);
+  }
+
+  @Patch(":id")
+  async update(@CurrentUserId() userId: string, @Param("id") id: string, @Body() body: unknown) {
+    const parsed = experiencePatchSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Không lưu được trải nghiệm", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.experiences.update(userId, id, parsed.data);
+  }
+
+  @Post(":id/publish")
+  async publish(@CurrentUserId() userId: string, @Param("id") id: string) {
+    return this.experiences.publish(userId, id);
+  }
+
+  @Post(":id/reject")
+  async reject(@CurrentUserId() userId: string, @Param("id") id: string) {
+    return this.experiences.reject(userId, id);
+  }
+}

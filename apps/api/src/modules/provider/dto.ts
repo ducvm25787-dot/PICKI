@@ -102,6 +102,27 @@ export const upsertLoyaltyProgramSchema = z
     }
   });
 
+export const setOpensAtSchema = z.object({
+  opensAt: z.string().min(8).nullable(),
+});
+
+export const createPromotionSchema = z.object({
+  kind: z.enum([
+    "OPENING",
+    "GIFT",
+    "DISCOUNT",
+    "NEW_ITEM",
+    "HAPPY_HOUR",
+    "FAMILIAR",
+    "FLASH",
+  ]),
+  title: z.string().trim().min(2).max(80),
+  detail: z.string().trim().max(200).optional(),
+  startsAt: z.string().min(8),
+  endsAt: z.string().min(8),
+  spotlight: z.boolean().optional(),
+});
+
 export const upsertLoyaltyBenefitSchema = z.object({
   tier: z.enum(["REGULAR", "VIP"]),
   benefitType: z.enum([

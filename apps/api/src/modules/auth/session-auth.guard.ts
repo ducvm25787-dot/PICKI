@@ -29,7 +29,7 @@ function resolveAppRole(req: Request): PickiAppRole {
   return "customer";
 }
 
-function sessionTokenForRequest(req: Request): string | undefined {
+export function sessionTokenForRequest(req: Request): string | undefined {
   const role = resolveAppRole(req);
   const primary = SESSION_COOKIE_NAMES[role];
   const primaryToken = req.cookies[primary] as string | undefined;

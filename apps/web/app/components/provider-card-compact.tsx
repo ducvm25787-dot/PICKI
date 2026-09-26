@@ -88,6 +88,12 @@ export function ProviderCardCompact({
           <ProviderAvatar brandName={p.brandName} logoUrl={p.logoUrl} />
           <div className="provider-card-compact-body">
             <h3 className="provider-card-compact-title">{p.brandName}</h3>
+            {p.freshnessLabel || p.promotionLabel ? (
+              <p className="provider-card-compact-offer">
+                {p.freshnessLabel ? <span className="fresh-badge">{p.freshnessLabel}</span> : null}
+                {p.promotionLabel ? <span className="promo-badge">{p.promotionLabel}</span> : null}
+              </p>
+            ) : null}
             <p className="provider-card-compact-status">
               <span className={`live-dot ${liveStatusClass(liveStatusForPill(p))}`} aria-hidden />
               {status}

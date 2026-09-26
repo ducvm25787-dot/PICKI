@@ -994,7 +994,15 @@ export async function listExploreProviders(
         AND pl.status = 'ACTIVE'
         AND p.status = 'ACTIVE'
         AND (cardinality(${exclude}::uuid[]) = 0 OR NOT (pl.id = ANY(${exclude}::uuid[])))
-      ORDER BY pl.created_at DESC NULLS LAST, p.brand_name
+        AND (
+          (pl.opens_at IS NOT NULL AND pl.opens_at > now())
+          OR (pl.opens_at IS NOT NULL AND pl.opens_at <= now() AND pl.opens_at > now() - interval '14 days')
+          OR (pl.opens_at IS NULL AND pl.created_at > now() - interval '14 days')
+        )
+      ORDER BY
+        CASE WHEN pl.opens_at IS NOT NULL AND pl.opens_at > now() THEN 0 ELSE 1 END,
+        pl.opens_at DESC NULLS LAST,
+        pl.created_at DESC
       LIMIT ${limit}
     `;
   }

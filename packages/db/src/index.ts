@@ -17,4 +17,5 @@ export * from "./relationships/index.js";
 export * from "./habit/index.js";
 export * from "./search/index.js";
 export * from "./analytics/index.js";
+export * from "./experiences/index.js";
 export * from "./schema/index.js";
