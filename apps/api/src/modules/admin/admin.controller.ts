@@ -6,6 +6,7 @@ import { SessionAuthGuard } from "../auth/session-auth.guard.js";
 import { AdminService } from "./admin.service.js";
 import {
   adminOrderActionSchema,
+  createDeliveryPromotionSchema,
   publishBoundarySchema,
   updateAnchorSchema,
   upsertServiceAreaSchema,
@@ -96,6 +97,22 @@ export class AdminController {
   async orders(@Query("limit") limit?: string) {
     const n = limit ? Number.parseInt(limit, 10) : 50;
     return this.adminService.listOrders(Number.isFinite(n) ? n : 50);
+  }
+
+  @Get("delivery-promotions")
+  async listDeliveryPromotions(@Query("zoneId") zoneId?: string) {
+    return this.adminService.listDeliveryPromotions(zoneId);
+  }
+
+  @Post("delivery-promotions")
+  async createDeliveryPromotion(@CurrentUserId() userId: string, @Body() body: unknown) {
+    const parsed = createDeliveryPromotionSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Invalid delivery promotion", {
+        details: { issues: parsed.error.issues },
+      });
+    }
+    return this.adminService.createDeliveryPromotion(userId, parsed.data);
   }
 
   @Get("audit-logs")

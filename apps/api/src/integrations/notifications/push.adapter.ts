@@ -20,11 +20,15 @@ export async function sendWebPush(
   subscription: { endpoint: string; p256dh: string; auth: string },
   payload: PushPayload,
 ): Promise<void> {
-  await webpush.sendNotification(
-    {
-      endpoint: subscription.endpoint,
-      keys: { p256dh: subscription.p256dh, auth: subscription.auth },
-    },
-    JSON.stringify(payload),
-  );
+  const body = JSON.stringify(payload);
+  const subscriptionBody = {
+    endpoint: subscription.endpoint,
+    keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+  };
+  await Promise.race([
+    webpush.sendNotification(subscriptionBody, body, { timeout: 8000, TTL: 60 }),
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Web push timed out")), 9000);
+    }),
+  ]);
 }

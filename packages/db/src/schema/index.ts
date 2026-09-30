@@ -3,6 +3,7 @@ export * from "./analytics.js";
 export * from "./experiences.js";
 export * from "./communication.js";
 export * from "./catalog.js";
+export * from "./delivery-promotions.js";
 export * from "./discovery.js";
 export * from "./relationships.js";
 export * from "./habit.js";

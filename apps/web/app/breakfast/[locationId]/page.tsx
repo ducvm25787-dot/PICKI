@@ -9,6 +9,11 @@ import { formatVnd } from "../../../lib/money";
 import { NotificationBell } from "../../components/notification-bell";
 import { LocationContactActions } from "../../components/location-contact-actions";
 import { PickeeMap } from "../../components/pickee-map";
+import {
+  DeliveryHandoffChoice,
+  resolveHandoffMode,
+  type DeliveryHandoffMode,
+} from "../../components/delivery-handoff-choice";
 
 type MenuItem = {
   id: string;
@@ -54,6 +59,8 @@ export default function BreakfastOrderPage() {
   const [windowId, setWindowId] = useState("");
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
   const [addressId, setAddressId] = useState("");
+  const [shopNote, setShopNote] = useState("");
+  const [handoffMode, setHandoffMode] = useState<DeliveryHandoffMode>("DOOR_DELIVERY");
   const [error, setError] = useState<string | null>(null);
   const [quote, setQuote] = useState<{
     subtotalVnd: number;
@@ -107,6 +114,9 @@ export default function BreakfastOrderPage() {
       }));
   }, [menu, qty]);
 
+  const selectedAddress = addresses.find((a) => a.id === addressId);
+  const handoff = resolveHandoffMode(selectedAddress, handoffMode);
+
   const checkoutReady = selectedLines.length > 0 && Boolean(windowId) && Boolean(addressId);
 
   useEffect(() => {
@@ -122,6 +132,7 @@ export default function BreakfastOrderPage() {
         orderKind: "BREAKFAST_PREORDER",
         serviceDate: menu.serviceDate,
         deliveryWindowId: windowId,
+        deliveryHandoffMode: handoff,
         items: selectedLines.map((l) => ({
           menuItemId: l.menuItemId,
           quantity: l.quantity,
@@ -136,7 +147,7 @@ export default function BreakfastOrderPage() {
         }),
       )
       .catch(() => setQuote(null));
-  }, [zoneId, windowId, menu, selectedLines, locationId]);
+  }, [zoneId, windowId, menu, selectedLines, locationId, handoff]);
 
   async function placeOrder() {
     if (!zoneId || !windowId || !addressId || !menu || !checkoutReady) return;
@@ -152,7 +163,9 @@ export default function BreakfastOrderPage() {
           orderKind: "BREAKFAST_PREORDER",
           serviceDate: menu.serviceDate,
           deliveryWindowId: windowId,
+          deliveryHandoffMode: handoff,
           paymentMode: "PAY_ON_PICKI",
+          customerNote: shopNote.trim() || undefined,
           items: selectedLines.map((l) => ({
             menuItemId: l.menuItemId,
             quantity: l.quantity,
@@ -324,6 +337,22 @@ export default function BreakfastOrderPage() {
             ))}
           </select>
         )}
+        <DeliveryHandoffChoice
+          address={selectedAddress}
+          mode={handoffMode}
+          onChange={setHandoffMode}
+        />
+        <label style={{ display: "block", marginTop: 12 }}>
+          <span className="section-title">Nhắn cho cửa hàng</span>
+          <textarea
+            value={shopNote}
+            maxLength={300}
+            rows={2}
+            placeholder="Ví dụ: gọi khi tới sảnh, ít hành"
+            onChange={(e) => setShopNote(e.target.value)}
+            style={{ width: "100%", padding: 10, marginTop: 6, resize: "vertical" }}
+          />
+        </label>
       </div>
 
       {quote ? (

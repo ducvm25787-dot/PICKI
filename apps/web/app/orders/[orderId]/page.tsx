@@ -37,6 +37,7 @@ type OrderDetail = {
   subtotalVnd?: number;
   deliveryFeeVnd?: number;
   totalVnd: number;
+  customerNote?: string | null;
   deliveryWindow?: { startsAt: string; endsAt: string; label: string } | null;
   delivery: {
     addressType?: string;
@@ -455,6 +456,9 @@ export default function OrderDetailPage() {
             <p className="stat" style={{ margin: "4px 0 0" }}>
               {order.delivery.note}
             </p>
+          ) : null}
+          {order.customerNote ? (
+            <p style={{ margin: "8px 0 0" }}>Nhắn cho cửa hàng: {order.customerNote}</p>
           ) : null}
         </div>
       )}

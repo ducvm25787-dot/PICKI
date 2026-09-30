@@ -898,10 +898,11 @@ export async function listExploreProviders(
   sql: PickiSql,
   zoneId: string,
   chip: ExploreChip,
-  opts?: { excludeLocationIds?: string[]; limit?: number },
+  opts?: { excludeLocationIds?: string[]; limit?: number; providerTypes?: readonly string[] },
 ): Promise<DiscoveryProviderRow[]> {
   const limit = opts?.limit ?? 8;
   const exclude = opts?.excludeLocationIds ?? [];
+  const providerTypes = opts?.providerTypes ?? [];
 
   if (chip === "open" || chip === "near") {
     return sql<DiscoveryProviderRow[]>`
@@ -943,6 +944,7 @@ export async function listExploreProviders(
         AND pzm.status = 'ACTIVE'
         AND pl.status = 'ACTIVE'
         AND p.status = 'ACTIVE'
+        AND (cardinality(${providerTypes}::text[]) = 0 OR p.provider_type = ANY(${providerTypes}::text[]))
         AND COALESCE(pls.status, 'OFFLINE') IN ('OPEN', 'BUSY')
         AND (cardinality(${exclude}::uuid[]) = 0 OR NOT (pl.id = ANY(${exclude}::uuid[])))
       ORDER BY
@@ -993,6 +995,7 @@ export async function listExploreProviders(
         AND pzm.status = 'ACTIVE'
         AND pl.status = 'ACTIVE'
         AND p.status = 'ACTIVE'
+        AND (cardinality(${providerTypes}::text[]) = 0 OR p.provider_type = ANY(${providerTypes}::text[]))
         AND (cardinality(${exclude}::uuid[]) = 0 OR NOT (pl.id = ANY(${exclude}::uuid[])))
         AND (
           (pl.opens_at IS NOT NULL AND pl.opens_at > now())
@@ -1046,6 +1049,7 @@ export async function listExploreProviders(
       AND pzm.status = 'ACTIVE'
       AND pl.status = 'ACTIVE'
       AND p.status = 'ACTIVE'
+      AND (cardinality(${providerTypes}::text[]) = 0 OR p.provider_type = ANY(${providerTypes}::text[]))
       AND (cardinality(${exclude}::uuid[]) = 0 OR NOT (pl.id = ANY(${exclude}::uuid[])))
     ORDER BY
       (

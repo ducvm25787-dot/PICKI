@@ -6,6 +6,12 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../../../lib/api";
 import { formatVnd } from "../../../lib/money";
 import { NotificationBell } from "../../components/notification-bell";
+import {
+  DeliveryHandoffChoice,
+  resolveHandoffMode,
+  type DeliveryHandoffMode,
+} from "../../components/delivery-handoff-choice";
+import type { SavedAddress } from "../../../lib/addresses";
 
 type LateOffer = {
   id: string;
@@ -19,7 +25,7 @@ type LateOffer = {
   items: { name: string; category: string; quantityPerTray: number }[];
 };
 
-type Address = { id: string; label?: string | null; building?: string | null };
+type Address = SavedAddress;
 
 export default function LateDinnerCheckoutPage() {
   const params = useParams();
@@ -33,6 +39,7 @@ export default function LateDinnerCheckoutPage() {
   const [qty, setQty] = useState(1);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [addressId, setAddressId] = useState("");
+  const [handoffMode, setHandoffMode] = useState<DeliveryHandoffMode>("DOOR_DELIVERY");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [quote, setQuote] = useState<{
@@ -65,28 +72,31 @@ export default function LateDinnerCheckoutPage() {
         const addrs = await api<{ addresses: Address[] }>("/addresses");
         setAddresses(addrs.addresses);
         if (addrs.addresses[0]) setAddressId(addrs.addresses[0].id);
-
-        const q = await api<{
-          subtotalVnd: number;
-          deliveryFeeVnd: number;
-          totalVnd: number;
-        }>("/orders/quote", {
-          method: "POST",
-          body: JSON.stringify({
-            providerLocationId: locationId,
-            zoneId,
-            orderKind: "LATE_DINNER",
-            lateDinnerOfferId: offerId,
-            deliveryHandoffMode: "LOBBY_PICKUP",
-            items: [{ quantity: 1 }],
-          }),
-        });
-        setQuote(q);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Không tải được");
       }
     })();
   }, [offerId, locationId, zoneId, reloadOffer]);
+
+  const selectedAddress = addresses.find((a) => a.id === addressId);
+  const handoff = resolveHandoffMode(selectedAddress, handoffMode);
+
+  useEffect(() => {
+    if (!locationId || !zoneId) return;
+    void api<{ subtotalVnd: number; deliveryFeeVnd: number; totalVnd: number }>("/orders/quote", {
+      method: "POST",
+      body: JSON.stringify({
+        providerLocationId: locationId,
+        zoneId,
+        orderKind: "LATE_DINNER",
+        lateDinnerOfferId: offerId,
+        deliveryHandoffMode: handoff,
+        items: [{ quantity: 1 }],
+      }),
+    })
+      .then(setQuote)
+      .catch(() => setQuote(null));
+  }, [locationId, zoneId, offerId, handoff]);
 
   async function checkout() {
     if (!offer || !zoneId || !locationId || !addressId) return;
@@ -106,7 +116,7 @@ export default function LateDinnerCheckoutPage() {
           addressId,
           orderKind: "LATE_DINNER",
           lateDinnerOfferId: offerId,
-          deliveryHandoffMode: "LOBBY_PICKUP",
+          deliveryHandoffMode: handoff,
           paymentMode: "PAY_ON_PICKI",
           items: [{ quantity: qty }],
         }),
@@ -183,6 +193,11 @@ export default function LateDinnerCheckoutPage() {
               ))}
             </select>
           </label>
+          <DeliveryHandoffChoice
+            address={selectedAddress}
+            mode={handoffMode}
+            onChange={setHandoffMode}
+          />
           {quote ? (
             <p className="stat" style={{ marginTop: 12 }}>
               1 mâm ≈ {formatVnd(quote.totalVnd)} (gồm ship) · {qty} mâm ≈{" "}

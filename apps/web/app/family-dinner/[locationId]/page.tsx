@@ -14,6 +14,11 @@ import {
 } from "../../../lib/family-dinner";
 import { FdCutoffCountdown } from "../../components/fd-cutoff-countdown";
 import { NotificationBell } from "../../components/notification-bell";
+import {
+  DeliveryHandoffChoice,
+  resolveHandoffMode,
+  type DeliveryHandoffMode,
+} from "../../components/delivery-handoff-choice";
 
 type MenuItem = {
   id: string;
@@ -74,6 +79,7 @@ export default function FamilyDinnerBuilderPage() {
   const [windowId, setWindowId] = useState("");
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
   const [addressId, setAddressId] = useState("");
+  const [handoffMode, setHandoffMode] = useState<DeliveryHandoffMode>("DOOR_DELIVERY");
   const [error, setError] = useState<string | null>(null);
   const [quote, setQuote] = useState<{
     subtotalVnd: number;
@@ -189,6 +195,9 @@ export default function FamilyDinnerBuilderPage() {
   const onCheckout = step > TRAY_STEPS.length;
   const currentCat = step < TRAY_STEPS.length ? TRAY_STEPS[step]! : null;
 
+  const selectedAddress = addresses.find((a) => a.id === addressId);
+  const handoff = resolveHandoffMode(selectedAddress, handoffMode);
+
   async function placeOrder() {
     if (!zoneId || !windowId || !addressId || !menu || !checkoutReady) return;
     setSubmitting(true);
@@ -203,6 +212,7 @@ export default function FamilyDinnerBuilderPage() {
           orderKind: "FAMILY_DINNER",
           serviceDate: menu.serviceDate,
           deliveryWindowId: windowId,
+          deliveryHandoffMode: handoff,
           paymentMode: "PAY_ON_PICKI",
           items: selectedLines.map((l) => ({
             menuItemId: l.menuItemId,
@@ -233,6 +243,7 @@ export default function FamilyDinnerBuilderPage() {
         orderKind: "FAMILY_DINNER",
         serviceDate: menu.serviceDate,
         deliveryWindowId: windowId,
+        deliveryHandoffMode: handoff,
         items: selectedLines.map((l) => ({
           menuItemId: l.menuItemId,
           quantity: l.quantity,
@@ -248,7 +259,7 @@ export default function FamilyDinnerBuilderPage() {
         }),
       )
       .catch(() => setQuote(null));
-  }, [zoneId, windowId, menu, checkoutReady, selectedLines, locationId]);
+  }, [zoneId, windowId, menu, checkoutReady, selectedLines, locationId, handoff]);
 
   if (!menu && !error) {
     return (
@@ -732,6 +743,11 @@ export default function FamilyDinnerBuilderPage() {
                 </div>
               )}
             </label>
+            <DeliveryHandoffChoice
+              address={selectedAddress}
+              mode={handoffMode}
+              onChange={setHandoffMode}
+            />
             {quote ? (
               <div style={{ marginTop: 12, fontSize: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>

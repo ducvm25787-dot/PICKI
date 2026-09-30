@@ -47,6 +47,7 @@ export const orders = pgTable("orders", {
   providerDeliverySubsidy: integer("provider_delivery_subsidy").notNull().default(0),
   pickeeDeliverySubsidy: integer("pickee_delivery_subsidy").notNull().default(0),
   runnerPayable: integer("runner_payable").notNull().default(0),
+  deliveryPromotionId: uuid("delivery_promotion_id"),
   providerDeliveryEarning: integer("provider_delivery_earning").notNull().default(0),
   runnerSearchCancelledAt: timestamp("runner_search_cancelled_at", {
     withTimezone: true,
@@ -67,6 +68,8 @@ export const orders = pgTable("orders", {
   deliveryFloor: text("delivery_floor"),
   deliveryApartment: text("delivery_apartment"),
   deliveryNote: text("delivery_note"),
+  /** Message from the customer to the shop. Separate from the address delivery note. */
+  customerNote: text("customer_note"),
   deliveryLat: doublePrecision("delivery_lat"),
   deliveryLng: doublePrecision("delivery_lng"),
   idempotencyKey: text("idempotency_key").unique(),

@@ -71,8 +71,8 @@ export function assertDeliveryFundingSnapshot(snapshot: DeliveryFundingSnapshot)
   }
 
   if (snapshot.fulfillmentMode === "PROVIDER_SELF_DELIVERY") {
-    if (snapshot.runnerPayable !== 0 || snapshot.pickeeDeliverySubsidy !== 0) {
-      throw new DeliveryFundingError("Self-delivery pays no runner and no Pickee subsidy");
+    if (snapshot.runnerPayable !== 0) {
+      throw new DeliveryFundingError("Self-delivery pays no runner");
     }
     if (snapshot.providerDeliveryEarning !== snapshot.customerDeliveryFee) {
       throw new DeliveryFundingError("Self-delivery earning is the fee the customer paid");
@@ -180,15 +180,20 @@ export function snapshotLaundrySelfDelivery(): DeliveryFundingSnapshot {
 
 /**
  * Leaving a runner job for self-delivery.
- * Any Pickee subsidy already on the snapshot moves onto the shop so the base stays
- * and Pickee does not fund a trip with no runner.
+ * Pickee subsidy moves onto the shop unless the campaign explicitly funds self-delivery.
  */
-export function switchToSelfDelivery(current: DeliveryFundingSnapshot): DeliveryFundingSnapshot {
+export function switchToSelfDelivery(
+  current: DeliveryFundingSnapshot,
+  options?: { keepPickeeSubsidy?: boolean },
+): DeliveryFundingSnapshot {
+  const keepPickee = options?.keepPickeeSubsidy === true;
   const snapshot: DeliveryFundingSnapshot = {
     ...current,
     fulfillmentMode: "PROVIDER_SELF_DELIVERY",
-    providerDeliverySubsidy: current.providerDeliverySubsidy + current.pickeeDeliverySubsidy,
-    pickeeDeliverySubsidy: 0,
+    providerDeliverySubsidy: keepPickee
+      ? current.providerDeliverySubsidy
+      : current.providerDeliverySubsidy + current.pickeeDeliverySubsidy,
+    pickeeDeliverySubsidy: keepPickee ? current.pickeeDeliverySubsidy : 0,
     runnerPayable: 0,
     providerDeliveryEarning: current.customerDeliveryFee,
     deliveryFeeVnd: current.customerDeliveryFee,

@@ -42,7 +42,7 @@ export default function CheckoutPage() {
   const [cart, setCart] = useState<Cart | null>(null);
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState("");
-  const [handoffMode, setHandoffMode] = useState<"LOBBY_PICKUP" | "DOOR_DELIVERY">("LOBBY_PICKUP");
+  const [handoffMode, setHandoffMode] = useState<"LOBBY_PICKUP" | "DOOR_DELIVERY">("DOOR_DELIVERY");
   const [showNewAddress, setShowNewAddress] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
   const [newAddressKind, setNewAddressKind] = useState<AddressKind>("APARTMENT");
@@ -628,19 +628,6 @@ export default function CheckoutPage() {
           <label className="field" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
             <input
               type="radio"
-              checked={handoffMode === "LOBBY_PICKUP"}
-              onChange={() => setHandoffMode("LOBBY_PICKUP")}
-            />
-            <span>
-              <strong>{handoffModeLabel("LOBBY_PICKUP")}</strong>
-              <span className="stat" style={{ display: "block", fontSize: 13 }}>
-                Xuống sảnh {selected?.building ?? "tòa nhà"} nhận — runner không lên căn
-              </span>
-            </span>
-          </label>
-          <label className="field" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
-            <input
-              type="radio"
               checked={handoffMode === "DOOR_DELIVERY"}
               onChange={() => setHandoffMode("DOOR_DELIVERY")}
             />
@@ -648,6 +635,19 @@ export default function CheckoutPage() {
               <strong>{handoffModeLabel("DOOR_DELIVERY")}</strong>
               <span className="stat" style={{ display: "block", fontSize: 13 }}>
                 Runner giao đến cửa {selected ? formatAddressLine(selected) : "căn hộ"}
+              </span>
+            </span>
+          </label>
+          <label className="field" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+            <input
+              type="radio"
+              checked={handoffMode === "LOBBY_PICKUP"}
+              onChange={() => setHandoffMode("LOBBY_PICKUP")}
+            />
+            <span>
+              <strong>{handoffModeLabel("LOBBY_PICKUP")}</strong>
+              <span className="stat" style={{ display: "block", fontSize: 13 }}>
+                Xuống sảnh {selected?.building ?? "tòa nhà"} nhận — runner không lên căn
               </span>
             </span>
           </label>

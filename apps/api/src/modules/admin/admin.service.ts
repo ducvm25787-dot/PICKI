@@ -6,6 +6,7 @@ import {
   geoJsonToOuterRing,
   getServiceAreaGeoJson,
   getZoneBoundaryGeoJson,
+  deliveryPromotions,
   orders,
   providerLocations,
   providerZoneMemberships,
@@ -26,6 +27,7 @@ import { OrderTransitionService } from "../orders/order-transition.service.js";
 import type { z } from "zod";
 import type {
   adminOrderActionSchema,
+  createDeliveryPromotionSchema,
   publishBoundarySchema,
   updateAnchorSchema,
   upsertServiceAreaSchema,
@@ -421,6 +423,110 @@ export class AdminService {
         createdAt: r.log.createdAt.toISOString(),
       })),
     };
+  }
+
+  async listDeliveryPromotions(zoneId?: string) {
+    const rows = await this.db
+      .select()
+      .from(deliveryPromotions)
+      .where(zoneId ? eq(deliveryPromotions.zoneId, zoneId) : sql`true`)
+      .orderBy(desc(deliveryPromotions.startsAt));
+    return {
+      promotions: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        sponsorType: row.sponsorType,
+        subsidyMode: row.subsidyMode,
+        zoneId: row.zoneId,
+        providerId: row.providerId,
+        startsAt: row.startsAt.toISOString(),
+        endsAt: row.endsAt.toISOString(),
+        minimumOrderVnd: row.minimumOrderVnd,
+        maxSubsidyPerOrderVnd: row.maxSubsidyPerOrderVnd,
+        providerShareVnd: row.providerShareVnd,
+        pickeeShareVnd: row.pickeeShareVnd,
+        usageLimitTotal: row.usageLimitTotal,
+        usageLimitPerUser: row.usageLimitPerUser,
+        usageLimitPerUserPerDay: row.usageLimitPerUserPerDay,
+        budgetVnd: row.budgetVnd,
+        budgetSpentVnd: row.budgetSpentVnd,
+        eligibleModes: row.eligibleModes.split(",").map((mode) => mode.trim()),
+        active: row.active,
+      })),
+    };
+  }
+
+  async createDeliveryPromotion(
+    adminUserId: string,
+    input: z.infer<typeof createDeliveryPromotionSchema>,
+  ) {
+    const startsAt = new Date(input.startsAt);
+    const endsAt = new Date(input.endsAt);
+    if (!(endsAt > startsAt)) {
+      throw new PickiError("VALIDATION_ERROR", "Campaign phải kết thúc sau lúc bắt đầu");
+    }
+    if (input.subsidyMode === "COVER_UP_TO" && input.sponsorType === "SHARED") {
+      throw new PickiError("VALIDATION_ERROR", "Chung tiền dùng subsidyMode SHARED_AMOUNTS");
+    }
+    if (input.subsidyMode === "SHARED_AMOUNTS") {
+      if (input.sponsorType !== "SHARED") {
+        throw new PickiError("VALIDATION_ERROR", "SHARED_AMOUNTS cần sponsorType SHARED");
+      }
+      if (input.providerShareVnd + input.pickeeShareVnd <= 0) {
+        throw new PickiError("VALIDATION_ERROR", "Cần phần quán hoặc phần Pickee");
+      }
+      if (input.providerShareVnd + input.pickeeShareVnd > input.maxSubsidyPerOrderVnd) {
+        throw new PickiError("VALIDATION_ERROR", "Tổng phần trợ giá vượt trần mỗi đơn");
+      }
+    }
+    await this.requireZone(input.zoneId);
+    if (input.providerId) {
+      const provider = await this.db
+        .select({ id: providers.id })
+        .from(providers)
+        .where(eq(providers.id, input.providerId))
+        .limit(1);
+      if (!provider[0]) throw new PickiError("NOT_FOUND", "Provider not found");
+    }
+
+    const [row] = await this.db
+      .insert(deliveryPromotions)
+      .values({
+        name: input.name,
+        sponsorType: input.sponsorType,
+        subsidyMode: input.subsidyMode,
+        zoneId: input.zoneId,
+        providerId: input.providerId ?? null,
+        startsAt,
+        endsAt,
+        minimumOrderVnd: input.minimumOrderVnd,
+        maxSubsidyPerOrderVnd: input.maxSubsidyPerOrderVnd,
+        providerShareVnd: input.providerShareVnd,
+        pickeeShareVnd: input.pickeeShareVnd,
+        usageLimitTotal: input.usageLimitTotal ?? null,
+        usageLimitPerUser: input.usageLimitPerUser ?? null,
+        usageLimitPerUserPerDay: input.usageLimitPerUserPerDay ?? null,
+        budgetVnd: input.budgetVnd ?? null,
+        eligibleModes: input.eligibleModes.join(","),
+      })
+      .returning();
+    if (!row) throw new PickiError("INTERNAL_ERROR", "Failed to create promotion");
+
+    await this.db.insert(auditLogs).values({
+      actorUserId: adminUserId,
+      action: "DELIVERY_PROMOTION_CREATE",
+      entityType: "delivery_promotion",
+      entityId: row.id,
+      metadata: {
+        name: row.name,
+        zoneId: row.zoneId,
+        sponsorType: row.sponsorType,
+        maxSubsidyPerOrderVnd: row.maxSubsidyPerOrderVnd,
+        eligibleModes: row.eligibleModes,
+      },
+    });
+
+    return { id: row.id };
   }
 
   private async requireZone(zoneId: string) {

@@ -3,8 +3,10 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
   buildOrderNumber,
   calculateCustomerDeliveryFeeVnd,
+  commitDeliveryRedemption,
+  previewFoodDeliveryFunding,
+  reserveFoodDeliveryFunding,
   snapshotLaundryCheckout,
-  snapshotPickeeRunner,
   canCustomerCancel,
   breakfastPreorderDeliveryWindows,
   breakfastPreorderMenuItems,
@@ -79,15 +81,20 @@ export class OrdersService {
 
   async quote(userId: string, input: OrderCheckoutInput) {
     await this.assertZoneMember(userId, input.zoneId);
-    const { serviceVertical } = await this.resolveLocation(input.providerLocationId, input.zoneId);
+    const { serviceVertical, location } = await this.resolveLocation(
+      input.providerLocationId,
+      input.zoneId,
+    );
 
     if (input.orderKind === "FAMILY_DINNER") {
       const built = await this.buildFamilyDinnerLineItems(input);
-      const deliveryFeeVnd = await this.resolveDeliveryFeeVnd(
-        input.zoneId,
-        "FOOD",
-        input.deliveryHandoffMode,
-      );
+      const deliveryFeeVnd = await this.quotedCustomerDeliveryFee({
+        userId,
+        zoneId: input.zoneId,
+        providerId: location.providerId,
+        subtotalVnd: built.subtotalVnd,
+        handoffMode: input.deliveryHandoffMode,
+      });
       return {
         serviceVertical: "FOOD",
         orderKind: "FAMILY_DINNER",
@@ -110,11 +117,13 @@ export class OrdersService {
 
     if (input.orderKind === "BREAKFAST_PREORDER") {
       const built = await this.buildBreakfastLineItems(input);
-      const deliveryFeeVnd = await this.resolveDeliveryFeeVnd(
-        input.zoneId,
-        "FOOD",
-        input.deliveryHandoffMode,
-      );
+      const deliveryFeeVnd = await this.quotedCustomerDeliveryFee({
+        userId,
+        zoneId: input.zoneId,
+        providerId: location.providerId,
+        subtotalVnd: built.subtotalVnd,
+        handoffMode: input.deliveryHandoffMode,
+      });
       return {
         serviceVertical: "FOOD",
         orderKind: "BREAKFAST_PREORDER",
@@ -133,11 +142,13 @@ export class OrdersService {
 
     if (input.orderKind === "LATE_DINNER") {
       const built = await this.buildLateDinnerQuote(input);
-      const deliveryFeeVnd = await this.resolveDeliveryFeeVnd(
-        input.zoneId,
-        "FOOD",
-        input.deliveryHandoffMode,
-      );
+      const deliveryFeeVnd = await this.quotedCustomerDeliveryFee({
+        userId,
+        zoneId: input.zoneId,
+        providerId: location.providerId,
+        subtotalVnd: built.subtotalVnd,
+        handoffMode: input.deliveryHandoffMode,
+      });
       return {
         serviceVertical: "FOOD",
         orderKind: "LATE_DINNER",
@@ -160,11 +171,16 @@ export class OrdersService {
       input.providerLocationId,
       input.items,
     );
-    const deliveryFeeVnd = await this.resolveDeliveryFeeVnd(
-      input.zoneId,
-      serviceVertical as "FOOD" | "LAUNDRY",
-      input.deliveryHandoffMode,
-    );
+    const deliveryFeeVnd =
+      serviceVertical === "LAUNDRY"
+        ? 0
+        : await this.quotedCustomerDeliveryFee({
+            userId,
+            zoneId: input.zoneId,
+            providerId: location.providerId,
+            subtotalVnd,
+            handoffMode: input.deliveryHandoffMode,
+          });
     return {
       serviceVertical,
       orderKind: "STANDARD",
@@ -193,7 +209,11 @@ export class OrdersService {
     }
 
     await this.assertZoneMember(userId, input.zoneId);
-    const { serviceVertical } = await this.resolveLocation(input.providerLocationId, input.zoneId);
+    const { serviceVertical, location } = await this.resolveLocation(
+      input.providerLocationId,
+      input.zoneId,
+    );
+    const providerId = location.providerId;
 
     const isFamilyDinner = input.orderKind === "FAMILY_DINNER";
     const isLateDinner = input.orderKind === "LATE_DINNER";
@@ -239,6 +259,7 @@ export class OrdersService {
     const deliveryFloor = addr.floor;
     const deliveryApartment = addr.apartment;
     const deliveryNote = addr.deliveryNote;
+    const customerNote = input.customerNote?.trim() || null;
     const coords = await this.addresses.getDeliveryCoords(addr.id);
     const deliveryLat: number | null = coords?.lat ?? null;
     const deliveryLng: number | null = coords?.lng ?? null;
@@ -335,6 +356,21 @@ export class OrdersService {
         await this.reserveLateDinnerCapacity(tx, lateQuote);
       }
 
+      const isLaundryOrder =
+        serviceVertical === "LAUNDRY" && !isFamilyDinner && !isLateDinner && !isBreakfast;
+      const funding = isLaundryOrder
+        ? { snapshot: snapshotLaundryCheckout(), promotionId: null as string | null }
+        : await reserveFoodDeliveryFunding(tx, {
+            zoneId: input.zoneId,
+            providerId,
+            customerUserId: userId,
+            subtotalVnd,
+            baseVnd: deliveryFeeVnd,
+          });
+      const chargedTotal = isLaundryOrder
+        ? 0
+        : subtotalVnd + funding.snapshot.customerDeliveryFee;
+
       const orderNumber = await allocateOrderNumber(tx, input.providerLocationId);
       const orderKind = isLateDinner
         ? "LATE_DINNER"
@@ -364,10 +400,9 @@ export class OrdersService {
             serviceVertical === "LAUNDRY" && !isFamilyDinner && !isLateDinner && !isBreakfast
               ? 0
               : subtotalVnd,
-          ...(serviceVertical === "LAUNDRY" && !isFamilyDinner && !isLateDinner && !isBreakfast
-            ? snapshotLaundryCheckout()
-            : snapshotPickeeRunner(deliveryFeeVnd)),
-          totalVnd,
+          ...funding.snapshot,
+          deliveryPromotionId: funding.promotionId,
+          totalVnd: chargedTotal,
           deliveryAddressId: addr.id,
           deliveryAddressType: addr.addressType,
           deliveryHandoffMode: handoffMode,
@@ -380,6 +415,7 @@ export class OrdersService {
           deliveryFloor,
           deliveryApartment,
           deliveryNote,
+          customerNote,
           deliveryLat,
           deliveryLng,
           idempotencyKey: input.idempotencyKey ?? null,
@@ -388,6 +424,16 @@ export class OrdersService {
 
       if (!order) {
         throw new PickiError("INTERNAL_ERROR", "Failed to create order");
+      }
+
+      if (funding.promotionId) {
+        await commitDeliveryRedemption(tx, {
+          orderId: order.id,
+          customerUserId: userId,
+          promotionId: funding.promotionId,
+          providerSubsidyVnd: funding.snapshot.providerDeliverySubsidy,
+          pickeeSubsidyVnd: funding.snapshot.pickeeDeliverySubsidy,
+        });
       }
 
       if (isFamilyDinner) {
@@ -910,6 +956,24 @@ export class OrdersService {
       .where(eq(zoneFulfillmentSettings.zoneId, zoneId))
       .limit(1);
     return row[0] ?? null;
+  }
+
+  private async quotedCustomerDeliveryFee(input: {
+    userId: string;
+    zoneId: string;
+    providerId: string;
+    subtotalVnd: number;
+    handoffMode: "LOBBY_PICKUP" | "DOOR_DELIVERY";
+  }) {
+    const baseVnd = await this.resolveDeliveryFeeVnd(input.zoneId, "FOOD", input.handoffMode);
+    const funded = await previewFoodDeliveryFunding(this.db, {
+      zoneId: input.zoneId,
+      providerId: input.providerId,
+      customerUserId: input.userId,
+      subtotalVnd: input.subtotalVnd,
+      baseVnd,
+    });
+    return funded.snapshot.customerDeliveryFee;
   }
 
   private async resolveDeliveryFeeVnd(
@@ -1572,6 +1636,7 @@ export class OrdersService {
       subtotalVnd: order.subtotalVnd,
       deliveryFeeVnd: order.deliveryFeeVnd,
       totalVnd: order.totalVnd,
+      customerNote: order.customerNote,
       delivery: {
         addressId: order.deliveryAddressId,
         addressType: order.deliveryAddressType,

@@ -412,8 +412,6 @@ export default function HomePage() {
             <span className="home-hero-cta">{contextNow.cta}</span>
           </Link>
 
-          {utilitiesBlock}
-
           {spotlight ? (
             <Link href={spotlight.href} className="card spotlight-card">
               <p className="fresh-badge">Tài trợ</p>
@@ -522,6 +520,8 @@ export default function HomePage() {
               </div>
             )}
           </section>
+
+          {utilitiesBlock}
 
           {experienceBlock}
 

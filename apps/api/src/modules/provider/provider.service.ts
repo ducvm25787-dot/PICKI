@@ -2,7 +2,10 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
 import {
   decideCancelFindRunner,
+  deliveryPromotions,
+  deliveryPromotionRedemptions,
   fundingFromOrder,
+  releasePickeeDeliverySubsidy,
   isCookFirstFoodOrder,
   payments,
   snapshotCustomerPickup,
@@ -224,6 +227,7 @@ export class ProviderService {
             building: o.deliveryBuilding,
             apartment: o.deliveryApartment,
           },
+          customerNote: o.customerNote,
           createdAt: o.createdAt.toISOString(),
           ...orderHandoffFields(o),
           runner: await loadRunnerSummary(this.db, o.runnerUserId),
@@ -795,7 +799,25 @@ export class ProviderService {
       await this.runnerDispatch.cancelDispatch(order.id);
     }
 
-    const funding = switchToSelfDelivery(fundingFromOrder(order));
+    const promo = order.deliveryPromotionId
+      ? (
+          await this.db
+            .select({ eligibleModes: deliveryPromotions.eligibleModes })
+            .from(deliveryPromotions)
+            .where(eq(deliveryPromotions.id, order.deliveryPromotionId))
+            .limit(1)
+        )[0]
+      : null;
+    const keepPickeeSubsidy =
+      promo?.eligibleModes.split(",").some((mode) => mode.trim() === "PROVIDER_SELF_DELIVERY") ??
+      false;
+    if (!keepPickeeSubsidy) {
+      await releasePickeeDeliverySubsidy(this.db, {
+        id: order.id,
+        deliveryPromotionId: order.deliveryPromotionId,
+      });
+    }
+    const funding = switchToSelfDelivery(fundingFromOrder(order), { keepPickeeSubsidy });
     await this.db
       .update(orders)
       .set({ ...funding, updatedAt: new Date() })
@@ -850,6 +872,17 @@ export class ProviderService {
 
     if (order.runnerSoughtAt) {
       await this.runnerDispatch.cancelDispatch(order.id);
+    }
+
+    await releasePickeeDeliverySubsidy(this.db, {
+      id: order.id,
+      deliveryPromotionId: order.deliveryPromotionId,
+    });
+    if (order.deliveryPromotionId) {
+      await this.db
+        .update(deliveryPromotionRedemptions)
+        .set({ providerSubsidyVnd: 0 })
+        .where(eq(deliveryPromotionRedemptions.orderId, order.id));
     }
 
     await this.db

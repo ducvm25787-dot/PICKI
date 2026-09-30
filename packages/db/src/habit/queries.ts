@@ -125,10 +125,22 @@ export type NowAroundRow = {
  * Live / contextual shelf — auto from OPEN/BUSY + optional daily update overlay.
  * No distance meters.
  */
+/** Phase 1 home rail: food and drink only. Other verticals stay in Tiện ích. */
+export const HOME_FOOD_PROVIDER_TYPES = [
+  "RESTAURANT",
+  "FOOD_STALL",
+  "HOME_COOK",
+  "CAFE",
+  "CAFÉ",
+  "BAKERY",
+  "FOOD",
+] as const;
+
 export async function listNowAroundInZone(
   sql: postgres.Sql,
   zoneId: string,
   limit = 5,
+  providerTypes: readonly string[] = HOME_FOOD_PROVIDER_TYPES,
 ): Promise<NowAroundRow[]> {
   await sql`
     UPDATE provider_daily_updates
@@ -187,6 +199,7 @@ export async function listNowAroundInZone(
           COALESCE(pls.status, 'OFFLINE') IN ('OPEN', 'BUSY')
           OR u.id IS NOT NULL
         )
+        AND p.provider_type = ANY(${providerTypes})
     )
     SELECT
       location_id, provider_id, brand_name, display_name, provider_type,
@@ -194,6 +207,56 @@ export async function listNowAroundInZone(
       update_id, update_title, update_description, source
     FROM live
     ORDER BY update_rank, status_rank, brand_name
+    LIMIT ${limit}
+  `;
+}
+
+export type LateDinnerNowRow = {
+  offer_id: string;
+  title: string;
+  price_vnd: number;
+  remaining_capacity: number;
+  eta_minutes: number;
+  location_id: string;
+  brand_name: string;
+  display_name: string;
+  provider_type: string;
+  live_status: string;
+};
+
+/** Tonight's late trays. Service date is the VN calendar day. */
+export async function listLateDinnerNowInZone(
+  sql: postgres.Sql,
+  zoneId: string,
+  serviceDate: string,
+  limit = 3,
+): Promise<LateDinnerNowRow[]> {
+  return sql<LateDinnerNowRow[]>`
+    SELECT
+      o.id AS offer_id,
+      o.title,
+      o.price_vnd,
+      o.remaining_capacity,
+      o.eta_minutes,
+      pl.id AS location_id,
+      p.brand_name,
+      pl.display_name,
+      p.provider_type,
+      COALESCE(pls.status, 'OPEN') AS live_status
+    FROM late_dinner_offers o
+    INNER JOIN provider_locations pl ON pl.id = o.provider_location_id
+    INNER JOIN providers p ON p.id = pl.provider_id
+    INNER JOIN provider_zone_memberships pzm
+      ON pzm.provider_location_id = pl.id
+      AND pzm.zone_id = ${zoneId}::uuid
+      AND pzm.status = 'ACTIVE'
+    LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
+    WHERE o.service_date = ${serviceDate}::date
+      AND o.status = 'ACTIVE'
+      AND o.remaining_capacity > 0
+      AND pl.status = 'ACTIVE'
+      AND p.status = 'ACTIVE'
+    ORDER BY o.created_at DESC
     LIMIT ${limit}
   `;
 }

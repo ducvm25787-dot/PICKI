@@ -43,6 +43,7 @@ type ProviderOrder = {
   runner: { displayName: string } | null;
   deliveryWindow?: { startsAt: string; endsAt: string; label: string } | null;
   delivery: { building: string | null; apartment: string | null };
+  customerNote?: string | null;
   contacts?: {
     customer: { phone: string | null; displayName?: string | null };
     provider: { phone: string | null; label?: string };
@@ -671,6 +672,11 @@ export default function ProviderOrdersPage() {
                 <p className="stat" style={{ marginBottom: 8 }}>
                   Giao: {o.delivery.building}-{o.delivery.apartment}
                 </p>
+                {o.customerNote ? (
+                  <p style={{ margin: "0 0 8px", fontSize: 14 }}>
+                    Khách nhắn: {o.customerNote}
+                  </p>
+                ) : null}
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   {o.serviceVertical === "LAUNDRY" &&
                   o.status === "PROVIDER_ACCEPTED" &&

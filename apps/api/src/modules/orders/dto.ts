@@ -12,7 +12,7 @@ export const createOrderItemSchema = z.object({
 const orderCheckoutFields = {
   providerLocationId: z.string().uuid(),
   zoneId: z.string().uuid(),
-  deliveryHandoffMode: z.enum(["LOBBY_PICKUP", "DOOR_DELIVERY"]).default("LOBBY_PICKUP"),
+  deliveryHandoffMode: z.enum(["LOBBY_PICKUP", "DOOR_DELIVERY"]).default("DOOR_DELIVERY"),
   items: z.array(createOrderItemSchema).min(1).max(30),
   orderKind: z.enum(["STANDARD", "FAMILY_DINNER", "LATE_DINNER", "BREAKFAST_PREORDER"]).default("STANDARD"),
   serviceDate: z
@@ -70,6 +70,7 @@ export const createOrderSchema = z
     addressId: z.string().uuid(),
     laundryPickupMode: z.enum(["HOME_PICKUP", "SHOP_DROP_OFF", "ON_SITE"]).optional(),
     paymentMode: z.enum(["COD", "PAY_ON_PICKI", "PAY_ON_COMPLETION"]).default("COD"),
+    customerNote: z.string().trim().max(300).optional(),
     idempotencyKey: z.string().min(8).max(128).optional(),
   })
   .superRefine(refineOrderCheckout);

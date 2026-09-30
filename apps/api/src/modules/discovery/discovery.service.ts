@@ -24,6 +24,8 @@ import {
   locationReviews,
   listFamiliarProvidersInZone,
   listNowAroundInZone,
+  listLateDinnerNowInZone,
+  HOME_FOOD_PROVIDER_TYPES,
   listFamilyDinnerProvidersEnabled,
   listExploreProviders,
   listLiveDealInZone,
@@ -46,6 +48,10 @@ import {
 import { PickiError } from "@picki/shared";
 import { PICKI_DB, PICKI_SQL } from "../../shared/tokens.js";
 import { AnalyticsService } from "../analytics/analytics.service.js";
+import {
+  defaultDinnerServiceDate,
+  isPastCutoff,
+} from "../family-dinner/family-dinner.service.js";
 import { ZonesService } from "../zones/zones.service.js";
 import {
   defaultBreakfastServiceDate,
@@ -551,6 +557,18 @@ export class DiscoveryService {
     const familiarRows = await listFamiliarProvidersInZone(this.sql, userId, zone.id, 5);
     const familiarIds = new Set(familiarRows.map((r) => r.location_id));
     const nowRows = await listNowAroundInZone(this.sql, zone.id, 5);
+    const dinnerServiceDate = defaultDinnerServiceDate();
+    const dinnerByLocation = await familyDinnerHomeStatus(
+      this.sql,
+      nowRows.map((r) => r.location_id),
+      dinnerServiceDate,
+    );
+    const lateDinner = await listLateDinnerNowInZone(
+      this.sql,
+      zone.id,
+      vnCalendarDate(),
+      3,
+    );
     const [organicFresh, liveDeal, spotlight] = await Promise.all([
       listOrganicFreshInZone(this.sql, zone.id),
       listLiveDealInZone(this.sql, zone.id),
@@ -585,6 +603,10 @@ export class DiscoveryService {
     }));
 
     const nowAround = nowRows.map((r) => {
+      const dinner = dinnerByLocation.get(r.location_id);
+      const statusLine = liveStatusLine(r.live_message, dinner, dinnerServiceDate);
+      const hideStaleDinner =
+        dinner != null && isDinnerPreorderMessage(r.live_message) && statusLine == null;
       const headline =
         r.update_title?.trim() ||
         (r.estimated_wait_minutes != null && r.estimated_wait_minutes <= 5
@@ -592,9 +614,8 @@ export class DiscoveryService {
           : r.estimated_wait_minutes != null
             ? `~${String(r.estimated_wait_minutes)} phút chờ`
             : null) ||
-        r.live_message?.trim() ||
-        r.sample_offering ||
-        r.tagline ||
+        statusLine ||
+        (hideStaleDinner ? r.tagline || r.sample_offering : r.sample_offering || r.tagline) ||
         "Đang phục vụ quanh bạn";
       return {
         locationId: r.location_id,
@@ -616,20 +637,40 @@ export class DiscoveryService {
     });
 
     const seen = new Set(nowAround.map((n) => n.locationId));
+    const lateCards = lateDinner.map((o) => ({
+      locationId: o.location_id,
+      providerId: o.location_id,
+      brandName: o.brand_name,
+      displayName: o.display_name,
+      providerType: o.provider_type,
+      liveStatus: o.live_status,
+      estimatedWaitMinutes: o.eta_minutes,
+      headline: o.title,
+      detail: `Còn ${String(o.remaining_capacity)} suất · ${formatVnd(o.price_vnd)} · ~${String(o.eta_minutes)} phút`,
+      source: "LATE_DINNER",
+      updateId: o.offer_id,
+      ctaLabel: "Đặt mâm",
+      ctaHref: `/family-dinner/late/${o.offer_id}?zoneId=${zone.id}&locationId=${o.location_id}`,
+      badge: "Tối muộn",
+      sponsored: false,
+    }));
+    for (const card of lateCards) seen.add(card.locationId);
     const injected: typeof nowAround = [];
-    if (organicFresh && !seen.has(organicFresh.locationId)) {
+    const foodType = new Set<string>(HOME_FOOD_PROVIDER_TYPES);
+    if (organicFresh && foodType.has(organicFresh.providerType) && !seen.has(organicFresh.locationId)) {
       injected.push(presenceToNow(organicFresh, organicFresh.freshnessLabel));
       seen.add(organicFresh.locationId);
     }
     if (
       liveDeal &&
       liveDeal.promotion &&
+      foodType.has(liveDeal.providerType) &&
       !seen.has(liveDeal.locationId) &&
       liveDeal.locationId !== organicFresh?.locationId
     ) {
       injected.push(presenceToNow(liveDeal, liveDeal.promotion.kindLabel));
     }
-    const mergedNow = [...injected, ...nowAround].slice(0, 5);
+    const mergedNow = [...lateCards, ...injected, ...nowAround.filter((n) => !lateCards.some((c) => c.locationId === n.locationId))].slice(0, 5);
 
     const discoverBlocks = (
       discovery.blocks as { id: string; providers: { locationId: string }[] }[]
@@ -813,6 +854,72 @@ function decorateProvider<T extends { locationId: string }>(
 function promoLabel(card: PresenceCard | undefined): string | null {
   if (!card?.promotion || card.promotion.spotlight) return null;
   return card.promotion.title;
+}
+
+type DinnerHomeStatus = {
+  enabled: boolean;
+  cutoff: string;
+  published: boolean;
+};
+
+async function familyDinnerHomeStatus(
+  sql: PickiSql,
+  locationIds: string[],
+  serviceDate: string,
+): Promise<Map<string, DinnerHomeStatus>> {
+  if (locationIds.length === 0) return new Map();
+  const rows = await sql<
+    { location_id: string; enabled: boolean; cutoff_time: string; published: boolean }[]
+  >`
+    SELECT
+      s.provider_location_id AS location_id,
+      s.enabled,
+      s.cutoff_time::text AS cutoff_time,
+      EXISTS (
+        SELECT 1 FROM family_dinner_daily_menus m
+        WHERE m.provider_location_id = s.provider_location_id
+          AND m.service_date = ${serviceDate}::date
+          AND m.status = 'PUBLISHED'
+      ) AS published
+    FROM family_dinner_provider_settings s
+    WHERE s.provider_location_id = ANY(${locationIds}::uuid[])
+  `;
+  return new Map(
+    rows.map((r) => [
+      r.location_id,
+      {
+        enabled: r.enabled,
+        cutoff: r.cutoff_time.slice(0, 5),
+        published: r.published,
+      },
+    ]),
+  );
+}
+
+function isDinnerPreorderMessage(message: string | null): boolean {
+  return /bữa tối/i.test(message ?? "");
+}
+
+/** Seeded cutoff copy is not a live clock. Hide it when the kitchen is not accepting. */
+function liveStatusLine(
+  message: string | null,
+  dinner: DinnerHomeStatus | undefined,
+  serviceDate: string,
+): string | null {
+  const text = message?.trim() || null;
+  if (!text) return null;
+  if (!dinner || !isDinnerPreorderMessage(text)) return text;
+  const accepting = dinner.enabled && dinner.published && !isPastCutoff(serviceDate, dinner.cutoff);
+  if (!accepting) return null;
+  return `Nhận bữa tối · chốt ${dinner.cutoff}`;
+}
+
+function vnCalendarDate(now = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(now);
+}
+
+function formatVnd(amount: number): string {
+  return `${amount.toLocaleString("vi-VN")}đ`;
 }
 
 function presenceToNow(card: PresenceCard, badge: string | null) {

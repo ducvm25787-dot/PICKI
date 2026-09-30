@@ -20,10 +20,27 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
+    void this.start();
+  }
+
+  /** Events left in PROCESSING belong to a worker that stopped mid-delivery. */
+  private async recoverStuck(): Promise<void> {
+    await this.db
+      .update(outboxEvents)
+      .set({ status: "PENDING" })
+      .where(eq(outboxEvents.status, "PROCESSING"));
+  }
+
+  private async start(): Promise<void> {
+    try {
+      await this.recoverStuck();
+    } catch (err) {
+      this.logger.error("Outbox recover failed", err instanceof Error ? err.stack : err);
+    }
+    void this.tick();
     this.timer = setInterval(() => {
       void this.tick();
     }, POLL_MS);
-    void this.tick();
   }
 
   onModuleDestroy(): void {

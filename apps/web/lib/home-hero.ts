@@ -5,7 +5,6 @@ export type ContextWindowId =
   | "day"
   | "homecoming"
   | "evening"
-  | "late-dinner"
   | "weekend"
   | "breakfast-preorder"
   | "family-dinner";
@@ -33,37 +32,11 @@ const DEFAULT_RULES: WindowRule[] = [
   {
     id: "breakfast-preorder",
     startHour: 20,
-    endHour: 21,
-    content: {
-      kicker: "Sáng mai ăn gì?",
-      title: "Sáng mai ăn gì?",
-      copy: "Đặt tối nay · giao sáng sớm quanh nhà.",
-      cta: "Xem quán nhận đơn →",
-      href: "/breakfast",
-      tone: "breakfast",
-    },
-  },
-  {
-    id: "late-dinner",
-    startHour: 21,
-    endHour: 23,
-    content: {
-      kicker: "Bữa tối muộn",
-      title: "Ăn tối muộn quanh bạn",
-      copy: "Quán còn mở · tiện ích đêm trong Zone.",
-      cta: "Xem đang mở →",
-      href: "/late-night",
-      tone: "evening",
-    },
-  },
-  {
-    id: "breakfast-preorder",
-    startHour: 23,
     endHour: 24,
     content: {
       kicker: "Sáng mai ăn gì?",
       title: "Sáng mai ăn gì?",
-      copy: "Đặt trước khi ngủ · giao sáng sớm quanh nhà.",
+      copy: "Đặt tối nay · giao sáng sớm quanh nhà.",
       cta: "Xem quán nhận đơn →",
       href: "/breakfast",
       tone: "breakfast",
@@ -75,10 +48,10 @@ const DEFAULT_RULES: WindowRule[] = [
     endHour: 18,
     days: [0, 6],
     content: {
-      kicker: "Cuối tuần quanh nhà",
-      title: "Cuối tuần quanh nhà mình?",
-      copy: "Ăn uống · làm đẹp · mua sắm · khám phá Zone.",
-      cta: "Khám phá quanh nhà →",
+      kicker: "Cuối tuần ăn gì",
+      title: "Cuối tuần nhà mình ăn gì?",
+      copy: "Cơm nhà · quán quanh nhà · đặt trước cho tối.",
+      cta: "Xem bữa tối →",
       href: "/family-dinner",
       tone: "weekend",
     },
@@ -102,9 +75,9 @@ const DEFAULT_RULES: WindowRule[] = [
     endHour: 21,
     content: {
       kicker: "Tối nay quanh bạn",
-      title: "Ăn tối · mua nhanh · làm đẹp",
-      copy: "Chỗ đang mở quanh nhà lúc này.",
-      cta: "Xem quanh nhà →",
+      title: "Tối nay ăn gì quanh nhà?",
+      copy: "Quán đang mở · cơm nhà giao đúng giờ.",
+      cta: "Xem bữa tối →",
       href: "/family-dinner",
       tone: "evening",
     },
