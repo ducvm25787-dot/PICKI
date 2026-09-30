@@ -1,4 +1,5 @@
 export * from "./catalog/index.js";
+export * from "./commerce/index.js";
 export * from "./classified/index.js";
 export * from "./discovery/index.js";
 export * from "./family-dinner/index.js";

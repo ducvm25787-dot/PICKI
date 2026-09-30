@@ -15,6 +15,7 @@ export type RunnerOrder = {
   orderKind?: string;
   serviceDate?: string | null;
   deliveryFeeVnd?: number;
+  runnerPayableVnd?: number;
   totalVnd: number;
   assignedToMe: boolean;
   estimatedReadyAt: string | null;

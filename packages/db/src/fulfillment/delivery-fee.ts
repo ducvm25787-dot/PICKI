@@ -28,26 +28,38 @@ export type ProviderRunnerFeeInput = {
   leg?: "INBOUND" | "RETURN" | null;
   handoffMode?: "LOBBY_PICKUP" | "DOOR_DELIVERY" | null;
   zoneSettings?: ZoneDeliveryFeeSettings | null;
-  /** Food order snapshot at checkout */
-  orderDeliveryFeeVnd?: number | null;
+  fulfillmentMode?: "PICKEE_RUNNER" | "PROVIDER_SELF_DELIVERY" | "CUSTOMER_PICKUP" | null;
+  /**
+   * Runner compensation snapshot. Never the customer compatibility field
+   * `delivery_fee_vnd`. V1 food often equals delivery_fee_base; laundry return
+   * and later batch/incentive may differ.
+   */
+  runnerPayableVnd?: number | null;
 };
 
 /**
- * Fee provider pays runner (shown on find-runner / runner pool).
- * Food: matches customer delivery fee. Laundry return: zone flat rate.
+ * What the shop owes the runner.
+ * Food reads `runnerPayableVnd`. Laundry return uses that snapshot once set,
+ * otherwise the zone return rate as a preview before search.
  */
 export function calculateProviderRunnerFeeVnd(input: ProviderRunnerFeeInput): number {
-  if (input.serviceVertical === "LAUNDRY") {
-    if (input.leg === "RETURN") {
-      return (
-        input.zoneSettings?.laundryReturnRunnerFeeVnd ?? DEFAULT_LAUNDRY_RETURN_RUNNER_FEE_VND
-      );
-    }
+  if (
+    input.fulfillmentMode === "PROVIDER_SELF_DELIVERY" ||
+    input.fulfillmentMode === "CUSTOMER_PICKUP"
+  ) {
     return 0;
   }
 
-  if (input.orderDeliveryFeeVnd != null && input.orderDeliveryFeeVnd > 0) {
-    return input.orderDeliveryFeeVnd;
+  if (input.serviceVertical === "LAUNDRY") {
+    if (input.leg !== "RETURN") return 0;
+    if (input.runnerPayableVnd != null && input.runnerPayableVnd > 0) {
+      return input.runnerPayableVnd;
+    }
+    return input.zoneSettings?.laundryReturnRunnerFeeVnd ?? DEFAULT_LAUNDRY_RETURN_RUNNER_FEE_VND;
+  }
+
+  if (input.runnerPayableVnd != null) {
+    return input.runnerPayableVnd;
   }
 
   return calculateCustomerDeliveryFeeVnd({

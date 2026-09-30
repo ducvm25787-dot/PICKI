@@ -12,6 +12,7 @@ import type { Request, Response } from "express";
 import {
   isPickiAppRole,
   PickiError,
+  resolveSessionApp,
   SESSION_COOKIE_NAME,
   SESSION_COOKIE_NAMES,
   type PickiAppRole,
@@ -63,13 +64,16 @@ export class AuthController {
     }
 
     try {
-      const app = parsed.data.app ?? "customer";
       const { session, me } = await this.authService.verifyPhoneOtp(
         parsed.data.phone,
         parsed.data.code,
       );
+      const app = resolveSessionApp(parsed.data.app, me.roles);
       this.setSessionCookie(res, app, session.token, session.expiresAt);
-      return { user: me };
+      if (app !== "customer") {
+        res.clearCookie(SESSION_COOKIE_NAMES.customer, this.cookieOptions(new Date(0)));
+      }
+      return { user: me, app };
     } catch (err) {
       if (err instanceof PickiError && err.code === "UNAUTHORIZED") {
         throw new UnauthorizedException(err.message);

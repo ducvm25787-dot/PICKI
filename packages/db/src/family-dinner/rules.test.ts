@@ -9,14 +9,23 @@ import {
 } from "./rules.js";
 
 describe("validateFamilyDinnerBaseMeal", () => {
-  it("requires all four groups", () => {
+  it("allows a skipped course and lists it", () => {
     const r = validateFamilyDinnerBaseMeal([
       { category: "MAIN", quantity: 1 },
       { category: "SIDE", quantity: 1 },
       { category: "VEGETABLE", quantity: 1 },
     ]);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.missing).toEqual(["SOUP"]);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.missing).toEqual(["SOUP"]);
+  });
+
+  it("allows rice alone and rejects an empty tray", () => {
+    const rice = validateFamilyDinnerBaseMeal([{ category: "RICE", quantity: 1 }]);
+    expect(rice.ok).toBe(true);
+    const empty = validateFamilyDinnerBaseMeal([]);
+    expect(empty.ok).toBe(false);
+    const extraOnly = validateFamilyDinnerBaseMeal([{ category: "EXTRA", quantity: 2 }]);
+    expect(extraOnly.ok).toBe(false);
   });
 
   it("passes with four groups + extras", () => {

@@ -47,13 +47,31 @@ describe("calculateCustomerDeliveryFeeVnd", () => {
 });
 
 describe("calculateProviderRunnerFeeVnd", () => {
-  it("food uses order snapshot", () => {
+  it("food uses runner payable, not a customer delivery fee argument", () => {
     expect(
       calculateProviderRunnerFeeVnd({
         serviceVertical: "FOOD",
-        orderDeliveryFeeVnd: 20_000,
+        fulfillmentMode: "PICKEE_RUNNER",
+        runnerPayableVnd: 20_000,
       }),
     ).toBe(20_000);
+  });
+
+  it("returns 0 for self-delivery and pickup", () => {
+    expect(
+      calculateProviderRunnerFeeVnd({
+        serviceVertical: "FOOD",
+        fulfillmentMode: "PROVIDER_SELF_DELIVERY",
+        runnerPayableVnd: 15_000,
+      }),
+    ).toBe(0);
+    expect(
+      calculateProviderRunnerFeeVnd({
+        serviceVertical: "FOOD",
+        fulfillmentMode: "CUSTOMER_PICKUP",
+        runnerPayableVnd: 15_000,
+      }),
+    ).toBe(0);
   });
 
   it("laundry return uses zone rate", () => {

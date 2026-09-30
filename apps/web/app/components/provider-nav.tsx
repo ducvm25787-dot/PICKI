@@ -186,7 +186,16 @@ export function ProviderNav() {
   const foodBreakfast = isFoodBreakfastVertical(providerType);
   const contactLiveOnly = isContactLiveOnlyShop(providerType);
   const hideQueueTabs = isEducationVertical(providerType) || isSportsVertical(providerType);
-  const visibleTabs = tabs.filter((tab) => {
+  const foodShop = isFoodBreakfastVertical(providerType);
+  const visibleTabs = foodShop
+    ? [
+        { href: "/provider/board", label: "Hôm nay", Icon: IconLive, exact: false },
+        { href: "/provider", label: "Đơn", Icon: IconClipboard, exact: true },
+        { href: "/provider/products", label: "Sản phẩm", Icon: IconOrders, exact: false },
+        { href: "/provider/selling", label: "Cách bán", Icon: IconDinner, exact: false },
+        { href: "/provider/settings", label: "Gian hàng", Icon: IconSettings, exact: false },
+      ]
+    : tabs.filter((tab) => {
     if (contactLiveOnly) {
       return (
         tab.href === "/provider/live" ||

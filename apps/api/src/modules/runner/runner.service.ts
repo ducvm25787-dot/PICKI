@@ -150,6 +150,7 @@ export class RunnerService {
         serviceDate: o.serviceDate ?? null,
         subtotalVnd: o.subtotalVnd,
         deliveryFeeVnd: o.deliveryFeeVnd,
+        runnerPayableVnd: o.runnerPayable,
         totalVnd: o.totalVnd,
         assignedToMe: o.runnerUserId === userId,
         estimatedReadyAt: o.estimatedReadyAt?.toISOString() ?? null,
@@ -206,6 +207,7 @@ export class RunnerService {
           status: o.status,
           serviceVertical: o.serviceVertical,
           deliveryFeeVnd: o.deliveryFeeVnd,
+          runnerPayableVnd: o.runnerPayable,
           totalVnd: o.totalVnd,
           completedAt: o.updatedAt.toISOString(),
           delivery: {

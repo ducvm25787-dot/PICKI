@@ -108,6 +108,7 @@ export default function HomePage() {
   const [exploreLoading, setExploreLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [favoriteError, setFavoriteError] = useState<string | null>(null);
   const [contextNow, setContextNow] = useState<ContextNowContent>(() => contextNowFor());
 
   useEffect(() => {
@@ -221,19 +222,24 @@ export default function HomePage() {
   }, [router, loadFavorites, loadExplore]);
 
   async function toggleFavorite(locationId: string) {
-    if (favoriteIds.has(locationId)) {
-      await api(`/me/favorites/${locationId}`, { method: "DELETE" });
-      setFavoriteIds((prev) => {
-        const next = new Set(prev);
-        next.delete(locationId);
-        return next;
-      });
-    } else {
-      await api("/me/favorites", {
-        method: "POST",
-        body: JSON.stringify({ locationId }),
-      });
-      setFavoriteIds((prev) => new Set(prev).add(locationId));
+    try {
+      if (favoriteIds.has(locationId)) {
+        await api(`/me/favorites/${locationId}`, { method: "DELETE" });
+        setFavoriteIds((prev) => {
+          const next = new Set(prev);
+          next.delete(locationId);
+          return next;
+        });
+      } else {
+        await api("/me/favorites", {
+          method: "POST",
+          body: JSON.stringify({ locationId }),
+        });
+        setFavoriteIds((prev) => new Set(prev).add(locationId));
+      }
+      setFavoriteError(null);
+    } catch (e) {
+      setFavoriteError(e instanceof Error ? e.message : "Không lưu được yêu thích");
     }
   }
 
@@ -305,12 +311,66 @@ export default function HomePage() {
       </section>
     ) : null;
 
+  const utilitiesBlock = (
+    <section className="home-utilities" aria-label="Tiện ích quanh tôi">
+      <p className="section-title" style={{ marginBottom: 12 }}>
+        Tiện ích quanh tôi
+      </p>
+      <div className="utility-grid utility-grid--compact">
+        {primaryCats.map((cat) => (
+          <Link
+            key={cat.id}
+            href={`/zones/${KVL_SLUG}/browse/${cat.id}`}
+            className="utility-tile"
+          >
+            <span className="utility-tile-emoji" aria-hidden>
+              {cat.emoji}
+            </span>
+            <span className="utility-tile-label">{cat.shortLabel}</span>
+          </Link>
+        ))}
+        <button
+          type="button"
+          className="utility-tile"
+          onClick={() => setCategoriesOpen((v) => !v)}
+          aria-expanded={categoriesOpen}
+        >
+          <span className="utility-tile-emoji" aria-hidden>
+            ▦
+          </span>
+          <span className="utility-tile-label">{categoriesOpen ? "Thu gọn" : "Tất cả"}</span>
+        </button>
+      </div>
+      {categoriesOpen ? (
+        <div className="utility-grid" style={{ marginTop: 10 }}>
+          {secondaryCats.map((cat) => (
+            <Link
+              key={cat.id}
+              href={`/zones/${KVL_SLUG}/browse/${cat.id}`}
+              className="utility-tile"
+            >
+              <span className="utility-tile-emoji" aria-hidden>
+                {cat.emoji}
+              </span>
+              <span className="utility-tile-label">{cat.shortLabel}</span>
+            </Link>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+
   return (
     <div className="container">
       <div className="header-row">
         <BrandMark subtitle="Tiện ích quanh tôi" />
         <NotificationBell audience="customer" />
       </div>
+      {favoriteError ? (
+        <p className="stat" style={{ color: "#b91c1c", margin: "0 0 12px" }}>
+          {favoriteError}
+        </p>
+      ) : null}
 
       {!joinedKvl ? (
         <>
@@ -352,7 +412,7 @@ export default function HomePage() {
             <span className="home-hero-cta">{contextNow.cta}</span>
           </Link>
 
-          {experienceBlock}
+          {utilitiesBlock}
 
           {spotlight ? (
             <Link href={spotlight.href} className="card spotlight-card">
@@ -463,52 +523,7 @@ export default function HomePage() {
             )}
           </section>
 
-          <section className="home-utilities" aria-label="Tiện ích quanh tôi">
-            <p className="section-title" style={{ marginBottom: 12 }}>
-              Tiện ích quanh tôi
-            </p>
-            <div className="utility-grid utility-grid--compact">
-              {primaryCats.map((cat) => (
-                <Link
-                  key={cat.id}
-                  href={`/zones/${KVL_SLUG}/browse/${cat.id}`}
-                  className="utility-tile"
-                >
-                  <span className="utility-tile-emoji" aria-hidden>
-                    {cat.emoji}
-                  </span>
-                  <span className="utility-tile-label">{cat.shortLabel}</span>
-                </Link>
-              ))}
-              <button
-                type="button"
-                className="utility-tile"
-                onClick={() => setCategoriesOpen((v) => !v)}
-                aria-expanded={categoriesOpen}
-              >
-                <span className="utility-tile-emoji" aria-hidden>
-                  ▦
-                </span>
-                <span className="utility-tile-label">{categoriesOpen ? "Thu gọn" : "Tất cả"}</span>
-              </button>
-            </div>
-            {categoriesOpen ? (
-              <div className="utility-grid" style={{ marginTop: 10 }}>
-                {secondaryCats.map((cat) => (
-                  <Link
-                    key={cat.id}
-                    href={`/zones/${KVL_SLUG}/browse/${cat.id}`}
-                    className="utility-tile"
-                  >
-                    <span className="utility-tile-emoji" aria-hidden>
-                      {cat.emoji}
-                    </span>
-                    <span className="utility-tile-label">{cat.shortLabel}</span>
-                  </Link>
-                ))}
-              </div>
-            ) : null}
-          </section>
+          {experienceBlock}
 
           <section aria-label="Khám phá quanh tôi">
             <p className="section-title" style={{ margin: "8px 0 12px" }}>

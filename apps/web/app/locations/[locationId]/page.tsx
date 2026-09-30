@@ -39,6 +39,7 @@ import {
   isMarketVertical,
   isTransportVertical,
   isSportsVertical,
+  isFoodBreakfastVertical,
   isLaundryVertical,
   laundryPriceUnit,
   liveStatusClass,
@@ -81,6 +82,19 @@ type MenuResponse = {
     paymentPolicy?: string | null;
     estimatedDays?: number | null;
     pricingKind?: string | null;
+    imageUrl?: string | null;
+    unit?: string | null;
+    prepTimeMinutes?: number | null;
+    categoryName?: string | null;
+    todayStatus?: "UNSET" | "AVAILABLE" | "SOLD_OUT";
+    todayRemaining?: number | null;
+    optionGroups?: {
+      id: string;
+      name: string;
+      selection: "SINGLE" | "MULTI";
+      required: boolean;
+      options: { id: string; name: string; priceDeltaVnd: number }[];
+    }[];
   }[];
   dailySpecials: {
     id: string;
@@ -108,6 +122,21 @@ type VisitIntent = {
 };
 
 const VISIT_ETA_PRESETS = [15, 30, 45, 60] as const;
+
+function groupMenu(items: MenuResponse["items"]) {
+  const order: string[] = [];
+  const buckets = new Map<string, MenuResponse["items"]>();
+  for (const item of items) {
+    const name = item.categoryName ?? "Khác";
+    const bucket = buckets.get(name);
+    if (bucket) bucket.push(item);
+    else {
+      order.push(name);
+      buckets.set(name, [item]);
+    }
+  }
+  return order.map((name) => ({ name, items: buckets.get(name) ?? [] }));
+}
 
 export default function LocationMenuPage() {
   const params = useParams<{ locationId: string }>();
@@ -224,7 +253,48 @@ export default function LocationMenuPage() {
     void load();
   }, [params.locationId, router, wantRepeat]);
 
-  function handleAdd(item: MenuResponse["items"][0]) {
+  const [optionItem, setOptionItem] = useState<MenuResponse["items"][0] | null>(null);
+  const [optionPicks, setOptionPicks] = useState<Record<string, string[]>>({});
+
+  function startAdd(item: MenuResponse["items"][0]) {
+    if (item.optionGroups && item.optionGroups.length > 0) {
+      const picks: Record<string, string[]> = {};
+      for (const group of item.optionGroups) {
+        if (group.selection === "SINGLE" && group.options[0]) picks[group.id] = [group.options[0].id];
+      }
+      setOptionPicks(picks);
+      setOptionItem(item);
+      return;
+    }
+    handleAdd(item);
+  }
+
+  function confirmOptions() {
+    if (!optionItem?.optionGroups) return;
+    const optionIds = optionItem.optionGroups.flatMap((group) => optionPicks[group.id] ?? []);
+    const missing = optionItem.optionGroups.some(
+      (group) => group.selection === "SINGLE" && (optionPicks[group.id] ?? []).length !== 1,
+    );
+    if (missing) {
+      setToast("Chọn đủ lựa chọn bắt buộc");
+      return;
+    }
+    const extra = optionItem.optionGroups
+      .flatMap((group) => group.options)
+      .filter((option) => optionIds.includes(option.id))
+      .reduce((sum, option) => sum + option.priceDeltaVnd, 0);
+    const labels = optionItem.optionGroups
+      .flatMap((group) => group.options)
+      .filter((option) => optionIds.includes(option.id))
+      .map((option) => option.name);
+    handleAdd(
+      { ...optionItem, name: labels.length ? `${optionItem.name} · ${labels.join(", ")}` : optionItem.name, amountVnd: optionItem.amountVnd + extra },
+      optionIds,
+    );
+    setOptionItem(null);
+  }
+
+  function handleAdd(item: MenuResponse["items"][0], optionIds?: string[]) {
     if (!menu || !zoneId) {
       setToast(isLaundryVertical(menu?.location.providerType) ? "Tham gia Zone trước khi đặt hàng" : "Tham gia Zone trước khi đặt món");
       return;
@@ -244,6 +314,7 @@ export default function LocationMenuPage() {
           fulfillmentMode: item.fulfillmentMode,
           estimatedDays: item.estimatedDays,
           pricingKind: item.pricingKind,
+          ...(optionIds?.length ? { optionIds } : {}),
         },
       );
       setCart(next);
@@ -362,6 +433,11 @@ export default function LocationMenuPage() {
 
   const { location, items, dailySpecials } = menu;
   const isLaundry = isLaundryVertical(location.providerType);
+  const isFood = isFoodBreakfastVertical(location.providerType);
+  const menuGroups =
+    isFood && items.some((item) => item.categoryName)
+      ? groupMenu(items)
+      : [{ name: null as string | null, items }];
   const isHomeService = isHomeServiceVertical(location.providerType);
   const isBeauty = isBeautyVertical(location.providerType);
   const isPet = isPetVertical(location.providerType);
@@ -756,6 +832,51 @@ export default function LocationMenuPage() {
             ? "Dịch vụ"
             : "Menu"}
         </p>
+        {optionItem?.optionGroups?.length ? (
+          <div className="card" style={{ marginBottom: 12 }}>
+            <p className="section-title">{optionItem.name}</p>
+            {optionItem.optionGroups.map((group) => (
+              <div key={group.id} style={{ marginBottom: 10 }}>
+                <p style={{ margin: "0 0 6px", fontWeight: 700 }}>
+                  {group.name}
+                  {group.selection === "SINGLE" ? " · chọn một" : " · thêm nếu muốn"}
+                </p>
+                {group.options.map((option) => {
+                  const selected = (optionPicks[group.id] ?? []).includes(option.id);
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={selected ? "btn" : "btn btn-secondary"}
+                      style={{ width: "100%", marginBottom: 6, textAlign: "left" }}
+                      onClick={() =>
+                        setOptionPicks((prev) => {
+                          const current = prev[group.id] ?? [];
+                          if (group.selection === "SINGLE") return { ...prev, [group.id]: [option.id] };
+                          const next = selected
+                            ? current.filter((id) => id !== option.id)
+                            : [...current, option.id];
+                          return { ...prev, [group.id]: next };
+                        })
+                      }
+                    >
+                      {option.name}
+                      {option.priceDeltaVnd > 0 ? ` · +${formatVnd(option.priceDeltaVnd)}` : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+            <div className="board-row">
+              <button type="button" className="btn" onClick={() => confirmOptions()}>
+                Thêm vào giỏ
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setOptionItem(null)}>
+                Đóng
+              </button>
+            </div>
+          </div>
+        ) : null}
         {items.length === 0 ? (
           <p className="stat">
             {isLaundry || isHomeService || isCustomerVisit || isEducation || isSports || isTransport
@@ -764,7 +885,14 @@ export default function LocationMenuPage() {
           </p>
         ) : (
           <div className="provider-list">
-            {items.map((item) => (
+            {menuGroups.map((group) => (
+              <div key={group.name ?? "all"}>
+                {group.name ? (
+                  <p className="section-title" style={{ margin: "12px 0 8px", fontSize: 15 }}>
+                    {group.name}
+                  </p>
+                ) : null}
+                {group.items.map((item) => (
               <article key={item.id} className="provider-card">
                 <div
                   style={{
@@ -785,6 +913,15 @@ export default function LocationMenuPage() {
                       <span className="badge" style={{ marginLeft: 6, fontSize: 11 }}>
                         {[item.educationSubject, item.educationGrade].filter(Boolean).join(" · ")}
                       </span>
+                    ) : null}
+                    {isFood && item.imageUrl ? (
+                      <img
+                        src={item.imageUrl}
+                        alt=""
+                        width={64}
+                        height={64}
+                        style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8, marginTop: 6 }}
+                      />
                     ) : null}
                     {item.description && (
                       <p className="stat" style={{ margin: "4px 0 0" }}>
@@ -841,7 +978,21 @@ export default function LocationMenuPage() {
                           : `Tham khảo từ ${formatVnd(item.amountVnd)} · Gọi chốt giờ`}
                       </p>
                     ) : (
-                      <strong>{formatVnd(item.amountVnd)}</strong>
+                      <>
+                        <strong>
+                          {formatVnd(item.amountVnd)}
+                          {isFood && item.unit ? ` / ${item.unit}` : ""}
+                        </strong>
+                        {isFood && item.prepTimeMinutes ? (
+                          <span className="stat"> · ~{item.prepTimeMinutes} phút</span>
+                        ) : null}
+                        {isFood && item.todayStatus === "SOLD_OUT" ? (
+                          <span className="stat"> · Hết hôm nay</span>
+                        ) : null}
+                        {isFood && item.todayStatus === "AVAILABLE" && item.todayRemaining != null ? (
+                          <span className="stat"> · Còn {item.todayRemaining}</span>
+                        ) : null}
+                      </>
                     )}
                   </div>
                   {isEducation ||
@@ -906,13 +1057,16 @@ export default function LocationMenuPage() {
                       type="button"
                       className="btn btn-secondary"
                       style={{ width: "auto", padding: "8px 12px", flexShrink: 0 }}
-                      onClick={() => handleAdd(item)}
+                      disabled={isFood && item.todayStatus === "SOLD_OUT"}
+                      onClick={() => startAdd(item)}
                     >
-                      + Thêm
+                      {isFood && item.todayStatus === "SOLD_OUT" ? "Hết hôm nay" : "+ Thêm"}
                     </button>
                   )}
                 </div>
               </article>
+                ))}
+              </div>
             ))}
           </div>
         )}

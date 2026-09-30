@@ -124,6 +124,7 @@ export default function CheckoutPage() {
             items: cart.items.map((i) => ({
               offeringId: i.offeringId,
               quantity: i.quantity,
+              ...(i.optionIds?.length ? { optionIds: i.optionIds } : {}),
             })),
           }),
         });
@@ -330,6 +331,7 @@ export default function CheckoutPage() {
           items: cart.items.map((i) => ({
             offeringId: i.offeringId,
             quantity: i.quantity,
+            ...(i.optionIds?.length ? { optionIds: i.optionIds } : {}),
           })),
         }),
       });

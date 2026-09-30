@@ -11,6 +11,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, updatedAt } from "./helpers.js";
+import { offerings } from "./catalog.js";
 import { providerLocations, providers } from "./providers.js";
 
 export const familyDinnerProviderSettings = pgTable("family_dinner_provider_settings", {
@@ -122,6 +123,8 @@ export const familyDinnerMenuItems = pgTable("family_dinner_menu_items", {
   status: text("status").notNull().default("ACTIVE"),
   /** Provider tick: khách được chọn Tự nấu (cùng giá). Chỉ MAIN/SIDE/VEGETABLE/SOUP. */
   allowsSelfCook: boolean("allows_self_cook").notNull().default(false),
+  /** Gắn catalog khi trùng tên trong cùng provider. Null = món chỉ có trên menu ngày. */
+  offeringId: uuid("offering_id").references(() => offerings.id, { onDelete: "set null" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

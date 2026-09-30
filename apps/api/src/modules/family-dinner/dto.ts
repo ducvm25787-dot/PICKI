@@ -27,6 +27,8 @@ export const publishFamilyDinnerMenuSchema = z.object({
         recipeVersionId: z.string().uuid().optional(),
         /** Provider tick — khách được chọn Tự nấu (cùng giá). */
         allowsSelfCook: z.boolean().optional(),
+        /** Món lấy từ catalog Sản phẩm. */
+        offeringId: z.string().uuid().optional(),
       }),
     )
     .min(5)

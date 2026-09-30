@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, ApiUnreachableError } from "../../lib/api";
+import { homePathForApp } from "../../lib/session-app";
 import { BrandMark } from "../components/brand-mark";
 
 export default function LoginPage() {
@@ -50,11 +51,11 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      await api("/auth/otp/verify", {
+      const session = await api<{ app?: string }>("/auth/otp/verify", {
         method: "POST",
         body: JSON.stringify({ phone, code, app: "customer" }),
       });
-      router.replace("/");
+      router.replace(homePathForApp(session.app, "/"));
     } catch (e) {
       setError(formatError(e));
     } finally {

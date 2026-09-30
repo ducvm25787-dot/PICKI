@@ -6,6 +6,7 @@ export type CartLine = {
   fulfillmentMode?: string | null;
   estimatedDays?: number | null;
   pricingKind?: string | null;
+  optionIds?: string[];
 };
 
 export type Cart = {
@@ -17,6 +18,10 @@ export type Cart = {
 };
 
 const CART_KEY = "picki_cart";
+
+function optionKey(offeringId: string, optionIds?: string[]) {
+  return `${offeringId}:${[...(optionIds ?? [])].sort().join(",")}`;
+}
 
 export function readCart(): Cart | null {
   if (typeof window === "undefined") return null;
@@ -63,7 +68,8 @@ export function addToCart(
     throw new Error("MIXED_FULFILLMENT");
   }
 
-  const idx = cart.items.findIndex((i) => i.offeringId === line.offeringId);
+  const incomingKey = optionKey(line.offeringId, line.optionIds);
+  const idx = cart.items.findIndex((i) => optionKey(i.offeringId, i.optionIds) === incomingKey);
   if (idx >= 0) {
     cart.items[idx] = {
       ...cart.items[idx]!,

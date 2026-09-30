@@ -42,6 +42,7 @@ type OpsResponse = {
     status: string;
     remainingCapacity: number | null;
     allowsSelfCook?: boolean;
+    offeringId?: string | null;
   }[];
   windows: {
     id: string;
@@ -79,10 +80,51 @@ type LateOffer = {
   items?: { name: string; category: string }[];
 };
 
-type DraftDish = { name: string; priceVnd: number; allowsSelfCook: boolean };
+type DraftDish = {
+  name: string;
+  priceVnd: number;
+  allowsSelfCook: boolean;
+  offeringId: string | null;
+};
+
+type CatalogProduct = {
+  id: string;
+  name: string;
+  priceVnd: number;
+  categoryName: string | null;
+  active: boolean;
+};
+
+const PRODUCT_GROUP: Record<string, FdRequiredCategory> = {
+  "Món chính": "MAIN",
+  "Món phụ": "SIDE",
+  Rau: "VEGETABLE",
+  Canh: "SOUP",
+  Cơm: "RICE",
+};
 type TabId = "menu" | "plan" | "production" | "late";
 
 const CATS = Object.keys(FD_SUGGESTIONS) as FdRequiredCategory[];
+
+function CatalogWaiting({
+  products,
+  drafts,
+}: {
+  products: CatalogProduct[];
+  drafts: Record<FdRequiredCategory, DraftDish[]>;
+}) {
+  const usedNames = new Set(
+    CATS.flatMap((cat) => drafts[cat].map((row) => row.name.trim())).filter(Boolean),
+  );
+  const waiting = products.filter((product) => !usedNames.has(product.name));
+  if (waiting.length === 0) return null;
+  return (
+    <p className="muted" style={{ fontSize: 13 }}>
+      Sản phẩm chưa có trên menu: {waiting.map((product) => product.name).join(", ")}. Bấm «Sửa
+      menu» rồi chọn món ở nhóm tương ứng.
+    </p>
+  );
+}
 
 function formatVnd(n: number) {
   return new Intl.NumberFormat("vi-VN").format(n) + "đ";
@@ -90,7 +132,7 @@ function formatVnd(n: number) {
 
 function padDrafts(cat: FdRequiredCategory, rows: DraftDish[]): DraftDish[] {
   if (rows.length === 0) {
-    return [{ name: "", priceVnd: FD_DEFAULT_PRICE[cat], allowsSelfCook: false }];
+    return [{ name: "", priceVnd: FD_DEFAULT_PRICE[cat], allowsSelfCook: false, offeringId: null }];
   }
   return rows.slice(0, FD_MAX_SLOTS[cat]);
 }
@@ -146,6 +188,7 @@ export default function ProviderFamilyDinnerPage() {
   const [lateEta, setLateEta] = useState("25");
   const [selectedLateItems, setSelectedLateItems] = useState<string[]>([]);
   const [copiedBannerDismissed, setCopiedBannerDismissed] = useState(false);
+  const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([]);
 
   const isHomeCook = isHomeCookVertical(activeLocation?.providerType);
   const serviceDate = ops?.serviceDate ?? "";
@@ -270,6 +313,7 @@ export default function ProviderFamilyDinnerPage() {
               name: r.name,
               priceVnd: r.priceVnd,
               allowsSelfCook: Boolean(r.allowsSelfCook),
+              offeringId: r.offeringId ?? null,
             }));
           next[cat] = padDrafts(cat, rows);
         }
@@ -288,6 +332,11 @@ export default function ProviderFamilyDinnerPage() {
         `/provider/locations/${locationId}/family-dinner/late-offers?serviceDate=${opsRes.serviceDate}`,
       ).catch(() => ({ offers: [] as LateOffer[] }));
       setLateOffers(lateRes.offers);
+
+      const productRes = await api<{ products: CatalogProduct[] }>(
+        `/provider/locations/${locationId}/products`,
+      ).catch(() => ({ products: [] as CatalogProduct[] }));
+      setCatalogProducts(productRes.products.filter((product) => product.active));
 
       setSelectedLateItems((prev) => {
         if (prev.length > 0) return prev;
@@ -418,6 +467,7 @@ export default function ProviderFamilyDinnerPage() {
       priceVnd: number;
       sortOrder: number;
       allowsSelfCook?: boolean;
+      offeringId?: string;
     }[] = [];
     for (const cat of CATS) {
       drafts[cat].forEach((d, idx) => {
@@ -429,6 +479,7 @@ export default function ProviderFamilyDinnerPage() {
           priceVnd: d.priceVnd || FD_DEFAULT_PRICE[cat],
           sortOrder: idx,
           allowsSelfCook: fdAllowsSelfCookCategory(cat) ? d.allowsSelfCook : false,
+          ...(d.offeringId ? { offeringId: d.offeringId } : {}),
         });
       });
     }
@@ -606,6 +657,7 @@ export default function ProviderFamilyDinnerPage() {
           name: string;
           priceVnd: number;
           allowsSelfCook?: boolean;
+          offeringId?: string | null;
         }[];
       }>(`/provider/locations/${locationId}/family-dinner/copy-last-menu`, {
         method: "POST",
@@ -619,6 +671,7 @@ export default function ProviderFamilyDinnerPage() {
             name: r.name,
             priceVnd: r.priceVnd,
             allowsSelfCook: Boolean(r.allowsSelfCook),
+            offeringId: r.offeringId ?? null,
           }));
         next[cat] = padDrafts(cat, rows);
       }
@@ -649,7 +702,7 @@ export default function ProviderFamilyDinnerPage() {
       ...prev,
       [cat]: [
         ...prev[cat],
-        { name: "", priceVnd: FD_DEFAULT_PRICE[cat], allowsSelfCook: false },
+        { name: "", priceVnd: FD_DEFAULT_PRICE[cat], allowsSelfCook: false, offeringId: null },
       ],
     }));
   }
@@ -660,11 +713,32 @@ export default function ProviderFamilyDinnerPage() {
       if (rows.length === 0) {
         return {
           ...prev,
-          [cat]: [{ name: "", priceVnd: FD_DEFAULT_PRICE[cat], allowsSelfCook: false }],
+          [cat]: [{ name: "", priceVnd: FD_DEFAULT_PRICE[cat], allowsSelfCook: false, offeringId: null }],
         };
       }
       return { ...prev, [cat]: rows };
     });
+  }
+
+  function addCatalogDish(cat: FdRequiredCategory, product: CatalogProduct) {
+    const dish: DraftDish = {
+      name: product.name,
+      priceVnd: product.priceVnd,
+      allowsSelfCook: false,
+      offeringId: product.id,
+    };
+    setDrafts((prev) => {
+      const rows = [...prev[cat]];
+      const emptyIdx = rows.findIndex((r) => !r.name.trim());
+      if (emptyIdx >= 0) {
+        rows[emptyIdx] = { ...rows[emptyIdx]!, ...dish };
+        return { ...prev, [cat]: rows };
+      }
+      if (rows.length >= FD_MAX_SLOTS[cat]) return prev;
+      return { ...prev, [cat]: [...rows, dish] };
+    });
+    setSectionLocked((prev) => ({ ...prev, [cat]: false }));
+    setError(null);
   }
 
   function fillEmptySlotFromSuggestion(cat: FdRequiredCategory, name: string) {
@@ -672,13 +746,16 @@ export default function ProviderFamilyDinnerPage() {
       const rows = [...prev[cat]];
       const emptyIdx = rows.findIndex((r) => !r.name.trim());
       if (emptyIdx >= 0) {
-        rows[emptyIdx] = { ...rows[emptyIdx]!, name };
+        rows[emptyIdx] = { ...rows[emptyIdx]!, name, offeringId: null };
         return { ...prev, [cat]: rows };
       }
       if (rows.length < FD_MAX_SLOTS[cat]) {
         return {
           ...prev,
-          [cat]: [...rows, { name, priceVnd: FD_DEFAULT_PRICE[cat], allowsSelfCook: false }],
+          [cat]: [
+            ...rows,
+            { name, priceVnd: FD_DEFAULT_PRICE[cat], allowsSelfCook: false, offeringId: null },
+          ],
         };
       }
       return prev;
@@ -906,9 +983,22 @@ export default function ProviderFamilyDinnerPage() {
                   : "Menu đã khóa — không sửa thêm trong ngày."}
             </p>
 
+            {!menuEditing ? (
+              <CatalogWaiting products={catalogProducts} drafts={drafts} />
+            ) : null}
+
             {CATS.map((cat) => {
               const fieldsLocked = !menuEditing || sectionLocked[cat] || showConfirm;
               const usedNames = new Set(drafts[cat].map((d) => d.name.trim()).filter(Boolean));
+              const usedOfferingIds = new Set(
+                drafts[cat].map((d) => d.offeringId).filter((id): id is string => Boolean(id)),
+              );
+              const fromCatalog = catalogProducts.filter((product) => {
+                if (usedNames.has(product.name) || usedOfferingIds.has(product.id)) return false;
+                const group = product.categoryName ? PRODUCT_GROUP[product.categoryName] : undefined;
+                if (group) return group === cat;
+                return cat === "MAIN" && !product.categoryName;
+              });
               const unusedSuggestions = FD_SUGGESTIONS[cat].filter((s) => !usedNames.has(s));
               return (
                 <div
@@ -942,7 +1032,9 @@ export default function ProviderFamilyDinnerPage() {
                           placeholder={`Tên ${FD_CATEGORY_LABEL[cat].toLowerCase()}`}
                           value={row.name}
                           disabled={fieldsLocked}
-                          onChange={(e) => updateDraft(cat, idx, { name: e.target.value })}
+                          onChange={(e) =>
+                            updateDraft(cat, idx, { name: e.target.value, offeringId: null })
+                          }
                         />
                         {!fieldsLocked ? (
                           <button
@@ -1001,6 +1093,27 @@ export default function ProviderFamilyDinnerPage() {
                       ) : null}
                     </div>
                   ))}
+                  {menuEditing && !showConfirm && fromCatalog.length > 0 ? (
+                    <div style={{ marginBottom: 12 }}>
+                      <p className="muted" style={{ fontSize: 12, margin: "0 0 6px" }}>
+                        Từ sản phẩm:
+                      </p>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {fromCatalog.map((product) => (
+                          <button
+                            key={product.id}
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ width: "auto", padding: "4px 8px", fontSize: 12 }}
+                            onClick={() => addCatalogDish(cat, product)}
+                          >
+                            {product.name}
+                            {product.categoryName ? "" : " · chưa chọn nhóm"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   {menuEditing && !showConfirm ? (
                     <>
                       {!sectionLocked[cat] ? (

@@ -1,4 +1,4 @@
-import { doublePrecision, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { createdAt, updatedAt } from "./helpers.js";
 import { zones } from "./zones.js";
 
@@ -7,6 +7,8 @@ export const providers = pgTable("providers", {
   slug: text("slug").notNull().unique(),
   brandName: text("brand_name").notNull(),
   providerType: text("provider_type").notNull(),
+  /** FOOD_SERVICE | FRESH_MARKET | RETAIL_STORE. Null = vertical không thuộc commerce này. */
+  commerceModel: text("commerce_model"),
   status: text("status").notNull().default("DRAFT"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -68,3 +70,19 @@ export const providerLiveStatus = pgTable("provider_live_status", {
   estimatedWaitMinutes: integer("estimated_wait_minutes"),
   updatedAt: updatedAt(),
 });
+
+/** Một quán, nhiều cách bán. Không suy ra từ provider_type. */
+export const providerCapabilities = pgTable(
+  "provider_capabilities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: uuid("provider_id")
+      .notNull()
+      .references(() => providers.id, { onDelete: "cascade" }),
+    capability: text("capability").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [unique("provider_capabilities_provider_capability_uidx").on(t.providerId, t.capability)],
+);

@@ -1,4 +1,4 @@
-import { doublePrecision, integer, pgTable, text, timestamp, uuid, date } from "drizzle-orm/pg-core";
+import { doublePrecision, integer, jsonb, pgTable, text, timestamp, uuid, date } from "drizzle-orm/pg-core";
 import { createdAt, updatedAt } from "./helpers.js";
 import { addresses } from "./addresses.js";
 import { offerings } from "./catalog.js";
@@ -39,7 +39,19 @@ export const orders = pgTable("orders", {
   laundryPickupMode: text("laundry_pickup_mode"),
   paymentMode: text("payment_mode").notNull().default("COD"),
   subtotalVnd: integer("subtotal_vnd").notNull(),
+  /** Compatibility mirror of customer_delivery_fee. Not runner payout. */
   deliveryFeeVnd: integer("delivery_fee_vnd").notNull().default(0),
+  fulfillmentMode: text("fulfillment_mode").notNull().default("PICKEE_RUNNER"),
+  deliveryFeeBase: integer("delivery_fee_base").notNull().default(0),
+  customerDeliveryFee: integer("customer_delivery_fee").notNull().default(0),
+  providerDeliverySubsidy: integer("provider_delivery_subsidy").notNull().default(0),
+  pickeeDeliverySubsidy: integer("pickee_delivery_subsidy").notNull().default(0),
+  runnerPayable: integer("runner_payable").notNull().default(0),
+  providerDeliveryEarning: integer("provider_delivery_earning").notNull().default(0),
+  runnerSearchCancelledAt: timestamp("runner_search_cancelled_at", {
+    withTimezone: true,
+    mode: "date",
+  }),
   totalVnd: integer("total_vnd").notNull(),
   deliveryAddressId: uuid("delivery_address_id").references(() => addresses.id, {
     onDelete: "set null",
@@ -94,6 +106,9 @@ export const orderItems = pgTable("order_items", {
   quantity: integer("quantity").notNull(),
   lineTotalVnd: integer("line_total_vnd").notNull(),
   estimatedDays: integer("estimated_days"),
+  optionSnapshot: jsonb("option_snapshot").$type<
+    { optionId: string; groupName: string; name: string; priceDeltaVnd: number }[]
+  >(),
   createdAt: createdAt(),
 });
 

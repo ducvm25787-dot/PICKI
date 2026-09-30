@@ -478,6 +478,20 @@ body {
   line-height: 1;
 }
 
+.board-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.board-row .btn {
+  width: auto;
+  padding: 8px 12px;
+  font-size: 14px;
+  box-shadow: none;
+}
+
 .runner-install-hint {
   background: #eff6ff;
   border-bottom-color: #bfdbfe;

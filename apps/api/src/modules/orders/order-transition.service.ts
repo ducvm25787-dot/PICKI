@@ -7,6 +7,9 @@ import {
   orders,
   orderStatusHistory,
   upsertRelationshipFromOrders,
+  confirmOfferingStock,
+  releaseOfferingStock,
+  STOCK_RELEASE_STATUSES,
   type PickiDb,
   type PickiSql,
   type LaundryPickupMode,
@@ -47,6 +50,7 @@ export class OrderTransitionService {
         order.serviceVertical as ServiceVertical,
         order.laundryPickupMode as LaundryPickupMode | null,
         order.orderKind,
+        order.fulfillmentMode,
       )
     ) {
       throw new PickiError("FORBIDDEN", `Cannot transition ${order.status} → ${toStatus}`);
@@ -75,6 +79,7 @@ export class OrderTransitionService {
         order.serviceVertical as ServiceVertical,
         order.laundryPickupMode as LaundryPickupMode | null,
         order.orderKind,
+        order.fulfillmentMode,
       )
     ) {
       throw new PickiError("FORBIDDEN", `Cannot transition ${order.status} → ${toStatus}`);
@@ -120,6 +125,13 @@ export class OrderTransitionService {
       });
 
       await this.outbox.enqueueOrderStatusChanged(tx, updated, order.status, toStatus, actorUserId);
+
+      if (toStatus === "PROVIDER_ACCEPTED") {
+        await confirmOfferingStock(tx, orderId);
+      }
+      if (STOCK_RELEASE_STATUSES.has(toStatus)) {
+        await releaseOfferingStock(tx, orderId);
+      }
 
       const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
       return { order: updated, items };

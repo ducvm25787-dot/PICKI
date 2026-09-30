@@ -401,6 +401,8 @@ export class NotificationService implements OnModuleInit {
     leg?: "INBOUND" | "RETURN";
     wave?: number;
     runnerUserIds?: string[];
+    runnerPayableVnd?: number;
+    /** Older outbox rows stored the runner amount under this key. Not the order column. */
     deliveryFeeVnd?: number;
     actorUserId?: string | null;
   }): Promise<void> {
@@ -410,17 +412,16 @@ export class NotificationService implements OnModuleInit {
       return;
     }
 
+    const runnerPayableVnd = payload.runnerPayableVnd ?? payload.deliveryFeeVnd ?? 0;
     const feePart =
-      payload.deliveryFeeVnd && payload.deliveryFeeVnd > 0
-        ? ` Phí giao: ${payload.deliveryFeeVnd.toLocaleString("vi-VN")}đ.`
-        : "";
+      runnerPayableVnd > 0 ? ` Quán trả runner: ${runnerPayableVnd.toLocaleString("vi-VN")}đ.` : "";
 
     const basePayload = {
       orderId: payload.orderId,
       orderNumber: payload.orderNumber,
       wave: payload.wave ?? 1,
       leg: payload.leg ?? "INBOUND",
-      deliveryFeeVnd: payload.deliveryFeeVnd ?? 0,
+      runnerPayableVnd,
     };
 
     await this.deliver(runnerRecipients, {

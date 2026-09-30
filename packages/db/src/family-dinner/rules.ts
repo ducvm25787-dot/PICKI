@@ -83,10 +83,22 @@ export function isFamilyDinnerCategory(value: string): value is FamilyDinnerCate
   return value in FAMILY_DINNER_CATEGORY_LIMITS;
 }
 
-/** Base meal: ≥1 item in each required category (by line presence, qty≥1). */
+const FAMILY_DINNER_MEAL_CATEGORIES: FamilyDinnerCategory[] = [
+  "MAIN",
+  "SIDE",
+  "VEGETABLE",
+  "SOUP",
+  "RICE",
+];
+
+/**
+ * Customer tray: every course can be skipped.
+ * Checkout needs at least one dish among chính, phụ, rau, canh, or cơm.
+ * `missing` lists the four classic groups that were skipped, for a hint only.
+ */
 export function validateFamilyDinnerBaseMeal(
   lines: { category: string; quantity: number }[],
-): { ok: true } | { ok: false; missing: FamilyDinnerCategory[] } {
+): { ok: true; missing: FamilyDinnerCategory[] } | { ok: false; missing: FamilyDinnerCategory[] } {
   const present = new Set<FamilyDinnerCategory>();
   for (const line of lines) {
     if (line.quantity < 1) continue;
@@ -95,8 +107,9 @@ export function validateFamilyDinnerBaseMeal(
     }
   }
   const missing = FAMILY_DINNER_REQUIRED_CATEGORIES.filter((c) => !present.has(c));
-  if (missing.length > 0) return { ok: false, missing };
-  return { ok: true };
+  const hasMeal = FAMILY_DINNER_MEAL_CATEGORIES.some((c) => present.has(c));
+  if (!hasMeal) return { ok: false, missing };
+  return { ok: true, missing };
 }
 
 /** Menu ngày bếp: đủ nhóm bắt buộc kể cả Cơm. */

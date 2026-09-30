@@ -42,9 +42,17 @@ export function familiarityWeights(): FamiliarityWeights {
   };
 }
 
+/** postgres.js returns timestamptz aggregates (MAX) as strings, not Date. */
+export function asInteractionDate(value: Date | string | null | undefined): Date | null {
+  if (value == null || value === "") return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export function computeRelationshipScore(input: {
   completedInteractions: number;
-  lastInteractionAt: Date | null;
+  lastInteractionAt: Date | string | null;
   favorite: boolean;
   now?: Date;
   weights?: FamiliarityWeights;
@@ -55,10 +63,10 @@ export function computeRelationshipScore(input: {
   if (completed >= 2) score += w.repeatBonus;
   if (input.favorite) score += w.favorite;
 
-  if (input.lastInteractionAt) {
+  const lastAt = asInteractionDate(input.lastInteractionAt);
+  if (lastAt) {
     const now = input.now ?? new Date();
-    const days =
-      (now.getTime() - input.lastInteractionAt.getTime()) / (1000 * 60 * 60 * 24);
+    const days = (now.getTime() - lastAt.getTime()) / (1000 * 60 * 60 * 24);
     const half = Math.max(1, w.recencyHalfLifeDays);
     const decay = Math.pow(0.5, Math.max(0, days) / half);
     score += Math.round(w.recencyMax * decay);

@@ -805,9 +805,7 @@ export default function ProviderOrdersPage() {
                     <>
                       <span className="live-pill live-open" style={{ margin: 0 }}>
                         Đang chờ runner
-                        {(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0) > 0
-                          ? ` · ${formatVnd(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0)}`
-                          : ""}
+                        {(o.runnerFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? 0)}` : ""}
                       </span>
                       <button
                         type="button"
@@ -864,7 +862,7 @@ export default function ProviderOrdersPage() {
                           ? "…"
                           : cookFirst
                             ? "Nhận đơn"
-                            : `Nhận đơn & tìm runner${(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0)}` : ""}`}
+                            : `Nhận đơn & tìm runner${(o.runnerFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? 0)}` : ""}`}
                       </button>
                       <button
                         type="button"
@@ -890,7 +888,7 @@ export default function ProviderOrdersPage() {
                     >
                       {busy
                         ? "…"
-                        : `Tìm runner${(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0)}` : ""}`}
+                        : `Tìm runner${(o.runnerFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? 0)}` : ""}`}
                     </button>
                   ) : null}
                   {cookFirst &&
@@ -963,6 +961,15 @@ export default function ProviderOrdersPage() {
                       >
                         Gửi lại runner
                       </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ width: "auto", padding: "8px 12px" }}
+                        disabled={busy}
+                        onClick={() => void action(o.id, "cancel_find_runner")}
+                      >
+                        {busy ? "…" : "Hủy tìm runner"}
+                      </button>
                     </>
                   ) : null}
                   {o.serviceVertical !== "LAUNDRY" && !cookFirst && o.status === "RUNNER_ASSIGNED" ? (
@@ -998,7 +1005,7 @@ export default function ProviderOrdersPage() {
                       >
                         {busy
                           ? "…"
-                          : `Tìm runner${(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? o.deliveryFeeVnd ?? 0)}` : ""}`}
+                          : `Tìm runner${(o.runnerFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? 0)}` : ""}`}
                       </button>
                       <button
                         type="button"
@@ -1008,6 +1015,15 @@ export default function ProviderOrdersPage() {
                         onClick={() => void action(o.id, "staff_deliver")}
                       >
                         {busy ? "…" : "Tự giao"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ width: "auto", padding: "8px 12px" }}
+                        disabled={busy}
+                        onClick={() => void action(o.id, "customer_pickup")}
+                      >
+                        {busy ? "…" : "Khách lấy tại quán"}
                       </button>
                     </>
                   ) : null}
@@ -1024,6 +1040,15 @@ export default function ProviderOrdersPage() {
                         onClick={() => void action(o.id, "find_runner")}
                       >
                         Gửi lại runner
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ width: "auto", padding: "8px 12px" }}
+                        disabled={busy}
+                        onClick={() => void action(o.id, "cancel_find_runner")}
+                      >
+                        {busy ? "…" : "Hủy tìm runner"}
                       </button>
                       <button
                         type="button"

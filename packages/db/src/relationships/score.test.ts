@@ -24,6 +24,26 @@ describe("familiarity score", () => {
     ).toBe(true);
   });
 
+  it("accepts last-order time as a string from SQL aggregates", () => {
+    const { status, score } = computeRelationshipScore({
+      completedInteractions: 2,
+      lastInteractionAt: "2026-09-17T09:58:42.638Z",
+      favorite: true,
+      now: new Date("2026-09-28T03:00:00.000Z"),
+      weights: {
+        completed: 10,
+        repeatBonus: 20,
+        recencyMax: 30,
+        recencyHalfLifeDays: 30,
+        favorite: 25,
+        regularThreshold: 5,
+        vipThreshold: 15,
+      },
+    });
+    expect(status).toBe("RETURNING");
+    expect(score).toBeGreaterThan(25);
+  });
+
   it("marks VIP at threshold", () => {
     const { status } = computeRelationshipScore({
       completedInteractions: 15,

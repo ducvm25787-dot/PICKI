@@ -13,6 +13,16 @@ export type LocationMenuRow = {
   education_grade: string | null;
   payment_policy: string | null;
   estimated_days: number | null;
+  image_url: string | null;
+  unit: string | null;
+  prep_time_minutes: number | null;
+  category_id: string | null;
+  category_name: string | null;
+  day_status: string | null;
+  available_qty: number | null;
+  reserved_qty: number | null;
+  sold_qty: number | null;
+  price_override_vnd: number | null;
 };
 
 export type LocationHeaderRow = {
@@ -88,7 +98,17 @@ export async function listLocationMenu(
       o.education_subject,
       o.education_grade,
       o.payment_policy,
-      o.estimated_days
+      o.estimated_days,
+      o.image_url,
+      o.unit,
+      o.prep_time_minutes,
+      o.category_id,
+      cat.name AS category_name,
+      day.status AS day_status,
+      day.available_qty,
+      day.reserved_qty,
+      day.sold_qty,
+      day.price_override_vnd
     FROM offerings o
     INNER JOIN provider_locations pl ON pl.provider_id = o.provider_id
     LEFT JOIN offering_prices loc_price
@@ -97,6 +117,10 @@ export async function listLocationMenu(
     LEFT JOIN offering_prices master_price
       ON master_price.offering_id = o.id
       AND master_price.provider_location_id IS NULL
+    LEFT JOIN product_categories cat ON cat.id = o.category_id
+    LEFT JOIN product_daily_availability day
+      ON day.offering_id = o.id
+      AND day.service_date = (timezone('Asia/Ho_Chi_Minh', now()))::date
     WHERE pl.id = ${locationId}::uuid
       AND o.status = 'ACTIVE'
       AND (loc_price.id IS NOT NULL OR master_price.id IS NOT NULL)

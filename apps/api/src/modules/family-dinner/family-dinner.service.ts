@@ -15,6 +15,7 @@ import {
   lateDinnerOffers,
   lateOfferMaxCapacity,
   orderItems,
+  offerings,
   orders,
   providerLocations,
   providerMembers,
@@ -198,6 +199,7 @@ export class FamilyDinnerService {
         status: i.status,
         allowsSelfCook:
           i.allowsSelfCook && isFamilyDinnerSelfCookCategory(i.category),
+        offeringId: i.offeringId,
         available:
           i.status === "ACTIVE" &&
           (i.remainingCapacity == null || i.remainingCapacity > 0),
@@ -219,8 +221,12 @@ export class FamilyDinnerService {
     locationId: string,
     input: z.infer<typeof publishFamilyDinnerMenuSchema>,
   ) {
-    await this.assertProviderStaff(userId, locationId);
+    const providerId = await this.assertProviderStaff(userId, locationId);
     this.assertCategoryQuotas(input.items);
+    await this.assertMenuOfferings(
+      providerId,
+      input.items.map((item) => item.offeringId),
+    );
 
     const serviceDate = input.serviceDate ?? defaultDinnerServiceDate();
     const windows =
@@ -329,6 +335,7 @@ export class FamilyDinnerService {
           status: "ACTIVE" as const,
           allowsSelfCook:
             Boolean(item.allowsSelfCook) && isFamilyDinnerSelfCookCategory(item.category),
+          offeringId: item.offeringId ?? null,
         })),
       );
 
@@ -453,6 +460,7 @@ export class FamilyDinnerService {
         sortOrder: i.sortOrder,
         allowsSelfCook:
           i.allowsSelfCook && isFamilyDinnerSelfCookCategory(i.category),
+        offeringId: i.offeringId,
       })),
       windows: windows.map((w) => ({
         id: w.id,
@@ -1478,6 +1486,7 @@ export class FamilyDinnerService {
         priceVnd: i.priceVnd,
         capacity: i.capacity,
         allowsSelfCook: i.allowsSelfCook && isFamilyDinnerSelfCookCategory(i.category),
+        offeringId: i.offeringId,
         sortOrder: i.sortOrder,
       })),
       windows: windows.map((w) => ({
@@ -1781,6 +1790,24 @@ export class FamilyDinnerService {
     return loc[0].providerId;
   }
 
+  private async assertMenuOfferings(providerId: string, offeringIds: (string | undefined)[]) {
+    const ids = [...new Set(offeringIds.filter((id): id is string => Boolean(id)))];
+    if (ids.length === 0) return;
+    const rows = await this.db
+      .select({ id: offerings.id })
+      .from(offerings)
+      .where(
+        and(
+          eq(offerings.providerId, providerId),
+          inArray(offerings.id, ids),
+          eq(offerings.status, "ACTIVE"),
+        ),
+      );
+    if (rows.length !== ids.length) {
+      throw new PickiError("VALIDATION_ERROR", "Món không còn trong Sản phẩm");
+    }
+  }
+
   /**
    * Mỗi ngày mặc định phục vụ: nếu bếp đã bật + từng có menu PUBLISHED
    * mà hôm nay chưa có → copy menu/windows gần nhất sang ngày phục vụ hiện tại.
@@ -1866,6 +1893,7 @@ export class FamilyDinnerService {
             sortOrder: i.sortOrder ?? idx,
             status: "ACTIVE" as const,
             allowsSelfCook: i.allowsSelfCook,
+            offeringId: i.offeringId,
           })),
         );
       }

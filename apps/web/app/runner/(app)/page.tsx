@@ -220,9 +220,9 @@ function RunnerOrderCard({
         providerBrandName={order.providerBrandName}
         right={<span>{formatOrderAmount(order.totalVnd, order.serviceVertical)}</span>}
       />
-      {(order.deliveryFeeVnd ?? 0) > 0 ? (
+      {(order.runnerPayableVnd ?? 0) > 0 ? (
         <p className="stat" style={{ margin: "4px 0 0", fontSize: 13 }}>
-          Phí giao (quán trả): {formatVnd(order.deliveryFeeVnd ?? 0)}
+          Phí giao (quán trả): {formatVnd(order.runnerPayableVnd ?? 0)}
         </p>
       ) : null}
       <p className="stat">

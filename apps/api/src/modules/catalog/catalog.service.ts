@@ -5,6 +5,8 @@ import {
   getLocationHeader,
   listDailySpecialsForLocation,
   listLocationMenu,
+  listOptionGroupsForOfferings,
+  resolveTodayOffer,
   type PickiDb,
   type PickiSql,
 } from "@picki/db";
@@ -37,6 +39,20 @@ export class CatalogService {
     ]);
 
     const familyDinnerEnabled = dinnerSettings[0]?.enabled === true;
+    const visibleIds = items
+      .filter((row) => {
+        const today = resolveTodayOffer({
+          basePriceVnd: row.amount_vnd,
+          dayStatus: row.day_status,
+          availableQty: row.available_qty,
+          reservedQty: row.reserved_qty,
+          soldQty: row.sold_qty,
+          priceOverrideVnd: row.price_override_vnd,
+        });
+        return today.visible;
+      })
+      .map((row) => row.offering_id);
+    const optionGroups = await listOptionGroupsForOfferings(this.db, visibleIds);
 
     const [providerPhone, brandName] = await Promise.all([
       loadProviderContactPhone(this.db, locationId),
@@ -72,20 +88,41 @@ export class CatalogService {
       familyDinner: familyDinnerEnabled
         ? { enabled: true, serviceDate: defaultDinnerServiceDate() }
         : { enabled: false },
-      items: items.map((i) => ({
-        id: i.offering_id,
-        slug: i.slug,
-        name: i.name,
-        description: i.description,
-        amountVnd: i.amount_vnd,
-        pricingKind: i.pricing_kind,
-        foodMoment: i.food_moment,
-        fulfillmentMode: i.fulfillment_mode,
-        educationSubject: i.education_subject,
-        educationGrade: i.education_grade,
-        paymentPolicy: i.payment_policy,
-        estimatedDays: i.estimated_days,
-      })),
+      items: items.flatMap((i) => {
+        const today = resolveTodayOffer({
+          basePriceVnd: i.amount_vnd,
+          dayStatus: i.day_status,
+          availableQty: i.available_qty,
+          reservedQty: i.reserved_qty,
+          soldQty: i.sold_qty,
+          priceOverrideVnd: i.price_override_vnd,
+        });
+        if (!today.visible) return [];
+        return [
+          {
+            id: i.offering_id,
+            slug: i.slug,
+            name: i.name,
+            description: i.description,
+            amountVnd: today.amountVnd,
+            pricingKind: i.pricing_kind,
+            foodMoment: i.food_moment,
+            fulfillmentMode: i.fulfillment_mode,
+            educationSubject: i.education_subject,
+            educationGrade: i.education_grade,
+            paymentPolicy: i.payment_policy,
+            estimatedDays: i.estimated_days,
+            imageUrl: i.image_url,
+            unit: i.unit,
+            prepTimeMinutes: i.prep_time_minutes,
+            categoryId: i.category_id,
+            categoryName: i.category_name,
+            todayStatus: today.todayStatus,
+            todayRemaining: today.remaining,
+            optionGroups: optionGroups.get(i.offering_id) ?? [],
+          },
+        ];
+      }),
       dailySpecials: specials.map((s) => ({
         id: s.special_id,
         offeringId: s.offering_id,

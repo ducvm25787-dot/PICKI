@@ -1,7 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
 import {
+  decideCancelFindRunner,
+  fundingFromOrder,
   isCookFirstFoodOrder,
+  payments,
+  snapshotCustomerPickup,
+  snapshotLaundrySelfDelivery,
+  switchToSelfDelivery,
   breakfastPreorderProviderSettings,
   familyDinnerProviderSettings,
   getLoyaltyProgram,
@@ -335,7 +341,7 @@ export class ProviderService {
       .orderBy(desc(orders.updatedAt));
 
     const sumFee = (rows: (typeof delivered)[number][]) =>
-      rows.reduce((sum, o) => sum + o.deliveryFeeVnd, 0);
+      rows.reduce((sum, o) => sum + o.runnerPayable, 0);
 
     return {
       date: dateLabel,
@@ -350,6 +356,7 @@ export class ProviderService {
           id: o.id,
           orderNumber: o.orderNumber,
           deliveryFeeVnd: o.deliveryFeeVnd,
+          runnerPayableVnd: o.runnerPayable,
           totalVnd: o.totalVnd,
           completedAt: o.updatedAt.toISOString(),
           runner: await loadRunnerSummary(this.db, o.runnerUserId),
@@ -360,6 +367,7 @@ export class ProviderService {
           id: o.id,
           orderNumber: o.orderNumber,
           deliveryFeeVnd: o.deliveryFeeVnd,
+          runnerPayableVnd: o.runnerPayable,
           status: o.status,
           runner: await loadRunnerSummary(this.db, o.runnerUserId),
         })),
@@ -429,8 +437,16 @@ export class ProviderService {
       return this.providerFindRunner(userId, order[0]);
     }
 
+    if (input.action === "cancel_find_runner") {
+      return this.providerCancelFindRunner(userId, order[0]);
+    }
+
     if (input.action === "staff_deliver") {
       return this.providerStaffDeliverFood(userId, order[0]);
+    }
+
+    if (input.action === "customer_pickup") {
+      return this.providerCustomerPickup(userId, order[0]);
     }
 
     if (input.action === "complete") {
@@ -651,6 +667,10 @@ export class ProviderService {
       if (order.runnerSoughtAt && !order.runnerUserId) {
         await this.runnerDispatch.cancelDispatch(order.id, { clearLaundryReturnFee: true });
       }
+      await this.db
+        .update(orders)
+        .set({ ...snapshotLaundrySelfDelivery(), updatedAt: new Date() })
+        .where(eq(orders.id, order.id));
     }
 
     if (input.action === "complete") {
@@ -775,11 +795,78 @@ export class ProviderService {
       await this.runnerDispatch.cancelDispatch(order.id);
     }
 
+    const funding = switchToSelfDelivery(fundingFromOrder(order));
+    await this.db
+      .update(orders)
+      .set({ ...funding, updatedAt: new Date() })
+      .where(eq(orders.id, order.id));
+
     const result = await this.transitions.transition(
       order.id,
       "DELIVERING",
       userId,
       "Provider: staff_deliver",
+    );
+    const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+    return this.foodOrderActionDto(refreshed[0] ?? result.order);
+  }
+
+  private async providerCancelFindRunner(_userId: string, order: typeof orders.$inferSelect) {
+    const decision = decideCancelFindRunner(order);
+    if (!decision.ok) {
+      throw new PickiError("FORBIDDEN", decision.message);
+    }
+
+    await this.runnerDispatch.cancelDispatch(order.id);
+    await this.db
+      .update(orders)
+      .set({ runnerSearchCancelledAt: new Date(), updatedAt: new Date() })
+      .where(eq(orders.id, order.id));
+
+    const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+    return this.foodOrderActionDto(refreshed[0] ?? order);
+  }
+
+  /** Cook-first, no runner: customer collects at the shop. Delivery money becomes zero. */
+  private async providerCustomerPickup(userId: string, order: typeof orders.$inferSelect) {
+    if (!isCookFirstFoodOrder(order)) {
+      throw new PickiError("FORBIDDEN", "Khách lấy tại quán dùng cho đơn nấu trước");
+    }
+    if (order.status !== "READY") {
+      throw new PickiError("FORBIDDEN", "Món sẵn sàng rồi khách mới lấy tại quán");
+    }
+    if (order.runnerUserId) {
+      throw new PickiError("FORBIDDEN", "Đã có runner — không chuyển sang khách lấy");
+    }
+
+    const paid = await this.db
+      .select({ id: payments.id })
+      .from(payments)
+      .where(and(eq(payments.orderId, order.id), eq(payments.status, "SUCCEEDED")))
+      .limit(1);
+    if (paid[0] && order.customerDeliveryFee > 0) {
+      throw new PickiError("FORBIDDEN", "Đơn đã thu phí giao — chưa đổi sang khách lấy");
+    }
+
+    if (order.runnerSoughtAt) {
+      await this.runnerDispatch.cancelDispatch(order.id);
+    }
+
+    await this.db
+      .update(orders)
+      .set({
+        ...snapshotCustomerPickup(),
+        totalVnd: order.subtotalVnd,
+        runnerSearchCancelledAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(orders.id, order.id));
+
+    const result = await this.transitions.transition(
+      order.id,
+      "DELIVERED",
+      userId,
+      "Provider: customer_pickup",
     );
     const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
     return this.foodOrderActionDto(refreshed[0] ?? result.order);
@@ -1212,7 +1299,8 @@ export class ProviderService {
     if (
       order.status !== "PROVIDER_ACCEPTED" ||
       order.runnerUserId ||
-      order.runnerSoughtAt
+      order.runnerSoughtAt ||
+      order.runnerSearchCancelledAt
     ) {
       return order;
     }

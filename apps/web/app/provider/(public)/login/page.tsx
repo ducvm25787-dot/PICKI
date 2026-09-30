@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "../../../../lib/api";
+import { homePathForApp } from "../../../../lib/session-app";
 import { BrandMark } from "../../../components/brand-mark";
 
 export default function ProviderLoginPage() {
@@ -37,11 +38,11 @@ export default function ProviderLoginPage() {
   async function verifyOtp() {
     setLoading(true);
     try {
-      await api("/auth/otp/verify", {
+      const session = await api<{ app?: string }>("/auth/otp/verify", {
         method: "POST",
         body: JSON.stringify({ phone, code, app: "provider" }),
       });
-      router.replace("/provider");
+      router.replace(homePathForApp(session.app, "/provider"));
     } catch (e) {
       setError(e instanceof Error ? e.message : "OTP sai");
     } finally {

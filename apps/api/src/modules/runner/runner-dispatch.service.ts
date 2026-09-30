@@ -2,6 +2,8 @@ import { Inject, Injectable } from "@nestjs/common";
 import { eq, sql } from "drizzle-orm";
 import {
   calculateProviderRunnerFeeVnd,
+  snapshotLaundryReturnRunner,
+  snapshotLaundryCheckout,
   createRunnerOffers,
   notifications,
   orders,
@@ -41,6 +43,10 @@ export class RunnerDispatchService {
       serviceVertical: order.serviceVertical as "FOOD" | "LAUNDRY",
       leg,
       handoffMode: order.deliveryHandoffMode as "LOBBY_PICKUP" | "DOOR_DELIVERY",
+      fulfillmentMode: order.fulfillmentMode as
+        | "PICKEE_RUNNER"
+        | "PROVIDER_SELF_DELIVERY"
+        | "CUSTOMER_PICKUP",
       zoneSettings: zoneRow
         ? {
             foodDeliveryFeeVnd: zoneRow.foodDeliveryFeeVnd,
@@ -48,7 +54,7 @@ export class RunnerDispatchService {
             laundryReturnRunnerFeeVnd: zoneRow.laundryReturnRunnerFeeVnd,
           }
         : null,
-      orderDeliveryFeeVnd: order.deliveryFeeVnd,
+      runnerPayableVnd: order.runnerPayable,
     });
   }
 
@@ -58,7 +64,15 @@ export class RunnerDispatchService {
     actorUserId?: string | null,
   ) {
     const zoneRow = await this.loadZoneFees(order.zoneId);
-    const runnerFeeVnd = this.runnerFeeVnd(order, leg, zoneRow);
+    let runnerFeeVnd = this.runnerFeeVnd(order, leg, zoneRow);
+    if (
+      order.serviceVertical !== "LAUNDRY" &&
+      order.fulfillmentMode === "PICKEE_RUNNER" &&
+      runnerFeeVnd === 0 &&
+      order.deliveryFeeBase > 0
+    ) {
+      runnerFeeVnd = order.deliveryFeeBase;
+    }
     const wave = (order.runnerOfferWave ?? 0) + 1;
 
     const candidates = await selectRunnerOfferCandidates(this.db, order.zoneId, order.id);
@@ -84,11 +98,14 @@ export class RunnerDispatchService {
       const patch: Partial<typeof orders.$inferInsert> = {
         runnerUserId: null,
         runnerSoughtAt: new Date(),
+        runnerSearchCancelledAt: null,
         runnerOfferWave: wave,
         updatedAt: new Date(),
       };
       if (order.serviceVertical === "LAUNDRY" && leg === "RETURN") {
-        patch.deliveryFeeVnd = runnerFeeVnd;
+        Object.assign(patch, snapshotLaundryReturnRunner(runnerFeeVnd));
+      } else if ((order.runnerPayable ?? 0) === 0 && runnerFeeVnd > 0) {
+        patch.runnerPayable = runnerFeeVnd;
       }
 
       await tx.update(orders).set(patch).where(eq(orders.id, order.id));
@@ -106,7 +123,7 @@ export class RunnerDispatchService {
           leg,
           wave,
           runnerUserIds: candidates,
-          deliveryFeeVnd: runnerFeeVnd,
+          runnerPayableVnd: runnerFeeVnd,
           actorUserId: actorUserId ?? null,
         },
       });
@@ -139,7 +156,7 @@ export class RunnerDispatchService {
         updatedAt: new Date(),
       };
       if (options?.clearLaundryReturnFee && order.serviceVertical === "LAUNDRY") {
-        patch.deliveryFeeVnd = 0;
+        Object.assign(patch, snapshotLaundryCheckout());
       }
 
       await tx.update(orders).set(patch).where(eq(orders.id, orderId));

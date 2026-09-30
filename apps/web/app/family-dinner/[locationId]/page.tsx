@@ -47,7 +47,7 @@ type MenuResponse = {
   windows: WindowRow[];
 };
 
-/** 4 nhóm bắt buộc trên mâm; Cơm = bước riêng (có thể tự nấu). */
+/** Các bước của một mâm. Mỗi bước bỏ qua được; mâm trống thì không đặt. */
 const TRAY_STEPS = ["MAIN", "SIDE", "VEGETABLE", "SOUP"] as const;
 type TrayCat = (typeof TRAY_STEPS)[number];
 
@@ -184,9 +184,7 @@ export default function FamilyDinnerBuilderPage() {
     return lines;
   }, [menu, picks, prepModes, ricePick, riceQty, extras]);
 
-  const trayReady = TRAY_STEPS.every((c) => (picks[c] ?? []).length >= 1);
-  const riceReady = ricePick !== null;
-  const checkoutReady = trayReady && riceReady;
+  const checkoutReady = selectedLines.some((line) => line.category !== "EXTRA");
   const onRiceStep = step === TRAY_STEPS.length;
   const onCheckout = step > TRAY_STEPS.length;
   const currentCat = step < TRAY_STEPS.length ? TRAY_STEPS[step]! : null;
@@ -302,7 +300,13 @@ export default function FamilyDinnerBuilderPage() {
         ? "Chọn địa chỉ giao trong Zone của bạn."
         : !windowId
           ? "Chọn khung giao."
-          : null;
+          : !checkoutReady
+            ? "Mâm cần ít nhất một món. Bước nào không cần thì bỏ qua."
+            : null;
+  const skippedLabels = [
+    ...TRAY_STEPS.filter((cat) => (picks[cat] ?? []).length === 0).map((cat) => FD_CATEGORY_LABEL[cat]),
+    ...(ricePick === NO_RICE ? ["Cơm"] : []),
+  ];
 
   const currentSelected = currentCat ? (picks[currentCat] ?? []) : [];
 
@@ -349,6 +353,27 @@ export default function FamilyDinnerBuilderPage() {
 
       <div className="card" style={{ marginBottom: 12 }}>
         <p className="section-title">Mâm nhà của bạn (phù hợp cho 3-4 người)</p>
+        {menu.acceptingPreorder ? (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ width: "100%", marginTop: 8 }}
+            onClick={() => {
+              const next: Partial<Record<TrayCat, string[]>> = {};
+              for (const cat of TRAY_STEPS) {
+                const first = byCat(cat)[0];
+                if (first) next[cat] = [first.id];
+              }
+              setPicks(next);
+              const rice = byCat("RICE")[0];
+              setRicePick(rice ? rice.id : NO_RICE);
+              setRiceQty(1);
+              setStep(TRAY_STEPS.length + 1);
+            }}
+          >
+            Gợi ý một mâm
+          </button>
+        ) : null}
         <p className="stat" style={{ margin: 0 }}>
           {TRAY_STEPS.map((c) => {
             const ids = picks[c] ?? [];
@@ -444,11 +469,22 @@ export default function FamilyDinnerBuilderPage() {
             type="button"
             className="btn"
             style={{ width: "100%", marginTop: 8 }}
-            disabled={currentSelected.length < 1}
+            disabled={currentSelected.length < 1 || !menu.acceptingPreorder}
             onClick={() => setStep((s) => s + 1)}
           >
             Tiếp tục → ({currentSelected.length} món)
           </button>
+          {currentSelected.length === 0 ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ width: "100%", marginTop: 8 }}
+              disabled={!menu.acceptingPreorder}
+              onClick={() => setStep((s) => s + 1)}
+            >
+              Bỏ qua bước này
+            </button>
+          ) : null}
           {step > 0 ? (
             <button
               type="button"
@@ -560,11 +596,26 @@ export default function FamilyDinnerBuilderPage() {
             type="button"
             className="btn"
             style={{ width: "100%", marginTop: 8 }}
-            disabled={ricePick === null}
+            disabled={ricePick === null || !menu.acceptingPreorder}
             onClick={() => setStep(TRAY_STEPS.length + 1)}
           >
             Tiếp tục →
           </button>
+          {ricePick === null ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ width: "100%", marginTop: 8 }}
+              disabled={!menu.acceptingPreorder}
+              onClick={() => {
+                setRicePick(NO_RICE);
+                setRiceQty(1);
+                setStep(TRAY_STEPS.length + 1);
+              }}
+            >
+              Bỏ qua cơm
+            </button>
+          ) : null}
           <button
             type="button"
             className="btn btn-secondary"
@@ -634,6 +685,11 @@ export default function FamilyDinnerBuilderPage() {
 
           <div className="card">
             <p className="section-title">Giao hàng & thanh toán</p>
+            {skippedLabels.length > 0 && checkoutReady ? (
+              <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
+                Chưa chọn: {skippedLabels.join(", ")}. Vẫn đặt được, hoặc quay lại để thêm.
+              </p>
+            ) : null}
             <label className="field">
               <span>Khung giao</span>
               <select value={windowId} onChange={(e) => setWindowId(e.target.value)}>

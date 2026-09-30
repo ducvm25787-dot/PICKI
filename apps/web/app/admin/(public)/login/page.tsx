@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "../../../../lib/api";
+import { homePathForApp } from "../../../../lib/session-app";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -37,11 +38,11 @@ export default function AdminLoginPage() {
     setLoading(true);
     setError(null);
     try {
-      await api("/auth/otp/verify", {
+      const session = await api<{ app?: string }>("/auth/otp/verify", {
         method: "POST",
         body: JSON.stringify({ phone, code, app: "admin" }),
       });
-      router.replace("/admin");
+      router.replace(homePathForApp(session.app, "/admin"));
     } catch (e) {
       setError(e instanceof Error ? e.message : "OTP sai");
     } finally {

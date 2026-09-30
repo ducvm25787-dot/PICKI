@@ -60,7 +60,16 @@ export function canTransition(
   vertical: ServiceVertical = "FOOD",
   laundryPickupMode?: LaundryPickupMode | null,
   orderKind?: string | null,
+  fulfillmentMode?: string | null,
 ): boolean {
+  if (
+    fulfillmentMode === "CUSTOMER_PICKUP" &&
+    vertical !== "LAUNDRY" &&
+    from === "READY" &&
+    to === "DELIVERED"
+  ) {
+    return true;
+  }
   // Breakfast: Quán nhận → Sẵn sàng (bỏ bước Nấu)
   if (
     orderKind === "BREAKFAST_PREORDER" &&
@@ -112,7 +121,9 @@ export type ProviderAction =
   | "ready_for_return"
   | "find_return_runner"
   | "cancel_return_runner"
+  | "cancel_find_runner"
   | "staff_deliver"
+  | "customer_pickup"
   | "complete";
 
 export function providerActionToStatus(action: ProviderAction): string | null {
@@ -124,6 +135,8 @@ export function providerActionToStatus(action: ProviderAction): string | null {
     case "find_runner":
     case "find_return_runner":
     case "cancel_return_runner":
+    case "cancel_find_runner":
+    case "customer_pickup":
     case "handoff":
       return null;
     case "preparing":

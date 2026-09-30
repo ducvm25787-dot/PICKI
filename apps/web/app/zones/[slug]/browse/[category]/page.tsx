@@ -19,6 +19,7 @@ export default function CategoryBrowsePage() {
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [favoriteError, setFavoriteError] = useState<string | null>(null);
 
   const loadFavorites = useCallback(async () => {
     const res = await api<{ favorites: { locationId: string }[] }>("/me/favorites").catch(
@@ -50,19 +51,24 @@ export default function CategoryBrowsePage() {
   }, [slug, category, loadFavorites]);
 
   async function toggleFavorite(locationId: string) {
-    if (favoriteIds.has(locationId)) {
-      await api(`/me/favorites/${locationId}`, { method: "DELETE" });
-      setFavoriteIds((prev) => {
-        const next = new Set(prev);
-        next.delete(locationId);
-        return next;
-      });
-    } else {
-      await api("/me/favorites", {
-        method: "POST",
-        body: JSON.stringify({ locationId }),
-      });
-      setFavoriteIds((prev) => new Set(prev).add(locationId));
+    try {
+      if (favoriteIds.has(locationId)) {
+        await api(`/me/favorites/${locationId}`, { method: "DELETE" });
+        setFavoriteIds((prev) => {
+          const next = new Set(prev);
+          next.delete(locationId);
+          return next;
+        });
+      } else {
+        await api("/me/favorites", {
+          method: "POST",
+          body: JSON.stringify({ locationId }),
+        });
+        setFavoriteIds((prev) => new Set(prev).add(locationId));
+      }
+      setFavoriteError(null);
+    } catch (e) {
+      setFavoriteError(e instanceof Error ? e.message : "Không lưu được yêu thích");
     }
   }
 
@@ -115,6 +121,12 @@ export default function CategoryBrowsePage() {
       {category.id === "beauty" ? (
         <p className="stat" style={{ marginBottom: 12 }}>
           Đang lọc tiệm làm đẹp · tag dịch vụ con (cắt tóc, nail…) sẽ bổ sung sau.
+        </p>
+      ) : null}
+
+      {favoriteError ? (
+        <p className="stat" style={{ color: "#b91c1c", marginBottom: 12 }}>
+          {favoriteError}
         </p>
       ) : null}
 

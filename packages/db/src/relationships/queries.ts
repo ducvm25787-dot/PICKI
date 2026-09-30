@@ -1,5 +1,6 @@
 import type postgres from "postgres";
 import {
+  asInteractionDate,
   computeRelationshipScore,
   familiarityWeights,
   isFamiliarShelfEligible,
@@ -39,7 +40,8 @@ export async function upsertRelationshipFromOrders(
       AND status = ANY(${COMPLETED_STATUSES})
   `;
   const completed = Number(stats[0]?.cnt ?? 0);
-  const lastAt = stats[0]?.last_at ?? null;
+  const lastAt = asInteractionDate(stats[0]?.last_at ?? null);
+  const lastAtParam = lastAt ? lastAt.toISOString() : null;
 
   const fav = await sql<{ exists: boolean }[]>`
     SELECT EXISTS(
@@ -79,7 +81,7 @@ export async function upsertRelationshipFromOrders(
       ${locationId}::uuid,
       ${favorite},
       ${completed},
-      ${lastAt},
+      ${lastAtParam}::timestamptz,
       ${score},
       ${status},
       ${hidden},

@@ -3,6 +3,8 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
   buildOrderNumber,
   calculateCustomerDeliveryFeeVnd,
+  snapshotLaundryCheckout,
+  snapshotPickeeRunner,
   canCustomerCancel,
   breakfastPreorderDeliveryWindows,
   breakfastPreorderMenuItems,
@@ -23,6 +25,7 @@ import {
   offerings,
   pickiPoints,
   providers,
+  providerCapabilities,
   providerLiveStatus,
   randomOrderSuffix4,
   routeOrders,
@@ -35,7 +38,13 @@ import {
   validateFamilyDinnerBaseMeal,
   isFamilyDinnerSelfCookCategory,
   familyDinnerRiceLineTotalVnd,
+  listOptionGroupsForOfferings,
+  resolveOptionSelection,
+  resolveTodayOffer,
   zoneFulfillmentSettings,
+  commerceServiceDate,
+  reserveOfferingStock,
+  StockConflictError,
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
 import {
@@ -191,6 +200,9 @@ export class OrdersService {
     const isBreakfast = input.orderKind === "BREAKFAST_PREORDER";
     if ((isFamilyDinner || isLateDinner || isBreakfast) && serviceVertical !== "FOOD") {
       throw new PickiError("VALIDATION_ERROR", "Chỉ áp dụng cho Food");
+    }
+    if (!isFamilyDinner && !isLateDinner && !isBreakfast && serviceVertical === "FOOD") {
+      await this.assertSellNowOpen(input.providerLocationId);
     }
 
     const addr = await this.addresses.resolveDeliveryAddress(userId, input.zoneId, input.addressId);
@@ -352,7 +364,9 @@ export class OrdersService {
             serviceVertical === "LAUNDRY" && !isFamilyDinner && !isLateDinner && !isBreakfast
               ? 0
               : subtotalVnd,
-          deliveryFeeVnd,
+          ...(serviceVertical === "LAUNDRY" && !isFamilyDinner && !isLateDinner && !isBreakfast
+            ? snapshotLaundryCheckout()
+            : snapshotPickeeRunner(deliveryFeeVnd)),
           totalVnd,
           deliveryAddressId: addr.id,
           deliveryAddressType: addr.addressType,
@@ -380,7 +394,7 @@ export class OrdersService {
         await tx.insert(orderItems).values(
           lineItemsDinner.map((item) => ({
             orderId: order.id,
-            offeringId: null,
+            offeringId: item.offeringId,
             familyDinnerMenuItemId: item.menuItemId,
             familyDinnerCategory: item.category,
             prepMode: item.prepMode,
@@ -431,8 +445,34 @@ export class OrdersService {
             quantity: item.quantity,
             lineTotalVnd: item.lineTotalVnd,
             estimatedDays: item.estimatedDays,
+            optionSnapshot: item.optionSnapshot,
           })),
         );
+      }
+
+      if (!isLateDinner && (isFamilyDinner || isBreakfast || serviceVertical === "FOOD")) {
+        const stockLines = isFamilyDinner
+          ? lineItemsDinner
+          : isBreakfast
+            ? lineItemsBreakfast
+            : lineItemsStandard;
+        const stockDate = commerceServiceDate(serviceDate);
+        try {
+          await reserveOfferingStock(tx, {
+            orderId: order.id,
+            serviceDate: stockDate,
+            lines: stockLines.map((item) => ({
+              offeringId: item.offeringId,
+              quantity: item.quantity,
+              name: item.name,
+            })),
+          });
+        } catch (err) {
+          if (err instanceof StockConflictError) {
+            throw new PickiError("CONFLICT", err.message);
+          }
+          throw err;
+        }
       }
 
       await tx.insert(orderStatusHistory).values({
@@ -800,6 +840,28 @@ export class OrdersService {
     }
   }
 
+  private async assertSellNowOpen(providerLocationId: string) {
+    const [row] = await this.db
+      .select({
+        model: providers.commerceModel,
+        enabled: providerCapabilities.enabled,
+      })
+      .from(providerLocations)
+      .innerJoin(providers, eq(providers.id, providerLocations.providerId))
+      .leftJoin(
+        providerCapabilities,
+        and(
+          eq(providerCapabilities.providerId, providers.id),
+          eq(providerCapabilities.capability, "SELL_NOW"),
+        ),
+      )
+      .where(eq(providerLocations.id, providerLocationId))
+      .limit(1);
+    if (row?.model === "FOOD_SERVICE" && row.enabled === false) {
+      throw new PickiError("FORBIDDEN", "Quán đang tắt bán ngay");
+    }
+  }
+
   private async resolveLocation(providerLocationId: string, zoneId: string) {
     const location = await this.db
       .select()
@@ -1141,6 +1203,7 @@ export class OrdersService {
         lineTotalVnd,
         recipeVersionId: row.recipeVersionId,
         prepMode,
+        offeringId: row.offeringId,
       };
     });
 
@@ -1150,7 +1213,7 @@ export class OrdersService {
     if (!meal.ok) {
       throw new PickiError(
         "VALIDATION_ERROR",
-        `Mâm chưa đủ nhóm: ${meal.missing.join(", ")} (cần MAIN, SIDE, VEGETABLE, SOUP)`,
+        "Mâm cần ít nhất một món (chính, phụ, rau, canh hoặc cơm).",
       );
     }
 
@@ -1391,6 +1454,10 @@ export class OrdersService {
   ) {
     const menu = await listLocationMenu(this.sql, providerLocationId);
     const menuById = new Map(menu.map((m) => [m.offering_id, m]));
+    const optionGroups = await listOptionGroupsForOfferings(
+      this.db,
+      items.map((item) => item.offeringId).filter((id): id is string => Boolean(id)),
+    );
 
     const lineItems = items.map((item) => {
       if (!item.offeringId) {
@@ -1402,20 +1469,47 @@ export class OrdersService {
           details: { offeringId: item.offeringId },
         });
       }
+      const today = resolveTodayOffer({
+        basePriceVnd: offering.amount_vnd,
+        dayStatus: offering.day_status,
+        availableQty: offering.available_qty,
+        reservedQty: offering.reserved_qty,
+        soldQty: offering.sold_qty,
+        priceOverrideVnd: offering.price_override_vnd,
+      });
+      if (!today.visible) {
+        throw new PickiError("CONFLICT", `Hôm nay không bán: ${offering.name}`);
+      }
+      if (
+        today.todayStatus === "SOLD_OUT" ||
+        (today.remaining != null && today.remaining < item.quantity)
+      ) {
+        throw new PickiError("CONFLICT", `Hết hôm nay: ${offering.name}`);
+      }
+      const picked = resolveOptionSelection(
+        optionGroups.get(item.offeringId) ?? [],
+        item.optionIds ?? [],
+      );
+      if (!picked.ok) {
+        throw new PickiError("VALIDATION_ERROR", `${offering.name}: ${picked.message}`);
+      }
       const isReferenceOnly =
         offering.pricing_kind === "QUOTE_REQUIRED" ||
         offering.pricing_kind === "CONTACT" ||
         offering.pricing_kind === "FROM";
-      const lineTotal = isReferenceOnly ? 0 : offering.amount_vnd * item.quantity;
+      const unitPriceVnd = isReferenceOnly ? 0 : today.amountVnd + picked.extraVnd;
+      const lineTotal = unitPriceVnd * item.quantity;
+      const optionLabel = picked.snapshot.map((option) => option.name).join(", ");
       return {
         offeringId: item.offeringId,
-        name: offering.name,
+        name: optionLabel ? `${offering.name} · ${optionLabel}` : offering.name,
         description: offering.description,
-        unitPriceVnd: offering.amount_vnd,
+        unitPriceVnd,
         quantity: item.quantity,
         lineTotalVnd: lineTotal,
         estimatedDays: offering.estimated_days,
         fulfillmentMode: offering.fulfillment_mode,
+        optionSnapshot: picked.snapshot,
       };
     });
 
