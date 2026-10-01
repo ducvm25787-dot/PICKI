@@ -76,15 +76,20 @@ export class DiscoveryController {
     @Param("slugOrId") slugOrId: string,
     @Param("categoryId") categoryId: string,
     @Query("types") types?: string,
+    @Query("goods") goods?: string,
   ) {
     const providerTypes = (types ?? "")
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
-    if (providerTypes.length === 0) {
+    if (providerTypes.length === 0 && categoryId !== "market") {
       throw new PickiError("VALIDATION_ERROR", "types query required (comma-separated provider_type)");
     }
-    return this.discovery.browseCategory(slugOrId, categoryId, providerTypes);
+    const goodsCategoryId = goods?.trim() || null;
+    if (goodsCategoryId && !/^[0-9a-f-]{36}$/i.test(goodsCategoryId)) {
+      throw new PickiError("VALIDATION_ERROR", "goods must be a category id");
+    }
+    return this.discovery.browseCategory(slugOrId, categoryId, providerTypes, goodsCategoryId);
   }
 
   @Get("zones/:slugOrId/search")

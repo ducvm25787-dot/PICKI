@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { marketTierBadge } from "@picki/shared";
 import {
   beautyWaitDisplay,
   isContactLiveOnlyShop,
@@ -87,7 +88,14 @@ export function ProviderCardCompact({
         <Link href={`/locations/${p.locationId}`} className="provider-card-compact-main">
           <ProviderAvatar brandName={p.brandName} logoUrl={p.logoUrl} />
           <div className="provider-card-compact-body">
-            <h3 className="provider-card-compact-title">{p.brandName}</h3>
+            <h3 className="provider-card-compact-title">
+              {p.brandName}
+              {marketTierBadge(p.providerType) ? (
+                <span className="stat" style={{ marginLeft: 8, fontWeight: 600 }}>
+                  {marketTierBadge(p.providerType)}
+                </span>
+              ) : null}
+            </h3>
             {p.freshnessLabel || p.promotionLabel ? (
               <p className="provider-card-compact-offer">
                 {p.freshnessLabel ? <span className="fresh-badge">{p.freshnessLabel}</span> : null}

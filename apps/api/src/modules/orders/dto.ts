@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isDaypartMenuOrder } from "@picki/shared";
 
 export const createOrderItemSchema = z.object({
   offeringId: z.string().uuid().optional(),
@@ -14,7 +15,7 @@ const orderCheckoutFields = {
   zoneId: z.string().uuid(),
   deliveryHandoffMode: z.enum(["LOBBY_PICKUP", "DOOR_DELIVERY"]).default("DOOR_DELIVERY"),
   items: z.array(createOrderItemSchema).min(1).max(30),
-  orderKind: z.enum(["STANDARD", "FAMILY_DINNER", "LATE_DINNER", "BREAKFAST_PREORDER"]).default("STANDARD"),
+  orderKind: z.enum(["STANDARD", "FAMILY_DINNER", "LATE_DINNER", "BREAKFAST_PREORDER", "LUNCH"]).default("STANDARD"),
   serviceDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -25,7 +26,7 @@ const orderCheckoutFields = {
 
 function refineOrderCheckout(
   v: {
-    orderKind: "STANDARD" | "FAMILY_DINNER" | "LATE_DINNER" | "BREAKFAST_PREORDER";
+    orderKind: "STANDARD" | "FAMILY_DINNER" | "LATE_DINNER" | "BREAKFAST_PREORDER" | "LUNCH";
     items: { offeringId?: string; menuItemId?: string }[];
     lateDinnerOfferId?: string;
   },
@@ -42,7 +43,7 @@ function refineOrderCheckout(
       }
     }
   }
-  if (v.orderKind === "FAMILY_DINNER" || v.orderKind === "BREAKFAST_PREORDER") {
+  if (v.orderKind === "FAMILY_DINNER" || isDaypartMenuOrder(v.orderKind)) {
     for (const [i, item] of v.items.entries()) {
       if (!item.menuItemId) {
         ctx.addIssue({

@@ -1,8 +1,10 @@
 # S39 — Đi chợ (Minimart / Tạp hóa / Chợ)
 
-**Status:** IMPLEMENTED lean V1 (2026-09-16) — ADR-044  
-**Capability:** `LISTING` + `LIVE_STATUS` + `CONTACT`  
-**Không:** giỏ hàng tạp hóa, checkout, giao runner, digitization chợ truyền thống đầy đủ.
+**Status:** Market commerce V1 dùng chung offering, giỏ, đơn STANDARD và runner (2026-10-01). ADR-044 mục “không giỏ” không còn áp cho tiểu thương / tạp hóa khi `SELL_NOW` bật. Siêu thị V1 vẫn tắt bán.  
+**Capability:** `LISTING` + `LIVE_STATUS` + `CONTACT`, cộng `SELL_NOW` / `DELIVERY` / `TODAY_FEATURE` theo capability.  
+**Không:** digitization chợ truyền thống đầy đủ, engine sơ chế riêng, schema catalog riêng cho siêu thị.
+
+**Debt — giá 0:** `amount_vnd = 0` kèm `QUOTE_REQUIRED` / `FROM` vẫn là cờ “hỏi giá” của các vertical liên hệ (nhà thuốc, xe, dịch vụ nhà, phòng khám, gara, và placeholder tạp hóa cũ). Đi chợ không nhân rộng quy ước này. Sản phẩm lên kệ khi `pricing_kind = FIXED`, giá > 0, và có số lượng hôm nay (`product_daily_availability` AVAILABLE). Chưa có migration đổi các dòng legacy.
 
 ## Mục tiêu
 

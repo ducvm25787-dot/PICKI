@@ -8,13 +8,13 @@ import { FoodBoardService } from "./food-board.service.js";
 const stockSchema = z.object({
   offeringId: z.string().uuid(),
   serviceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  action: z.enum(["add", "sold_out", "hide", "show", "price"]),
+  action: z.enum(["add", "sold_out", "hide", "show", "price", "feature", "unfeature"]),
   quantity: z.number().int().positive().max(500).optional(),
   priceVnd: z.number().int().min(0).max(50_000_000).nullable().optional(),
 });
 
 const menuStockSchema = z.object({
-  channel: z.enum(["breakfast", "dinner"]),
+  channel: z.enum(["breakfast", "lunch", "dinner"]),
   menuItemId: z.string().uuid(),
   action: z.enum(["add", "sold_out", "hide", "show"]),
   quantity: z.number().int().positive().max(500).optional(),
@@ -39,7 +39,27 @@ const productSchema = z.object({
   priceVnd: z.number().int().min(0).max(50_000_000),
   description: z.string().trim().max(400).nullable().optional(),
   imageUrl: z.string().trim().max(500).nullable().optional(),
-  unit: z.enum(["phần", "tô", "đĩa", "ly", "suất", "cái"]).optional(),
+  unit: z
+    .enum([
+      "phần",
+      "tô",
+      "đĩa",
+      "ly",
+      "suất",
+      "cái",
+      "kg",
+      "500g",
+      "con",
+      "bó",
+      "túi",
+      "khay",
+      "hộp",
+      "chai",
+      "lon",
+      "gói",
+      "set",
+    ])
+    .optional(),
   prepTimeMinutes: z.number().int().min(1).max(24 * 60).nullable().optional(),
   categoryId: z.string().uuid().nullable().optional(),
   optionGroups: z.array(optionGroupSchema).max(4).optional(),
@@ -50,7 +70,7 @@ const productPatchSchema = productSchema.partial().extend({
 });
 
 const sellingSchema = z.object({
-  capability: z.enum(["SELL_NOW", "BREAKFAST_PREORDER", "FAMILY_DINNER", "LATE_NIGHT"]),
+  capability: z.enum(["SELL_NOW", "BREAKFAST_PREORDER", "FAMILY_DINNER", "LATE_NIGHT", "LUNCH"]),
   enabled: z.boolean(),
 });
 

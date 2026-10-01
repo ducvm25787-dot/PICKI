@@ -23,11 +23,11 @@ export function decideCancelFindRunner(order: CancelFindRunnerOrder): CancelFind
   if (!order.runnerSoughtAt) {
     return { ok: false, message: "Chưa tìm runner" };
   }
-  if (isCookFirstFoodOrder(order)) {
-    if (order.status !== "READY") {
-      return { ok: false, message: "Chỉ hủy tìm runner khi món đã sẵn sàng giao" };
-    }
+  if (order.status === "READY") {
     return { ok: true, status: "READY" };
+  }
+  if (isCookFirstFoodOrder(order)) {
+    return { ok: false, message: "Chỉ hủy tìm runner khi món đã sẵn sàng giao" };
   }
   if (order.status !== "PROVIDER_ACCEPTED") {
     return { ok: false, message: "Chỉ hủy tìm runner khi đơn đang chờ runner" };

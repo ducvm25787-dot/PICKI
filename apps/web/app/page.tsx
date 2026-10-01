@@ -390,16 +390,22 @@ export default function HomePage() {
         </>
       ) : (
         <>
-          <Link
-            href={`/zones/${KVL_SLUG}/search`}
-            className="home-search"
-            aria-label="Tìm quanh Zone"
-          >
-            <span className="home-search-icon">
-              <IconSearch />
-            </span>
-            <span>Tìm món, sản phẩm, dịch vụ…</span>
-          </Link>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
+            <Link
+              href={`/zones/${KVL_SLUG}/search`}
+              className="home-search"
+              aria-label="Tìm quanh Zone"
+              style={{ flex: 1, marginBottom: 0 }}
+            >
+              <span className="home-search-icon">
+                <IconSearch />
+              </span>
+              <span>Tìm món, sản phẩm, dịch vụ…</span>
+            </Link>
+            <Link href="/scan" className="btn" style={{ width: "auto", padding: "12px 14px" }}>
+              Quét QR
+            </Link>
+          </div>
 
           <p className="stat" style={{ margin: "0 0 10px" }}>
             📍 Nhà · Kim Văn – Kim Lũ

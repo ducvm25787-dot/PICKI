@@ -8,11 +8,13 @@ import { ProviderPageShell, useProviderLocation } from "../../components/provide
 import { OrderStatusSteps } from "../../components/order-status-steps";
 import { api } from "../../../lib/api";
 import { OrderNumberHeading } from "../../components/order-number-heading";
-import { orderStatusRich, isBreakfastPreorderOrderKind } from "../../../lib/order-display";
+import { isDaypartMenuOrder } from "@picki/shared";
+import { orderStatusRich } from "../../../lib/order-display";
 import { formatOrderAmount, formatVnd } from "../../../lib/money";
 import { fdFormatItemQtyLabel, fdIsPastCutoff } from "../../../lib/family-dinner";
 import { bfIsPastCutoff } from "../../../lib/breakfast-preorder";
 import { loyaltyLabelClass, loyaltyLabelVi } from "../../../lib/loyalty";
+import { isMarketVertical } from "../../../lib/providers";
 
 type DailyRunnerStats = {
   date: string;
@@ -61,7 +63,7 @@ function isCookFirstOrder(order: ProviderOrder): boolean {
   return (
     order.orderKind === "FAMILY_DINNER" ||
     order.orderKind === "LATE_DINNER" ||
-    order.orderKind === "BREAKFAST_PREORDER"
+    isDaypartMenuOrder(order.orderKind)
   );
 }
 
@@ -162,6 +164,7 @@ export default function ProviderOrdersPage() {
 
   function canStartFamilyDinnerCook(order: ProviderOrder): boolean {
     if (order.orderKind === "LATE_DINNER") return true;
+    if (order.orderKind === "LUNCH") return true;
     if (order.orderKind === "BREAKFAST_PREORDER") {
       if (!order.serviceDate || !bfCutoffTime) return false;
       return bfIsPastCutoff(order.serviceDate, bfCutoffTime, nowTick);
@@ -542,22 +545,11 @@ export default function ProviderOrdersPage() {
                 .
               </p>
             </div>
-          ) : activeLocation?.providerType === "MINIMART" ||
-            activeLocation?.providerType === "MARKET_VENDOR" ||
-            activeLocation?.providerType === "RETAIL_STORE" ? (
+          ) : activeLocation?.providerType === "SUPERMARKET" ? (
             <div className="card">
               <p className="stat" style={{ margin: 0 }}>
-                Tạp hóa / minimart trên Pickee hiện <strong>đang mở</strong>, nhận{" "}
-                <strong>gọi / Zalo</strong> và câu hỏi kèm ảnh — chưa bán qua giỏ hàng V1. Cập nhật
-                trạng thái ở tab{" "}
-                <a href="/provider/live" style={{ color: "var(--accent-dark)" }}>
-                  Trạng thái
-                </a>
-                ; tin hỏi hàng ở tab{" "}
-                <a href="/provider/chats" style={{ color: "var(--accent-dark)" }}>
-                  Hỏi hàng
-                </a>
-                .
+                Siêu thị trên Pickee hiện trạng thái mở và gian hàng. Bán hàng theo món sẽ bật khi
+                cửa hàng được mở bán.
               </p>
             </div>
           ) : (
@@ -567,7 +559,8 @@ export default function ProviderOrdersPage() {
           orders.map((o) => {
             const sought = hasRunnerSought(o);
             const cookFirst = isCookFirstOrder(o);
-            const waitingRunner = cookFirst
+            const marketPack = isMarketVertical(activeLocation?.providerType);
+            const waitingRunner = cookFirst || marketPack
               ? o.status === "READY" && sought && !o.runnerUserId && !o.runner
               : o.status === "PROVIDER_ACCEPTED" && sought && !o.runnerUserId && !o.runner;
             const busy = actingId === o.id;
@@ -633,7 +626,7 @@ export default function ProviderOrdersPage() {
                 ) : null}
                 {waitingRunner && cookFirst ? (
                   <div className="runner-route-hint" style={{ margin: "8px 0", fontSize: 14 }}>
-                    {isBreakfastPreorderOrderKind(o.orderKind)
+                    {isDaypartMenuOrder(o.orderKind)
                       ? "Đã sẵn sàng — đang chờ runner nhận giao. Hoặc bấm Tự giao nếu quán tự sắp xếp."
                       : "Đã nấu xong — đang chờ runner nhận giao. Hoặc bấm Tự giao nếu bếp tự sắp xếp."}
                   </div>
@@ -866,7 +859,7 @@ export default function ProviderOrdersPage() {
                       >
                         {busy
                           ? "…"
-                          : cookFirst
+                          : cookFirst || marketPack
                             ? "Nhận đơn"
                             : `Nhận đơn & tìm runner${(o.runnerFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? 0)}` : ""}`}
                       </button>
@@ -881,8 +874,21 @@ export default function ProviderOrdersPage() {
                       </button>
                     </>
                   ) : null}
+                  {marketPack &&
+                  (o.status === "PROVIDER_ACCEPTED" || o.status === "PREPARING") ? (
+                    <button
+                      type="button"
+                      className="btn provider-btn"
+                      style={{ width: "auto", padding: "8px 12px" }}
+                      disabled={busy}
+                      onClick={() => void action(o.id, "ready")}
+                    >
+                      {busy ? "…" : "Sẵn sàng giao"}
+                    </button>
+                  ) : null}
                   {o.serviceVertical !== "LAUNDRY" &&
                   !cookFirst &&
+                  !marketPack &&
                   o.status === "PROVIDER_ACCEPTED" &&
                   !sought ? (
                     <button
@@ -899,7 +905,7 @@ export default function ProviderOrdersPage() {
                   ) : null}
                   {cookFirst &&
                   o.status === "PROVIDER_ACCEPTED" &&
-                  isBreakfastPreorderOrderKind(o.orderKind) ? (
+                  isDaypartMenuOrder(o.orderKind) ? (
                     <button
                       type="button"
                       className="btn provider-btn"
@@ -927,7 +933,7 @@ export default function ProviderOrdersPage() {
                   ) : null}
                   {cookFirst &&
                   o.status === "PROVIDER_ACCEPTED" &&
-                  !isBreakfastPreorderOrderKind(o.orderKind) ? (
+                  !isDaypartMenuOrder(o.orderKind) ? (
                     <button
                       type="button"
                       className="btn provider-btn"
@@ -1000,7 +1006,7 @@ export default function ProviderOrdersPage() {
                       Sẵn sàng giao
                     </button>
                   ) : null}
-                  {cookFirst && o.status === "READY" && !o.runner && !o.runnerUserId && !sought ? (
+                  {(cookFirst || marketPack) && o.status === "READY" && !o.runner && !o.runnerUserId && !sought ? (
                     <>
                       <button
                         type="button"
@@ -1013,24 +1019,28 @@ export default function ProviderOrdersPage() {
                           ? "…"
                           : `Tìm runner${(o.runnerFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? 0)}` : ""}`}
                       </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        style={{ width: "auto", padding: "8px 12px" }}
-                        disabled={busy}
-                        onClick={() => void action(o.id, "staff_deliver")}
-                      >
-                        {busy ? "…" : "Tự giao"}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        style={{ width: "auto", padding: "8px 12px" }}
-                        disabled={busy}
-                        onClick={() => void action(o.id, "customer_pickup")}
-                      >
-                        {busy ? "…" : "Khách lấy tại quán"}
-                      </button>
+                      {cookFirst ? (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ width: "auto", padding: "8px 12px" }}
+                            disabled={busy}
+                            onClick={() => void action(o.id, "staff_deliver")}
+                          >
+                            {busy ? "…" : "Tự giao"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ width: "auto", padding: "8px 12px" }}
+                            disabled={busy}
+                            onClick={() => void action(o.id, "customer_pickup")}
+                          >
+                            {busy ? "…" : "Khách lấy tại quán"}
+                          </button>
+                        </>
+                      ) : null}
                     </>
                   ) : null}
                   {cookFirst && waitingRunner ? (

@@ -1,3 +1,4 @@
+import { DAYPART_MENU_ORDER_KINDS } from "@picki/shared";
 import type { DeliveryFundingSnapshot, FulfillmentMode } from "./delivery-snapshot.js";
 
 export const RUNNER_ASSIGNMENT_STATUSES = [
@@ -7,7 +8,11 @@ export const RUNNER_ASSIGNMENT_STATUSES = [
   "RETURN_PICKED_UP",
 ] as const;
 
-const COOK_FIRST_KINDS = new Set(["FAMILY_DINNER", "LATE_DINNER", "BREAKFAST_PREORDER"]);
+const COOK_FIRST_KINDS = new Set<string>([
+  "FAMILY_DINNER",
+  "LATE_DINNER",
+  ...DAYPART_MENU_ORDER_KINDS,
+]);
 
 export type HistoricalOrderEvidence = {
   serviceVertical: string;

@@ -11,8 +11,10 @@ import {
   isHealthVertical,
   isHomeCookVertical,
   isHomeServiceVertical,
+  isMarketVertical,
   isQueueOnlyShop,
   isSportsVertical,
+  isSupermarket,
 } from "../../lib/providers";
 import {
   IconBell,
@@ -187,6 +189,7 @@ export function ProviderNav() {
   const contactLiveOnly = isContactLiveOnlyShop(providerType);
   const hideQueueTabs = isEducationVertical(providerType) || isSportsVertical(providerType);
   const foodShop = isFoodBreakfastVertical(providerType);
+  const marketShop = isMarketVertical(providerType) && activeLocation?.sellNowEnabled === true;
   const visibleTabs = foodShop
     ? [
         { href: "/provider/board", label: "Hôm nay", Icon: IconLive, exact: false },
@@ -195,7 +198,17 @@ export function ProviderNav() {
         { href: "/provider/selling", label: "Cách bán", Icon: IconDinner, exact: false },
         { href: "/provider/settings", label: "Gian hàng", Icon: IconSettings, exact: false },
       ]
+    : marketShop
+      ? [
+          { href: "/provider/board", label: "Hôm nay", Icon: IconLive, exact: false },
+          { href: "/provider", label: "Đơn", Icon: IconClipboard, exact: true },
+          { href: "/provider/products", label: "Sản phẩm", Icon: IconOrders, exact: false },
+          { href: "/provider/settings", label: "Gian hàng", Icon: IconSettings, exact: false },
+        ]
     : tabs.filter((tab) => {
+    if (isSupermarket(providerType)) {
+      return tab.href === "/provider/live" || tab.href === "/provider/settings";
+    }
     if (contactLiveOnly) {
       return (
         tab.href === "/provider/live" ||

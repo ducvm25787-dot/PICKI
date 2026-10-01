@@ -27,6 +27,7 @@ import {
   providerZoneMemberships,
   providerLoyaltyBenefits,
   providerLoyaltyPrograms,
+  providerCapabilities,
   providerMembers,
   providerProfiles,
   providers,
@@ -34,7 +35,7 @@ import {
   type PickiDb,
   type PickiSql,
 } from "@picki/db";
-import { PickiError } from "@picki/shared";
+import { PickiError, isDaypartMenuOrder } from "@picki/shared";
 import { PICKI_DB, PICKI_SQL } from "../../shared/tokens.js";
 import {
   loadOrderContacts,
@@ -102,6 +103,7 @@ export class ProviderService {
       locationId: string | null;
       locationName: string;
       role: string;
+      sellNowEnabled: boolean;
     }> = [];
 
     for (const r of rows) {
@@ -114,6 +116,7 @@ export class ProviderService {
           locationId: r.location.id,
           locationName: r.location.displayName,
           role: r.member.role,
+          sellNowEnabled: false,
         });
         continue;
       }
@@ -134,8 +137,25 @@ export class ProviderService {
           locationId: loc.id,
           locationName: loc.displayName,
           role: r.member.role,
+          sellNowEnabled: false,
         });
       }
+    }
+
+    const providerIds = [...new Set(locations.map((l) => l.providerId))];
+    if (providerIds.length > 0) {
+      const caps = await this.db
+        .select({ providerId: providerCapabilities.providerId })
+        .from(providerCapabilities)
+        .where(
+          and(
+            inArray(providerCapabilities.providerId, providerIds),
+            eq(providerCapabilities.capability, "SELL_NOW"),
+            eq(providerCapabilities.enabled, true),
+          ),
+        );
+      const enabled = new Set(caps.map((c) => c.providerId));
+      for (const location of locations) location.sellNowEnabled = enabled.has(location.providerId);
     }
 
     return { locations };
@@ -390,6 +410,7 @@ export class ProviderService {
     }
 
     await this.assertLocationAccess(userId, order[0].providerLocationId);
+    const marketPack = await this.isMarketPackLocation(order[0].providerLocationId);
 
     if (order[0].serviceVertical === "LAUNDRY") {
       return this.applyLaundryOrderAction(userId, order[0], input);
@@ -399,7 +420,7 @@ export class ProviderService {
       if (order[0].paymentMode === "PAY_ON_PICKI" && order[0].status === "CREATED") {
         throw new PickiError("FORBIDDEN", "Order awaiting online payment");
       }
-      if (isCookFirstFoodOrder(order[0])) {
+      if (isCookFirstFoodOrder(order[0]) || marketPack) {
         if (order[0].status === "PROVIDER_ACCEPTED") {
           return this.foodOrderActionDto(order[0]);
         }
@@ -458,10 +479,10 @@ export class ProviderService {
     }
 
     if (input.action === "preparing") {
-      if (order[0].orderKind === "BREAKFAST_PREORDER") {
+      if (isDaypartMenuOrder(order[0].orderKind)) {
         throw new PickiError(
           "FORBIDDEN",
-          "Đơn sáng không có bước nấu — bấm Sẵn sàng giao sau khi chuẩn bị xong",
+          "Đơn menu ngày không có bước nấu — bấm Sẵn sàng giao sau khi chuẩn bị xong",
         );
       }
       if (isCookFirstFoodOrder(order[0])) {
@@ -499,7 +520,7 @@ export class ProviderService {
     }
 
     if (input.action === "ready") {
-      if (order[0].orderKind === "BREAKFAST_PREORDER") {
+      if (isDaypartMenuOrder(order[0].orderKind)) {
         if (order[0].status !== "PROVIDER_ACCEPTED" && order[0].status !== "PREPARING") {
           throw new PickiError("FORBIDDEN", "Nhận đơn trước khi đánh dấu sẵn sàng");
         }
@@ -522,9 +543,24 @@ export class ProviderService {
             );
           }
         }
+      } else if (marketPack) {
+        if (order[0].status !== "PROVIDER_ACCEPTED" && order[0].status !== "PREPARING") {
+          throw new PickiError("FORBIDDEN", "Nhận đơn trước khi đánh dấu sẵn sàng giao");
+        }
       } else if (order[0].status !== "PREPARING") {
         throw new PickiError("FORBIDDEN", "Order must be preparing before marking ready");
       }
+    }
+
+    if (input.action === "ready" && marketPack && order[0].status === "PROVIDER_ACCEPTED") {
+      await this.transitions.transition(orderId, "PREPARING", userId, "Provider: soạn hàng");
+      const packed = await this.transitions.transition(orderId, "READY", userId, "Provider: ready");
+      const etaPatch = providerEtaPatch("ready");
+      if (etaPatch) {
+        await this.db.update(orders).set(etaPatch).where(eq(orders.id, orderId));
+      }
+      const refreshed = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+      return this.foodOrderActionDto(refreshed[0] ?? packed.order);
     }
 
     const toStatus = providerActionToStatus(input.action);
@@ -757,11 +793,25 @@ export class ProviderService {
     return this.laundryOrderDto(refreshed[0] ?? order);
   }
 
+  private async isMarketPackLocation(locationId: string) {
+    const [row] = await this.db
+      .select({ model: providers.commerceModel })
+      .from(providerLocations)
+      .innerJoin(providers, eq(providers.id, providerLocations.providerId))
+      .where(eq(providerLocations.id, locationId))
+      .limit(1);
+    return row?.model === "FRESH_MARKET" || row?.model === "RETAIL_STORE";
+  }
+
   private async providerFindRunner(userId: string, order: typeof orders.$inferSelect) {
     const cookFirst = isCookFirstFoodOrder(order);
-    if (cookFirst) {
+    const marketPack = await this.isMarketPackLocation(order.providerLocationId);
+    if (cookFirst || marketPack) {
       if (order.status !== "READY") {
-        throw new PickiError("FORBIDDEN", "Nấu xong (sẵn sàng giao) rồi mới tìm runner");
+        throw new PickiError(
+          "FORBIDDEN",
+          marketPack ? "Sẵn sàng giao rồi mới tìm runner" : "Nấu xong (sẵn sàng giao) rồi mới tìm runner",
+        );
       }
     } else if (order.status !== "PROVIDER_ACCEPTED") {
       throw new PickiError("FORBIDDEN", "Chỉ tìm runner sau khi đã nhận đơn");
@@ -1070,6 +1120,8 @@ export class ProviderService {
           ? access.opensAt.toISOString()
           : String(access.opensAt)
         : null,
+      verificationStatus: access.verificationStatus,
+      qrPath: access.verifiedQrToken ? `/v/${access.verifiedQrToken}` : null,
     };
   }
 
@@ -1359,6 +1411,8 @@ export class ProviderService {
         lng: providerLocations.lng,
         pinVerifiedAt: providerLocations.pinVerifiedAt,
         opensAt: providerLocations.opensAt,
+        verificationStatus: providerLocations.verificationStatus,
+        verifiedQrToken: providerLocations.verifiedQrToken,
         brandName: providers.brandName,
       })
       .from(providerLocations)
@@ -1395,6 +1449,8 @@ export class ProviderService {
       lng: location[0].lng,
       pinVerifiedAt: location[0].pinVerifiedAt,
       opensAt: location[0].opensAt,
+      verificationStatus: location[0].verificationStatus,
+      verifiedQrToken: location[0].verifiedQrToken,
     };
   }
 

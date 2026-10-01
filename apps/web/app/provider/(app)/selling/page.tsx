@@ -6,7 +6,7 @@ import { ProviderPageShell, useProviderLocation } from "../../../components/prov
 import { api } from "../../../../lib/api";
 
 type Channel = {
-  capability: "SELL_NOW" | "BREAKFAST_PREORDER" | "FAMILY_DINNER" | "LATE_NIGHT";
+  capability: "SELL_NOW" | "BREAKFAST_PREORDER" | "LUNCH" | "FAMILY_DINNER" | "LATE_NIGHT";
   label: string;
   href: string | null;
   enabled: boolean;
@@ -16,7 +16,9 @@ const CHANNEL_HINT: Record<Channel["capability"], string> = {
   SELL_NOW:
     "Khách gọi món và nhận trong ngày. Số lượng, hết, ẩn và giá hôm nay chỉnh ở tab Hôm nay.",
   BREAKFAST_PREORDER:
-    "Khách đặt từ tối hôm trước, nhận sáng hôm sau. Chọn món từ Sản phẩm, trả trước, giao theo khung 15 phút.",
+    "Một menu sáng. Tối hôm trước khách đặt Sáng mai ăn gì?. 06:00–09:00 hôm sau bán tiếp suất còn lại, tên Ăn sáng.",
+  LUNCH:
+    "Chọn món từ Sản phẩm, ra menu trưa theo ngày. Bán 09:00–13:00, trả trước, giao theo khung. Không ghép mâm như bữa tối.",
   FAMILY_DINNER:
     "Khách tự ghép mâm chính, phụ, rau, canh, cơm theo menu trong ngày. Trả trước, bếp nấu theo số đơn.",
   LATE_NIGHT:

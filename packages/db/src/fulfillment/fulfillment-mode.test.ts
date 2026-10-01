@@ -67,6 +67,13 @@ describe("historical fulfillment backfill", () => {
     expect(
       decideHistoricalFulfillment({
         ...base,
+        orderKind: "LUNCH",
+        status: "DELIVERING",
+      }).fulfillmentMode,
+    ).toBe("PROVIDER_SELF_DELIVERY");
+    expect(
+      decideHistoricalFulfillment({
+        ...base,
         orderKind: "FAMILY_DINNER",
         status: "READY",
         runnerSoughtAt: "2026-09-30T10:00:00.000Z",
@@ -128,6 +135,18 @@ describe("cancel find runner", () => {
     ).toEqual({ ok: true, status: "PROVIDER_ACCEPTED" });
   });
 
+  it("keeps a packed market order at READY", () => {
+    expect(
+      decideCancelFindRunner({
+        serviceVertical: "FOOD",
+        orderKind: "STANDARD",
+        status: "READY",
+        runnerUserId: null,
+        runnerSoughtAt: "2026-09-30T10:00:00.000Z",
+      }),
+    ).toEqual({ ok: true, status: "READY" });
+  });
+
   it("refuses after a runner has accepted", () => {
     const decision = decideCancelFindRunner({
       serviceVertical: "FOOD",
@@ -152,5 +171,12 @@ describe("fulfillment transitions", () => {
 
   it("still allows self-delivery READY → DELIVERING", () => {
     expect(canTransition("READY", "DELIVERING", "FOOD", null, "FAMILY_DINNER")).toBe(true);
+  });
+
+  it("lets lunch skip the cook step the same way breakfast does", () => {
+    expect(canTransition("PROVIDER_ACCEPTED", "READY", "FOOD", null, "LUNCH")).toBe(true);
+    expect(canTransition("PROVIDER_ACCEPTED", "READY", "FOOD", null, "BREAKFAST_PREORDER")).toBe(true);
+    expect(canTransition("PROVIDER_ACCEPTED", "READY", "FOOD", null, "FAMILY_DINNER")).toBe(false);
+    expect(canTransition("PROVIDER_ACCEPTED", "PREPARING", "FOOD", null, "LATE_DINNER")).toBe(true);
   });
 });

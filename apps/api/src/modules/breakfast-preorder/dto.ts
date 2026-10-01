@@ -42,6 +42,7 @@ export const publishBreakfastMenuSchema = z.object({
     .min(1)
     .max(24)
     .optional(),
+  daypart: z.enum(["BREAKFAST", "LUNCH"]).optional(),
 });
 
 export const patchBreakfastSettingsSchema = z.object({
@@ -61,4 +62,5 @@ export const copyLastBreakfastMenuSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
   publish: z.boolean().optional().default(false),
+  daypart: z.enum(["BREAKFAST", "LUNCH"]).optional(),
 });

@@ -11,6 +11,7 @@ import {
   type PickiDb,
 } from "@picki/db";
 import { PICKI_DB } from "../../shared/tokens.js";
+import { isDaypartMenuOrder } from "@picki/shared";
 
 const ORDER_FINISHED = new Set([
   "DELIVERED",
@@ -111,7 +112,7 @@ export class ActivityService {
       const finished = ORDER_FINISHED.has(r.status);
       const isPreorder =
         (r.orderKind === "FAMILY_DINNER" ||
-          r.orderKind === "BREAKFAST_PREORDER" ||
+          isDaypartMenuOrder(r.orderKind) ||
           r.orderKind === "LATE_DINNER") &&
         r.serviceDate != null &&
         r.serviceDate > today &&
@@ -272,6 +273,9 @@ function orderStatusShort(status: string, orderKind: string, vertical: string): 
   }
   if (orderKind === "BREAKFAST_PREORDER") {
     if (!ORDER_FINISHED.has(status)) return "Sáng mai · đã đặt";
+  }
+  if (orderKind === "LUNCH") {
+    if (!ORDER_FINISHED.has(status)) return "Bữa trưa · đã đặt";
   }
   if (vertical === "LAUNDRY") {
     switch (status) {

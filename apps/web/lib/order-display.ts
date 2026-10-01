@@ -80,11 +80,13 @@ export const LAUNDRY_ON_SITE_FLOW_STEPS = [
   { key: "COMPLETED", label: "Hoàn tất" },
 ] as const;
 
+import { isDaypartMenuOrder } from "@picki/shared";
+
 export function isCookFirstOrderKind(orderKind?: string | null): boolean {
   return (
     orderKind === "FAMILY_DINNER" ||
     orderKind === "LATE_DINNER" ||
-    orderKind === "BREAKFAST_PREORDER"
+    isDaypartMenuOrder(orderKind)
   );
 }
 
@@ -148,7 +150,7 @@ export function orderStepIndex(
     return laundryMap[status] ?? -1;
   }
 
-  if (isBreakfastPreorderOrderKind(opts.orderKind)) {
+  if (isDaypartMenuOrder(opts.orderKind)) {
     if (status === "PROVIDER_ACCEPTED") return 0;
     if (status === "PREPARING") return 1; // legacy if any
     if (status === "READY") {
@@ -213,7 +215,7 @@ export function flowStepsForOrder(opts: {
     if (opts.audience === "customer") return LAUNDRY_CUSTOMER_FLOW_STEPS;
     return LAUNDRY_FLOW_STEPS;
   }
-  if (isBreakfastPreorderOrderKind(opts.orderKind)) return BREAKFAST_FLOW_STEPS;
+  if (isDaypartMenuOrder(opts.orderKind)) return BREAKFAST_FLOW_STEPS;
   if (isCookFirstOrderKind(opts.orderKind)) return COOK_FIRST_FLOW_STEPS;
   return ORDER_FLOW_STEPS;
 }

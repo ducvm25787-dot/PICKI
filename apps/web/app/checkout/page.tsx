@@ -17,7 +17,7 @@ import { cartTotalVnd, readCart, writeCart, type Cart } from "../../lib/cart";
 import { getCurrentPositionOnce } from "../../lib/geolocation";
 import { mapsDirectionsUrl } from "../../lib/maps";
 import { formatVnd } from "../../lib/money";
-import { isLaundryVertical, orderButtonLabel } from "../../lib/providers";
+import { isLaundryVertical, isMarketVertical, orderButtonLabel } from "../../lib/providers";
 
 type OrderResult = {
   id: string;
@@ -368,7 +368,7 @@ export default function CheckoutPage() {
 
       <div className="card" style={{ marginBottom: 16 }}>
         <p className="stat" style={{ margin: "0 0 4px" }}>
-          Quán
+          {isMarketVertical(cart.providerType) ? "Cửa hàng" : "Quán"}
         </p>
         <strong>{cart.brandName}</strong>
       </div>

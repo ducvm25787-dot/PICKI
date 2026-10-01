@@ -11,8 +11,11 @@ import {
   providerLocations,
   providerZoneMemberships,
   providers,
+  issueLocationQr,
   publishZoneBoundary,
   ringToMultiPolygonGeoJson,
+  setLocationVerification,
+  VerifiedQrError,
   runners,
   upsertServiceArea,
   userZoneMemberships,
@@ -28,6 +31,8 @@ import type { z } from "zod";
 import type {
   adminOrderActionSchema,
   createDeliveryPromotionSchema,
+  issueLocationQrSchema,
+  setLocationVerificationSchema,
   publishBoundarySchema,
   updateAnchorSchema,
   upsertServiceAreaSchema,
@@ -132,6 +137,9 @@ export class AdminService {
         status: providerLocations.status,
         pinVerifiedAt: providerLocations.pinVerifiedAt,
         pinNote: providerLocations.pinNote,
+        verificationStatus: providerLocations.verificationStatus,
+        verificationNote: providerLocations.verificationNote,
+        hasVerifiedQr: sql<boolean>`${providerLocations.verifiedQrToken} IS NOT NULL`,
       })
       .from(providerZoneMemberships)
       .innerJoin(
@@ -178,6 +186,9 @@ export class AdminService {
         pinVerifiedAt: l.pinVerifiedAt?.toISOString() ?? null,
         pinNote: l.pinNote,
         needsPin: l.lat == null || l.lng == null || l.pinVerifiedAt == null,
+        verificationStatus: l.verificationStatus,
+        verificationNote: l.verificationNote,
+        hasVerifiedQr: l.hasVerifiedQr,
       })),
     };
   }
@@ -527,6 +538,80 @@ export class AdminService {
     });
 
     return { id: row.id };
+  }
+
+  async setLocationVerification(
+    adminUserId: string,
+    locationId: string,
+    input: z.infer<typeof setLocationVerificationSchema>,
+  ) {
+    try {
+      return await setLocationVerification(this.db, {
+        locationId,
+        status: input.status,
+        note: input.note,
+        actorUserId: adminUserId,
+      });
+    } catch (err) {
+      throw this.qrError(err);
+    }
+  }
+
+  async issueLocationQr(
+    adminUserId: string,
+    locationId: string,
+    input: z.infer<typeof issueLocationQrSchema>,
+  ) {
+    try {
+      const issued = await issueLocationQr(this.db, {
+        locationId,
+        actorUserId: adminUserId,
+        reason: input.reason,
+      });
+      return {
+        locationId: issued.locationId,
+        token: issued.token,
+        reissued: issued.reissued,
+        path: `/v/${issued.token}`,
+      };
+    } catch (err) {
+      throw this.qrError(err);
+    }
+  }
+
+  async listShops() {
+    const rows = await this.db
+      .select({
+        locationId: providerLocations.id,
+        brandName: providers.brandName,
+        displayName: providerLocations.displayName,
+        status: providerLocations.status,
+        verificationStatus: providerLocations.verificationStatus,
+        verificationNote: providerLocations.verificationNote,
+        qrToken: providerLocations.verifiedQrToken,
+      })
+      .from(providerLocations)
+      .innerJoin(providers, eq(providers.id, providerLocations.providerId))
+      .orderBy(providers.brandName, providerLocations.displayName);
+
+    return {
+      shops: rows.map((row) => ({
+        locationId: row.locationId,
+        brandName: row.brandName,
+        displayName: row.displayName,
+        status: row.status,
+        verificationStatus: row.verificationStatus,
+        verificationNote: row.verificationNote,
+        qrPath: row.qrToken ? `/v/${row.qrToken}` : null,
+      })),
+    };
+  }
+
+  private qrError(err: unknown): Error {
+    if (err instanceof VerifiedQrError) {
+      throw new PickiError(err.code, err.message);
+    }
+    throw err;
   }
 
   private async requireZone(zoneId: string) {

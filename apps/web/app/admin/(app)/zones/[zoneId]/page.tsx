@@ -40,6 +40,9 @@ type ZoneGeo = {
     pinVerifiedAt: string | null;
     pinNote: string | null;
     needsPin: boolean;
+    verificationStatus: "UNVERIFIED" | "PENDING" | "VERIFIED" | "REJECTED";
+    verificationNote: string | null;
+    hasVerifiedQr: boolean;
   }[];
 };
 
@@ -67,6 +70,11 @@ export default function AdminZoneSetupPage() {
   const [shopPin, setShopPin] = useState<AdminLatLng | null>(null);
   const [shopNote, setShopNote] = useState("");
   const [shopAddress, setShopAddress] = useState("");
+  const [verificationStatus, setVerificationStatus] = useState<
+    "UNVERIFIED" | "PENDING" | "VERIFIED" | "REJECTED"
+  >("UNVERIFIED");
+  const [verificationNote, setVerificationNote] = useState("");
+  const [qrPath, setQrPath] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await api<ZoneGeo>(`/admin/zones/${zoneId}/geo`);
@@ -215,6 +223,50 @@ export default function AdminZoneSetupPage() {
     );
     setShopNote(loc.pinNote ?? "");
     setShopAddress(loc.addressLine ?? "");
+    setVerificationStatus(loc.verificationStatus ?? "UNVERIFIED");
+    setVerificationNote(loc.verificationNote ?? "");
+    setQrPath(null);
+  }
+
+  async function saveVerification() {
+    if (!selectedShop) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      await api(`/admin/locations/${selectedShop}/verification`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: verificationStatus,
+          note: verificationNote || undefined,
+        }),
+      });
+      if (verificationStatus !== "VERIFIED") setQrPath(null);
+      setMsg("Đã lưu xác minh cơ sở");
+      await load();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Không lưu được xác minh");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function issueQr() {
+    if (!selectedShop) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      const res = await api<{ path: string; reissued: boolean }>(
+        `/admin/locations/${selectedShop}/verified-qr`,
+        { method: "POST", body: JSON.stringify({ reason: verificationNote || undefined }) },
+      );
+      setQrPath(res.path);
+      setMsg(res.reissued ? "Đã đổi QR. Mã in cũ hết hiệu lực." : "Đã cấp QR.");
+      await load();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Không cấp được QR");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function confirmShopPin() {
@@ -453,6 +505,57 @@ export default function AdminZoneSetupPage() {
                   >
                     {saving ? "Đang lưu…" : "Xác nhận vị trí shop"}
                   </button>
+                  <div className="field" style={{ marginTop: 16 }}>
+                    <label htmlFor="vstatus">Pickee Verified</label>
+                    <select
+                      id="vstatus"
+                      value={verificationStatus}
+                      onChange={(e) =>
+                        setVerificationStatus(
+                          e.target.value as "UNVERIFIED" | "PENDING" | "VERIFIED" | "REJECTED",
+                        )
+                      }
+                    >
+                      <option value="UNVERIFIED">Chưa xác minh</option>
+                      <option value="PENDING">Đang xem</option>
+                      <option value="VERIFIED">Đã xác minh</option>
+                      <option value="REJECTED">Từ chối</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="vnote">Ghi chú xác minh</label>
+                    <input
+                      id="vnote"
+                      value={verificationNote}
+                      onChange={(e) => setVerificationNote(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn admin-btn"
+                    disabled={saving}
+                    onClick={() => void saveVerification()}
+                  >
+                    Lưu xác minh
+                  </button>
+                  {verificationStatus === "VERIFIED" ? (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={saving}
+                      style={{ marginTop: 8 }}
+                      onClick={() => void issueQr()}
+                    >
+                      {data.locations.find((l) => l.locationId === selectedShop)?.hasVerifiedQr
+                        ? "Đổi QR"
+                        : "Cấp QR"}
+                    </button>
+                  ) : null}
+                  {qrPath ? (
+                    <p className="stat">
+                      In sticker: {qrPath}. Đổi mã sẽ làm sticker cũ hết hiệu lực.
+                    </p>
+                  ) : null}
                 </>
               ) : (
                 <p className="stat">Chọn shop trong danh sách.</p>

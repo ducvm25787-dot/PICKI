@@ -12,6 +12,7 @@ import { api } from "../../../../lib/api";
 import { getCurrentPositionOnce } from "../../../../lib/geolocation";
 import { PickeeMap } from "../../../components/pickee-map";
 import { ProviderOpeningForm } from "./opening-form";
+import { VerifiedQrImage } from "../../../components/verified-qr-image";
 
 type Profile = {
   providerId: string;
@@ -26,6 +27,8 @@ type Profile = {
   description: string | null;
   logoUrl: string | null;
   coverUrl: string | null;
+  verificationStatus?: string;
+  qrPath?: string | null;
 };
 
 function hasIntroContent(p: Profile): boolean {
@@ -204,6 +207,20 @@ export default function ProviderSettingsPage() {
               ))}
             </select>
           </div>
+        )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <p className="section-title">QR cửa hàng</p>
+        {profile?.qrPath ? (
+          <>
+            <p className="stat">Pickee đã xác minh cơ sở này. In mã và dán tại cửa.</p>
+            <VerifiedQrImage path={profile.qrPath} />
+          </>
+        ) : (
+          <p className="stat" style={{ margin: 0 }}>
+            Chưa có mã. Pickee Ops xác minh cơ sở rồi cấp QR — quán không tự tạo mã.
+          </p>
         )}
       </div>
 

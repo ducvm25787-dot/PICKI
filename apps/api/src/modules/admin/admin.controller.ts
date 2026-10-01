@@ -8,6 +8,8 @@ import {
   adminOrderActionSchema,
   createDeliveryPromotionSchema,
   publishBoundarySchema,
+  issueLocationQrSchema,
+  setLocationVerificationSchema,
   updateAnchorSchema,
   upsertServiceAreaSchema,
   verifyLocationPinSchema,
@@ -21,6 +23,11 @@ export class AdminController {
   @Get("dashboard")
   async dashboard() {
     return this.adminService.dashboard();
+  }
+
+  @Get("shops")
+  async shops() {
+    return this.adminService.listShops();
   }
 
   @Get("zones")
@@ -91,6 +98,32 @@ export class AdminController {
       });
     }
     return this.adminService.verifyLocationPin(userId, locationId, parsed.data);
+  }
+
+  @Patch("locations/:locationId/verification")
+  async setVerification(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = setLocationVerificationSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Trạng thái xác minh không hợp lệ");
+    }
+    return this.adminService.setLocationVerification(userId, locationId, parsed.data);
+  }
+
+  @Post("locations/:locationId/verified-qr")
+  async issueQr(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = issueLocationQrSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new PickiError("VALIDATION_ERROR", "Lý do cấp QR không hợp lệ");
+    }
+    return this.adminService.issueLocationQr(userId, locationId, parsed.data);
   }
 
   @Get("orders")

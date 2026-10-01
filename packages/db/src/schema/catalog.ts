@@ -108,6 +108,7 @@ export const productDailyAvailability = pgTable(
     reservedQty: integer("reserved_qty").notNull().default(0),
     soldQty: integer("sold_qty").notNull().default(0),
     priceOverrideVnd: integer("price_override_vnd"),
+    featured: boolean("featured").notNull().default(false),
     availableFrom: time("available_from"),
     availableUntil: time("available_until"),
     createdAt: createdAt(),

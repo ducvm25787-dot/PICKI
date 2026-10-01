@@ -13,6 +13,7 @@ import {
   type Cart,
 } from "../../../lib/cart";
 import { LocationContactActions } from "../../components/location-contact-actions";
+import { SaveFamiliarButton } from "../../components/save-familiar-button";
 import { OpeningInterest } from "../../components/opening-interest";
 import { LocationIntroPanel } from "../../components/location-intro-panel";
 import { OrderPhoneLinks } from "../../components/order-phone-links";
@@ -65,6 +66,8 @@ type MenuResponse = {
     addressLine?: string | null;
     lat?: number | null;
     lng?: number | null;
+    pickeeVerified?: boolean;
+    sellNow?: boolean;
     contacts?: {
       provider: { phone: string | null; label?: string };
     };
@@ -122,6 +125,15 @@ type VisitIntent = {
 };
 
 const VISIT_ETA_PRESETS = [15, 30, 45, 60] as const;
+
+/**
+ * Debt: amount 0 is not a market "ask price" state. Legacy contact verticals still store
+ * QUOTE_REQUIRED / FROM with amount 0. A market line is on the shelf only when pricing is
+ * FIXED, amount is above 0, and today has a published quantity.
+ */
+function marketOnShelf(item: MenuResponse["items"][number]) {
+  return item.pricingKind === "FIXED" && item.amountVnd > 0 && item.todayStatus === "AVAILABLE";
+}
 
 function groupMenu(items: MenuResponse["items"]) {
   const order: string[] = [];
@@ -434,10 +446,6 @@ export default function LocationMenuPage() {
   const { location, items, dailySpecials } = menu;
   const isLaundry = isLaundryVertical(location.providerType);
   const isFood = isFoodBreakfastVertical(location.providerType);
-  const menuGroups =
-    isFood && items.some((item) => item.categoryName)
-      ? groupMenu(items)
-      : [{ name: null as string | null, items }];
   const isHomeService = isHomeServiceVertical(location.providerType);
   const isBeauty = isBeautyVertical(location.providerType);
   const isPet = isPetVertical(location.providerType);
@@ -445,6 +453,13 @@ export default function LocationMenuPage() {
   const isHealth = isHealthVertical(location.providerType);
   const isPharmacy = isPharmacyVertical(location.providerType);
   const isMarket = isMarketVertical(location.providerType);
+  const marketSell = isMarket && location.sellNow === true;
+  const shelfItems = marketSell ? items.filter(marketOnShelf) : items;
+  const askItems = marketSell ? items.filter((item) => !marketOnShelf(item)) : [];
+  const menuGroups =
+    (marketSell || isFood) && shelfItems.some((item) => item.categoryName)
+      ? groupMenu(shelfItems)
+      : [{ name: null as string | null, items: shelfItems }];
   const isTransport = isTransportVertical(location.providerType);
   const isCustomerVisit = isCustomerVisitVertical(location.providerType);
   const isEducation = isEducationVertical(location.providerType);
@@ -453,7 +468,7 @@ export default function LocationMenuPage() {
   const total = cartTotalVnd(cart);
 
   return (
-    <div className="container" style={{ paddingBottom: count > 0 ? 120 : 16 }}>
+    <div className="container" style={count > 0 ? { paddingBottom: 96 } : undefined}>
       <button
         type="button"
         className="btn btn-secondary"
@@ -531,6 +546,7 @@ export default function LocationMenuPage() {
         <OpeningInterest locationId={location.id} />
         <h1 style={{ margin: "8px 0 4px", fontSize: 24 }}>
           {location.brandName}
+          {location.pickeeVerified ? <span className="verified-pill">Pickee Verified</span> : null}
           <span
             className={`live-pill ${liveStatusClass(
               isEducation ? "OPEN" : location.liveStatus,
@@ -550,6 +566,7 @@ export default function LocationMenuPage() {
           </span>
         </h1>
         <p className="stat">{location.displayName}</p>
+        <SaveFamiliarButton locationId={location.id} />
         {location.addressLine ? <p className="stat">{location.addressLine}</p> : null}
         {(location.lat != null && location.lng != null) || location.addressLine ? (
           <div style={{ marginTop: 10 }}>
@@ -583,9 +600,14 @@ export default function LocationMenuPage() {
             Gọi/Zalo hỏi còn hàng rồi qua lấy — Pickee không bán thuốc online và không giao thuốc V1.
           </p>
         ) : null}
-        {isMarket ? (
+        {isMarket && !marketSell ? (
           <p className="stat" style={{ marginTop: 8 }}>
-            Gọi/Zalo hỏi còn hàng rồi qua lấy — Pickee chưa bán tạp hóa online và chưa giao hàng V1.
+            Gọi/Zalo hỏi còn hàng rồi qua lấy — cửa hàng chưa mở bán trên Pickee.
+          </p>
+        ) : null}
+        {marketSell ? (
+          <p className="stat" style={{ marginTop: 8 }}>
+            Chọn sản phẩm đang bán hôm nay để giao tận căn hộ.
           </p>
         ) : null}
         {isTransport ? (
@@ -662,6 +684,8 @@ export default function LocationMenuPage() {
         >
           {isLaundry || isHomeService || isCustomerVisit || isEducation || isSports || isTransport
             ? "Dịch vụ"
+            : marketSell
+              ? "Sản phẩm"
             : isPharmacy || isMarket
               ? "Hỏi hàng"
               : "Menu"}
@@ -773,7 +797,7 @@ export default function LocationMenuPage() {
         </div>
       ) : null}
 
-      {(isCustomerVisit || isEducation || isSports || isPharmacy || isMarket || isTransport) &&
+      {(isCustomerVisit || isEducation || isSports || isPharmacy || (isMarket && !marketSell) || isTransport) &&
       location.contacts?.provider ? (
         <div id="location-contact" className="card" style={{ marginBottom: 16 }}>
           <p className="section-title">Liên hệ</p>
@@ -784,8 +808,10 @@ export default function LocationMenuPage() {
                 ? "Gọi/Zalo sân hoặc gửi yêu cầu khung giờ bên dưới."
               : isPharmacy
                 ? "Gọi/Zalo hỏi còn hàng / giá — rồi qua lấy tại hiệu. Không đặt hàng thuốc trên Pickee."
-              : isMarket
-                ? "Gọi/Zalo hỏi còn hàng / giá — rồi qua lấy tại quán. Không đặt hàng tạp hóa trên Pickee V1."
+              : isMarket && !marketSell
+                ? "Gọi/Zalo hỏi còn hàng / giá — rồi qua lấy tại quán."
+              : marketSell
+                ? "Có thể hỏi thêm loại hoặc số lượng trước khi đặt."
               : isTransport
                 ? "Gọi/Zalo hỏi lịch đón & giá — không giữ chỗ tự động trên Pickee V1."
               : isAuto
@@ -823,14 +849,16 @@ export default function LocationMenuPage() {
 
       {isPharmacy ? (
         <PharmacyInquiry locationId={location.id} />
-      ) : isMarket ? (
+      ) : isMarket && !marketSell ? (
         <MarketInquiry locationId={location.id} />
       ) : (
       <div className="card">
         <p className="section-title">
           {isLaundry || isHomeService || isCustomerVisit || isEducation || isSports || isTransport
             ? "Dịch vụ"
-            : "Menu"}
+            : marketSell
+              ? "Đang bán hôm nay"
+              : "Menu"}
         </p>
         {optionItem?.optionGroups?.length ? (
           <div className="card" style={{ marginBottom: 12 }}>
@@ -877,9 +905,11 @@ export default function LocationMenuPage() {
             </div>
           </div>
         ) : null}
-        {items.length === 0 ? (
+        {shelfItems.length === 0 ? (
           <p className="stat">
-            {isLaundry || isHomeService || isCustomerVisit || isEducation || isSports || isTransport
+            {marketSell
+              ? "Hôm nay chưa mở bán sản phẩm nào."
+              : isLaundry || isHomeService || isCustomerVisit || isEducation || isSports || isTransport
               ? "Chưa có dịch vụ — tiệm đang cập nhật."
               : "Chưa có món — provider đang cập nhật."}
           </p>
@@ -981,15 +1011,15 @@ export default function LocationMenuPage() {
                       <>
                         <strong>
                           {formatVnd(item.amountVnd)}
-                          {isFood && item.unit ? ` / ${item.unit}` : ""}
+                          {(isFood || marketSell) && item.unit ? ` / ${item.unit}` : ""}
                         </strong>
                         {isFood && item.prepTimeMinutes ? (
                           <span className="stat"> · ~{item.prepTimeMinutes} phút</span>
                         ) : null}
-                        {isFood && item.todayStatus === "SOLD_OUT" ? (
+                        {(isFood || marketSell) && item.todayStatus === "SOLD_OUT" ? (
                           <span className="stat"> · Hết hôm nay</span>
                         ) : null}
-                        {isFood && item.todayStatus === "AVAILABLE" && item.todayRemaining != null ? (
+                        {(isFood || marketSell) && item.todayStatus === "AVAILABLE" && item.todayRemaining != null ? (
                           <span className="stat"> · Còn {item.todayRemaining}</span>
                         ) : null}
                       </>
@@ -1057,10 +1087,10 @@ export default function LocationMenuPage() {
                       type="button"
                       className="btn btn-secondary"
                       style={{ width: "auto", padding: "8px 12px", flexShrink: 0 }}
-                      disabled={isFood && item.todayStatus === "SOLD_OUT"}
+                      disabled={(isFood || marketSell) && item.todayStatus === "SOLD_OUT"}
                       onClick={() => startAdd(item)}
                     >
-                      {isFood && item.todayStatus === "SOLD_OUT" ? "Hết hôm nay" : "+ Thêm"}
+                      {(isFood || marketSell) && item.todayStatus === "SOLD_OUT" ? "Hết hôm nay" : "+ Thêm"}
                     </button>
                   )}
                 </div>
@@ -1072,6 +1102,37 @@ export default function LocationMenuPage() {
         )}
       </div>
       )}
+
+      {askItems.length > 0 ? (
+        <div className="card" style={{ marginTop: 12 }}>
+          <p className="section-title">Chưa mở bán hôm nay</p>
+          <p className="tagline" style={{ marginTop: 0 }}>
+            Những sản phẩm này chưa có số lượng trên kệ. Hỏi cửa hàng nếu cần.
+          </p>
+          {askItems.map((item) => (
+            <div key={item.id} className="board-row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
+              <span>
+                <strong>{item.name}</strong>
+                {item.categoryName ? <span className="stat"> · {item.categoryName}</span> : null}
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ width: "auto", padding: "8px 12px" }}
+                onClick={() => document.getElementById("market-chat")?.scrollIntoView({ behavior: "smooth" })}
+              >
+                Hỏi hàng
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {marketSell ? (
+        <div id="market-chat">
+          <MarketInquiry locationId={location.id} />
+        </div>
+      ) : null}
 
       {isTransport ? (
         <TransportInquiry
@@ -1264,17 +1325,7 @@ export default function LocationMenuPage() {
       ) : null}
 
       {count > 0 && !isHomeService && !isCustomerVisit && !isEducation && !isSports && (
-        <div
-          style={{
-            position: "fixed",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            padding: "12px 16px 20px",
-            background: "rgba(247,245,242,0.95)",
-            borderTop: "1px solid var(--border)",
-          }}
-        >
+        <div className="dock-action">
           <div style={{ maxWidth: 480, margin: "0 auto" }}>
             <Link href="/checkout" className="btn" style={{ textAlign: "center" }}>
               {isLaundry

@@ -224,6 +224,7 @@ export async function listBreakfastPreorderProvidersEnabled(
     INNER JOIN breakfast_preorder_daily_menus bdm
       ON bdm.provider_location_id = pl.id
       AND bdm.service_date = ${serviceDate}::date
+      AND bdm.daypart = 'BREAKFAST'
       AND bdm.status = 'PUBLISHED'
     LEFT JOIN provider_profiles pp ON pp.provider_id = p.id
     LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
@@ -788,6 +789,92 @@ export async function listMarketProviders(
         ELSE 3
       END,
       p.brand_name
+  `;
+}
+
+export type MarketGoodsCategoryRow = {
+  id: string;
+  name: string;
+  type: string;
+};
+
+/** Đi chợ shelf. Local sellers sort first. Supermarket stays in the result when category data matches. */
+export async function listMarketShelf(
+  sql: PickiSql,
+  zoneId: string,
+  goodsCategoryId?: string | null,
+): Promise<DiscoveryProviderRow[]> {
+  const categoryId = goodsCategoryId ?? null;
+  return sql<DiscoveryProviderRow[]>`
+    SELECT
+      pl.id AS location_id,
+      p.id AS provider_id,
+      p.brand_name,
+      pl.display_name,
+      p.provider_type,
+      pp.tagline,
+      COALESCE(pls.status, 'OFFLINE') AS live_status,
+      pls.prep_minutes,
+      pls.eta_minutes,
+      pls.estimated_wait_minutes,
+      pl.address_line,
+      pl.lat,
+      pl.lng,
+      (
+        SELECT ROUND(AVG(lr.rating)::numeric, 1)::text
+        FROM location_reviews lr
+        WHERE lr.provider_location_id = pl.id
+      ) AS avg_rating,
+      (
+        SELECT COUNT(*)::text FROM location_reviews lr
+        WHERE lr.provider_location_id = pl.id
+      ) AS review_count,
+      (
+        SELECT o.name FROM offerings o
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        ORDER BY o.sort_order
+        LIMIT 1
+      ) AS sample_offering
+    FROM provider_zone_memberships pzm
+    INNER JOIN provider_locations pl ON pl.id = pzm.provider_location_id
+    INNER JOIN providers p ON p.id = pl.provider_id
+    LEFT JOIN provider_profiles pp ON pp.provider_id = p.id
+    LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
+    WHERE pzm.zone_id = ${zoneId}::uuid
+      AND pzm.status = 'ACTIVE'
+      AND pl.status = 'ACTIVE'
+      AND p.status = 'ACTIVE'
+      AND p.provider_type IN ('MINIMART', 'MARKET_VENDOR', 'RETAIL_STORE', 'SUPERMARKET')
+      AND (
+        ${categoryId}::uuid IS NULL
+        OR p.primary_category_id = ${categoryId}::uuid
+        OR EXISTS (
+          SELECT 1 FROM offerings o
+          WHERE o.provider_id = p.id
+            AND o.status = 'ACTIVE'
+            AND o.category_id = ${categoryId}::uuid
+        )
+      )
+    ORDER BY
+      CASE WHEN p.provider_type = 'SUPERMARKET' THEN 1 ELSE 0 END,
+      CASE COALESCE(pls.status, 'OFFLINE')
+        WHEN 'OPEN' THEN 0
+        WHEN 'BUSY' THEN 1
+        WHEN 'CLOSED' THEN 2
+        ELSE 3
+      END,
+      p.brand_name
+  `;
+}
+
+export async function listMarketGoodsCategories(sql: PickiSql): Promise<MarketGoodsCategoryRow[]> {
+  return sql<MarketGoodsCategoryRow[]>`
+    SELECT id, name, type
+    FROM product_categories
+    WHERE active = true
+      AND parent_id IS NULL
+      AND type IN ('FRESH', 'RETAIL')
+    ORDER BY CASE type WHEN 'FRESH' THEN 0 ELSE 1 END, sort_order, name
   `;
 }
 

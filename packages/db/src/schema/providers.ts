@@ -1,5 +1,6 @@
 import { boolean, doublePrecision, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { createdAt, updatedAt } from "./helpers.js";
+import { users } from "./identity.js";
 import { zones } from "./zones.js";
 
 export const providers = pgTable("providers", {
@@ -9,6 +10,8 @@ export const providers = pgTable("providers", {
   providerType: text("provider_type").notNull(),
   /** FOOD_SERVICE | FRESH_MARKET | RETAIL_STORE. Null = vertical không thuộc commerce này. */
   commerceModel: text("commerce_model"),
+  /** Goods taxonomy. Shop kind stays on provider_type. */
+  primaryCategoryId: uuid("primary_category_id"),
   status: text("status").notNull().default("DRAFT"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -43,6 +46,14 @@ export const providerLocations = pgTable("provider_locations", {
   pinNote: text("pin_note"),
   /** Null = đã mở từ trước. Tương lai = sắp khai trương. Badge «Mới» tự hết sau 14 ngày. */
   opensAt: timestamp("opens_at", { withTimezone: true, mode: "date" }),
+  /** UNVERIFIED | PENDING | VERIFIED | REJECTED. Separate from pin and license checks. */
+  verificationStatus: text("verification_status").notNull().default("UNVERIFIED"),
+  verificationNote: text("verification_note"),
+  verifiedAt: timestamp("verified_at", { withTimezone: true, mode: "date" }),
+  verifiedBy: uuid("verified_by").references(() => users.id, { onDelete: "set null" }),
+  /** Opaque sticker token. Null until Ops issues one. Unique. Never logged. */
+  verifiedQrToken: text("verified_qr_token").unique(),
+  verifiedQrIssuedAt: timestamp("verified_qr_issued_at", { withTimezone: true, mode: "date" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

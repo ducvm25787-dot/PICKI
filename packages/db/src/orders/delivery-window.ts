@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { isDaypartMenuOrder } from "@picki/shared";
 import {
   breakfastPreorderDeliveryWindows,
   familyDinnerDeliveryWindows,
@@ -26,7 +27,7 @@ export async function loadOrderDeliveryWindow(
     breakfastDeliveryWindowId?: string | null;
   },
 ): Promise<OrderDeliveryWindowSnap | null> {
-  if (order.orderKind === "BREAKFAST_PREORDER" && order.breakfastDeliveryWindowId) {
+  if (isDaypartMenuOrder(order.orderKind) && order.breakfastDeliveryWindowId) {
     const rows = await db
       .select({
         startsAt: breakfastPreorderDeliveryWindows.startsAt,

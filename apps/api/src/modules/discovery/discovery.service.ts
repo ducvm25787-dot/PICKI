@@ -14,6 +14,8 @@ import {
   listHealthProviders,
   listPharmacyProviders,
   listMarketProviders,
+  listMarketShelf,
+  listMarketGoodsCategories,
   listTransportProviders,
   listPetProviders,
   listSportsProviders,
@@ -225,7 +227,7 @@ export class DiscoveryService {
       enriched.push({
         id: "market",
         title: "ĐI CHỢ",
-        subtitle: "Tạp hóa, minimart, sạp gần nhà — hỏi còn hàng rồi qua lấy",
+        subtitle: "Tiểu thương và tạp hóa quanh nhà — chọn nhóm hàng để xem",
         foodMoments: [],
         providers: markets.map(mapProvider),
       });
@@ -258,10 +260,33 @@ export class DiscoveryService {
     return { zoneId: zone.id, slug: zone.slug, blocks: enriched, community };
   }
 
-  /** Home category browse — filter by provider_type set. */
-  async browseCategory(slugOrId: string, categoryId: string, providerTypes: string[]) {
+  /** Home category browse — filter by provider_type set. Market uses the goods shelf. */
+  async browseCategory(
+    slugOrId: string,
+    categoryId: string,
+    providerTypes: string[],
+    goodsCategoryId?: string | null,
+  ) {
     const zone = await this.zones.findZone(slugOrId);
     if (!zone) throw new PickiError("NOT_FOUND", "Zone not found");
+    if (categoryId === "market") {
+      const [rows, goodsCategories] = await Promise.all([
+        listMarketShelf(this.sql, zone.id, goodsCategoryId),
+        listMarketGoodsCategories(this.sql),
+      ]);
+      const providers = rows.map(mapProvider);
+      return {
+        zoneId: zone.id,
+        slug: zone.slug,
+        categoryId,
+        providers,
+        shelf: {
+          local: providers.filter((p) => p.providerType !== "SUPERMARKET"),
+          supermarkets: providers.filter((p) => p.providerType === "SUPERMARKET"),
+        },
+        goodsCategories,
+      };
+    }
     const rows = await listProvidersByTypes(this.sql, zone.id, providerTypes);
     return {
       zoneId: zone.id,

@@ -37,6 +37,7 @@
     "backfill:relationships": "tsx src/backfill-relationships.ts"
   },
   "dependencies": {
+    "@picki/shared": "workspace:*",
     "drizzle-orm": "^0.40.0",
     "postgres": "^3.4.5"
   },

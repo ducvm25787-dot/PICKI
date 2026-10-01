@@ -19,6 +19,8 @@
   --role-soft: var(--accent-soft);
   --nav-active-bg: var(--accent-soft);
   --nav-active-fg: var(--accent-dark);
+  --dock-height: calc(66px + env(safe-area-inset-bottom, 0px));
+  --dock-clear: calc(var(--dock-height) + 24px);
 }
 
 .app-main.provider-app {
@@ -74,8 +76,19 @@ body {
 }
 
 .app-main.with-nav {
-  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: var(--dock-clear);
   animation: picki-fade-in 320ms ease-out;
+}
+
+.dock-action {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--dock-height);
+  z-index: 45;
+  padding: 12px 16px;
+  background: rgba(247, 245, 242, 0.95);
+  border-top: 1px solid var(--border);
 }
 
 @keyframes picki-fade-in {
@@ -490,6 +503,22 @@ body {
   padding: 8px 12px;
   font-size: 14px;
   box-shadow: none;
+}
+
+.qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.qty-stepper input {
+  width: 64px;
+  padding: 8px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  font: inherit;
+  text-align: center;
 }
 
 .runner-install-hint {
@@ -1122,6 +1151,18 @@ a.provider-card:hover,
 .live-dot.live-closed,
 .live-dot.live-offline {
   background: #a8a29e;
+}
+
+.verified-pill {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e8f5ef;
+  color: #1b7f4a;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
 }
 
 .live-pill {

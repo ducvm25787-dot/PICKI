@@ -2,8 +2,13 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  transpilePackages: ["@picki/shared"],
   // Ổ ngoài (/Volumes) — polling tránh file watcher chết làm next dev thoát sớm.
   webpack: (config, { dev }) => {
+    config.resolve.extensionAlias = {
+      ...config.resolve.extensionAlias,
+      ".js": [".ts", ".tsx", ".js", ".jsx"],
+    };
     if (dev) {
       config.watchOptions = {
         poll: 1000,

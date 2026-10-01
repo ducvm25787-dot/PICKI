@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, count, eq, inArray, ne, sql } from "drizzle-orm";
 import {
   applyDailyStockAction,
   setDailyPrice,
@@ -25,17 +25,36 @@ import {
   providers,
   type PickiDb,
 } from "@picki/db";
-import { PickiError } from "@picki/shared";
+import { MARKET_CATALOG_CAP, MARKET_FEATURED_QUOTA, PickiError } from "@picki/shared";
 import { PICKI_DB } from "../../shared/tokens.js";
 
 const CHANNELS = [
   { capability: "SELL_NOW", label: "Bán ngay", href: null },
-  { capability: "BREAKFAST_PREORDER", label: "Sáng mai", href: "/provider/breakfast" },
+  { capability: "BREAKFAST_PREORDER", label: "Sáng mai / Ăn sáng", href: "/provider/breakfast" },
+  { capability: "LUNCH", label: "Bữa trưa vui vẻ", href: "/provider/lunch" },
   { capability: "FAMILY_DINNER", label: "Bữa tối ấm cúng", href: "/provider/family-dinner" },
   { capability: "LATE_NIGHT", label: "Ăn khuya", href: "/provider/live" },
 ] as const;
 
-const FOOD_UNITS = ["phần", "tô", "đĩa", "ly", "suất", "cái"] as const;
+const FOOD_UNITS = [
+  "phần",
+  "tô",
+  "đĩa",
+  "ly",
+  "suất",
+  "cái",
+  "kg",
+  "500g",
+  "con",
+  "bó",
+  "túi",
+  "khay",
+  "hộp",
+  "chai",
+  "lon",
+  "gói",
+  "set",
+] as const;
 
 type OptionGroupInput = {
   name: string;
@@ -115,6 +134,7 @@ export class FoodBoardService {
         soldQty: productDailyAvailability.soldQty,
         dayStatus: productDailyAvailability.status,
         priceOverrideVnd: productDailyAvailability.priceOverrideVnd,
+        featured: productDailyAvailability.featured,
       })
       .from(offerings)
       .leftJoin(
@@ -150,6 +170,7 @@ export class FoodBoardService {
         priceOverrideVnd: row.priceOverrideVnd,
         status: day.status,
         remaining: day.remaining,
+        featured: row.featured === true,
       };
     });
 
@@ -165,6 +186,7 @@ export class FoodBoardService {
       breakfast: caps.BREAKFAST_PREORDER
         ? await this.menuSection(locationId, today, "breakfast")
         : null,
+      lunch: caps.LUNCH ? await this.menuSection(locationId, today, "lunch") : null,
       dinner: caps.FAMILY_DINNER ? await this.menuSection(locationId, today, "dinner") : null,
     };
   }
@@ -175,13 +197,17 @@ export class FoodBoardService {
     input: {
       offeringId: string;
       serviceDate?: string;
-      action: "add" | "sold_out" | "hide" | "show" | "price";
+      action: "add" | "sold_out" | "hide" | "show" | "price" | "feature" | "unfeature";
       quantity?: number;
       priceVnd?: number | null;
     },
   ) {
     const access = await this.assertFoodLocation(userId, locationId);
     await this.assertOffering(access.providerId, input.offeringId);
+    if (input.action === "feature" || input.action === "unfeature") {
+      await this.setFeatured(access.providerId, input.offeringId, input.action === "feature");
+      return this.board(userId, locationId);
+    }
     await this.db.transaction(async (tx) => {
       if (input.action === "price") {
         await setDailyPrice(tx, {
@@ -205,7 +231,7 @@ export class FoodBoardService {
     userId: string,
     locationId: string,
     input: {
-      channel: "breakfast" | "dinner";
+      channel: "breakfast" | "lunch" | "dinner";
       menuItemId: string;
       action: "add" | "sold_out" | "hide" | "show";
       quantity?: number;
@@ -236,10 +262,10 @@ export class FoodBoardService {
     }
 
     const add = input.quantity && input.quantity > 0 ? input.quantity : 5;
-    if (input.channel === "breakfast") {
-      await this.patchMenuQty(breakfastPreorderMenuItems, item, input.action, add);
-    } else {
+    if (input.channel === "dinner") {
       await this.patchMenuQty(familyDinnerMenuItems, item, input.action, add);
+    } else {
+      await this.patchMenuQty(breakfastPreorderMenuItems, item, input.action, add);
     }
     void access;
     return this.board(userId, locationId);
@@ -255,18 +281,21 @@ export class FoodBoardService {
   }
 
   async listCategories(userId: string, locationId: string) {
-    await this.assertFoodLocation(userId, locationId);
+    const access = await this.assertFoodLocation(userId, locationId);
+    const types = access.commerceModel === "FOOD_SERVICE" ? ["FOOD"] : ["FRESH", "RETAIL"];
     const rows = await this.db
       .select({ id: productCategories.id, name: productCategories.name })
       .from(productCategories)
-      .where(and(eq(productCategories.type, "FOOD"), eq(productCategories.active, true)))
+      .where(and(inArray(productCategories.type, types), eq(productCategories.active, true)))
       .orderBy(productCategories.sortOrder, productCategories.name);
     return { categories: rows };
   }
 
   async listProducts(userId: string, locationId: string) {
     const access = await this.assertFoodLocation(userId, locationId);
-    const rows = await this.productRows(access.providerId);
+    const rows = (await this.productRows(access.providerId)).filter((row) =>
+      access.commerceModel === "FOOD_SERVICE" ? true : row.status === "ACTIVE",
+    );
     const priceByOffering = await this.priceMap(
       locationId,
       rows.map((row) => row.id),
@@ -304,7 +333,9 @@ export class FoodBoardService {
     input: ProductInput,
   ) {
     const access = await this.assertFoodLocation(userId, locationId);
-    await this.assertFoodCategory(input.categoryId);
+    await this.assertCatalogCap(access.providerId, access.providerType);
+    await this.assertGoodsCategory(access.commerceModel, input.categoryId);
+    this.assertMarketPrice(access.commerceModel, input.priceVnd);
     const slug = await this.uniqueSlug(access.providerId, slugify(input.name));
     const [created] = await this.db
       .insert(offerings)
@@ -341,7 +372,8 @@ export class FoodBoardService {
   ) {
     const access = await this.assertFoodLocation(userId, locationId);
     await this.assertOffering(access.providerId, offeringId);
-    if (input.categoryId) await this.assertFoodCategory(input.categoryId);
+    if (input.categoryId) await this.assertGoodsCategory(access.commerceModel, input.categoryId);
+    if (input.priceVnd !== undefined) this.assertMarketPrice(access.commerceModel, input.priceVnd);
     await this.db
       .update(offerings)
       .set({
@@ -364,6 +396,9 @@ export class FoodBoardService {
 
   async selling(userId: string, locationId: string) {
     const access = await this.assertFoodLocation(userId, locationId);
+    if (access.commerceModel !== "FOOD_SERVICE") {
+      return { channels: [] };
+    }
     const caps = await this.capabilityMap(access.providerId);
     return {
       channels: CHANNELS.map((channel) => ({
@@ -381,6 +416,9 @@ export class FoodBoardService {
     input: { capability: (typeof CHANNELS)[number]["capability"]; enabled: boolean },
   ) {
     const access = await this.assertFoodLocation(userId, locationId);
+    if (access.commerceModel !== "FOOD_SERVICE") {
+      throw new PickiError("FORBIDDEN", "Cửa hàng đi chợ không bật cách bán của quán ăn");
+    }
     await this.db
       .insert(providerCapabilities)
       .values({
@@ -423,10 +461,12 @@ export class FoodBoardService {
     return this.selling(userId, locationId);
   }
 
-  private async menuSection(locationId: string, today: string, channel: "breakfast" | "dinner") {
+  private async menuSection(locationId: string, today: string, channel: "breakfast" | "lunch" | "dinner") {
     const menus =
-      channel === "breakfast" ? breakfastPreorderDailyMenus : familyDinnerDailyMenus;
-    const items = channel === "breakfast" ? breakfastPreorderMenuItems : familyDinnerMenuItems;
+      channel === "dinner" ? familyDinnerDailyMenus : breakfastPreorderDailyMenus;
+    const items = channel === "dinner" ? familyDinnerMenuItems : breakfastPreorderMenuItems;
+    const daypart =
+      channel === "lunch" ? "LUNCH" : channel === "breakfast" ? "BREAKFAST" : null;
     const [menu] = await this.db
       .select()
       .from(menus)
@@ -435,6 +475,7 @@ export class FoodBoardService {
           eq(menus.providerLocationId, locationId),
           sql`${menus.serviceDate} >= ${today}`,
           eq(menus.status, "PUBLISHED"),
+          daypart ? eq(breakfastPreorderDailyMenus.daypart, daypart) : sql`true`,
         ),
       )
       .orderBy(menus.serviceDate)
@@ -526,8 +567,8 @@ export class FoodBoardService {
       .where(eq(table.id, item.id));
   }
 
-  private async loadMenuItem(locationId: string, channel: "breakfast" | "dinner", menuItemId: string) {
-    if (channel === "breakfast") {
+  private async loadMenuItem(locationId: string, channel: "breakfast" | "lunch" | "dinner", menuItemId: string) {
+    if (channel !== "dinner") {
       const [row] = await this.db
         .select({
           id: breakfastPreorderMenuItems.id,
@@ -568,8 +609,8 @@ export class FoodBoardService {
     return row;
   }
 
-  private async menuDate(locationId: string, channel: "breakfast" | "dinner", menuItemId: string) {
-    if (channel === "breakfast") {
+  private async menuDate(locationId: string, channel: "breakfast" | "lunch" | "dinner", menuItemId: string) {
+    if (channel !== "dinner") {
       const [row] = await this.db
         .select({ serviceDate: breakfastPreorderDailyMenus.serviceDate })
         .from(breakfastPreorderMenuItems)
@@ -644,6 +685,7 @@ export class FoodBoardService {
         and(
           eq(breakfastPreorderDailyMenus.providerLocationId, locationId),
           eq(breakfastPreorderDailyMenus.status, "PUBLISHED"),
+          eq(breakfastPreorderDailyMenus.daypart, "BREAKFAST"),
           sql`${breakfastPreorderDailyMenus.serviceDate} >= ${today}`,
           sql`${breakfastPreorderMenuItems.offeringId} IS NOT NULL`,
         ),
@@ -700,20 +742,91 @@ export class FoodBoardService {
     }
   }
 
-  private async assertFoodCategory(categoryId?: string | null) {
+  /**
+   * Debt: amount 0 + QUOTE_REQUIRED remains the ask-price flag for contact verticals
+   * (pharmacy, transport, home, health, auto, and the old minimart placeholders).
+   * Market catalog does not use price 0. Unpublished goods stay off the shelf; the
+   * customer asks in chat instead.
+   */
+  private assertMarketPrice(commerceModel: string | null, priceVnd: number) {
+    if (commerceModel === "FOOD_SERVICE") return;
+    if (priceVnd < 1) {
+      throw new PickiError("VALIDATION_ERROR", "Sản phẩm đi chợ cần giá bán. Giá 0 không dùng để hỏi hàng.");
+    }
+  }
+
+  private async assertGoodsCategory(commerceModel: string | null, categoryId?: string | null) {
     if (!categoryId) return;
+    const types = commerceModel === "FOOD_SERVICE" ? ["FOOD"] : ["FRESH", "RETAIL"];
     const [row] = await this.db
       .select({ id: productCategories.id })
       .from(productCategories)
       .where(
         and(
           eq(productCategories.id, categoryId),
-          eq(productCategories.type, "FOOD"),
+          inArray(productCategories.type, types),
           eq(productCategories.active, true),
         ),
       )
       .limit(1);
-    if (!row) throw new PickiError("VALIDATION_ERROR", "Nhóm món không hợp lệ");
+    if (!row) throw new PickiError("VALIDATION_ERROR", "Nhóm hàng không hợp lệ");
+  }
+
+  private async assertCatalogCap(providerId: string, providerType: string) {
+    const cap = MARKET_CATALOG_CAP[providerType];
+    if (cap == null) return;
+    const [row] = await this.db
+      .select({ n: count() })
+      .from(offerings)
+      .where(and(eq(offerings.providerId, providerId), eq(offerings.status, "ACTIVE")));
+    if (Number(row?.n ?? 0) >= cap) {
+      throw new PickiError("CONFLICT", `Cửa hàng đang ở mức ${String(cap)} món. Ẩn bớt trước khi thêm.`);
+    }
+  }
+
+  private async setFeatured(providerId: string, offeringId: string, featured: boolean) {
+    const today = commerceServiceDate();
+    if (featured) {
+      const [cap] = await this.db
+        .select({ enabled: providerCapabilities.enabled })
+        .from(providerCapabilities)
+        .where(
+          and(
+            eq(providerCapabilities.providerId, providerId),
+            eq(providerCapabilities.capability, "TODAY_FEATURE"),
+            eq(providerCapabilities.enabled, true),
+          ),
+        )
+        .limit(1);
+      if (!cap) throw new PickiError("FORBIDDEN", "Cửa hàng chưa bật đẩy nổi bật");
+      const [used] = await this.db
+        .select({ n: count() })
+        .from(productDailyAvailability)
+        .where(
+          and(
+            eq(productDailyAvailability.providerId, providerId),
+            eq(productDailyAvailability.serviceDate, today),
+            eq(productDailyAvailability.featured, true),
+            ne(productDailyAvailability.offeringId, offeringId),
+          ),
+        );
+      if (Number(used?.n ?? 0) >= MARKET_FEATURED_QUOTA) {
+        throw new PickiError("CONFLICT", `Chỉ đẩy ${String(MARKET_FEATURED_QUOTA)} món nổi bật mỗi ngày`);
+      }
+    }
+    await this.db
+      .insert(productDailyAvailability)
+      .values({
+        providerId,
+        offeringId,
+        serviceDate: today,
+        status: "AVAILABLE",
+        featured,
+      })
+      .onConflictDoUpdate({
+        target: [productDailyAvailability.offeringId, productDailyAvailability.serviceDate],
+        set: { featured, updatedAt: new Date() },
+      });
   }
 
   private async upsertLocationPrice(locationId: string, offeringId: string, priceVnd: number) {
@@ -788,6 +901,7 @@ export class FoodBoardService {
     const [location] = await this.db
       .select({
         providerId: providerLocations.providerId,
+        providerType: providers.providerType,
         commerceModel: providers.commerceModel,
       })
       .from(providerLocations)
@@ -795,8 +909,12 @@ export class FoodBoardService {
       .where(eq(providerLocations.id, locationId))
       .limit(1);
     if (!location) throw new PickiError("NOT_FOUND", "Location not found");
-    if (location.commerceModel !== "FOOD_SERVICE") {
-      throw new PickiError("FORBIDDEN", "Màn này chỉ dành cho quán ăn");
+    if (
+      location.commerceModel !== "FOOD_SERVICE" &&
+      location.commerceModel !== "FRESH_MARKET" &&
+      location.commerceModel !== "RETAIL_STORE"
+    ) {
+      throw new PickiError("FORBIDDEN", "Màn này dành cho quán ăn hoặc cửa hàng đi chợ");
     }
     const members = await this.db
       .select()

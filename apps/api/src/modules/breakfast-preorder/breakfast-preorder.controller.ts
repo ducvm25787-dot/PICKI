@@ -21,7 +21,9 @@ import {
 import {
   BreakfastPreorderService,
   defaultBreakfastServiceDate,
+  defaultLunchServiceDate,
 } from "./breakfast-preorder.service.js";
+import { isFoodDaypart, vnClock } from "@picki/shared";
 
 @Controller()
 @UseGuards(SessionAuthGuard)
@@ -34,18 +36,22 @@ export class BreakfastPreorderController {
   listZone(
     @Param("zoneId") zoneId: string,
     @Query("serviceDate") serviceDate?: string,
+    @Query("daypart") daypart?: string,
   ) {
     const date = serviceDate ?? defaultBreakfastServiceDate();
-    return this.breakfast.listForZone(zoneId, date);
+    const part = isFoodDaypart(daypart) ? daypart : "BREAKFAST";
+    return this.breakfast.listForZone(zoneId, part === "LUNCH" ? vnClock().date : date, part);
   }
 
   @Get("locations/:locationId/breakfast-preorder")
   getMenu(
     @Param("locationId") locationId: string,
     @Query("serviceDate") serviceDate?: string,
+    @Query("daypart") daypart?: string,
   ) {
-    const date = serviceDate ?? defaultBreakfastServiceDate();
-    return this.breakfast.getMenu(locationId, date);
+    const part = isFoodDaypart(daypart) ? daypart : "BREAKFAST";
+    const date = serviceDate ?? (part === "LUNCH" ? vnClock().date : defaultBreakfastServiceDate());
+    return this.breakfast.getMenu(locationId, date, part);
   }
 
   @Post("provider/locations/:locationId/breakfast-preorder/menu")
@@ -68,9 +74,13 @@ export class BreakfastPreorderController {
     @CurrentUserId() userId: string,
     @Param("locationId") locationId: string,
     @Query("serviceDate") serviceDate?: string,
+    @Query("daypart") daypart?: string,
   ) {
-    const date = serviceDate ?? defaultBreakfastServiceDate();
-    return this.breakfast.getOps(userId, locationId, date);
+    const part = isFoodDaypart(daypart) ? daypart : "BREAKFAST";
+    const date =
+      serviceDate ??
+      (part === "LUNCH" ? defaultLunchServiceDate() : defaultBreakfastServiceDate());
+    return this.breakfast.getOps(userId, locationId, date, part);
   }
 
   @Patch("provider/locations/:locationId/breakfast-preorder/settings")

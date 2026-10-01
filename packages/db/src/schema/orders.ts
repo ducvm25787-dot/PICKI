@@ -30,6 +30,10 @@ export const orders = pgTable("orders", {
   deliveryWindowId: uuid("delivery_window_id").references(() => familyDinnerDeliveryWindows.id, {
     onDelete: "set null",
   }),
+  /**
+   * Compatibility name. FK into breakfast_preorder_delivery_windows, which holds
+   * both BREAKFAST and LUNCH slots. Lunch orders use this column too.
+   */
   breakfastDeliveryWindowId: uuid("breakfast_delivery_window_id").references(
     () => breakfastPreorderDeliveryWindows.id,
     { onDelete: "set null" },
@@ -92,6 +96,10 @@ export const orderItems = pgTable("order_items", {
     () => familyDinnerMenuItems.id,
     { onDelete: "set null" },
   ),
+  /**
+   * Compatibility name. Menu line for BREAKFAST_PREORDER and LUNCH.
+   * Daypart lives on the parent daily menu, not on the order item.
+   */
   breakfastMenuItemId: uuid("breakfast_menu_item_id").references(
     () => breakfastPreorderMenuItems.id,
     { onDelete: "set null" },

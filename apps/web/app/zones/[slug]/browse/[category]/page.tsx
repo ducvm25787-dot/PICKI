@@ -16,6 +16,9 @@ export default function CategoryBrowsePage() {
   const category = getHomeCategory(categoryId);
 
   const [providers, setProviders] = useState<ProviderListing[]>([]);
+  const [shelf, setShelf] = useState<{ local: ProviderListing[]; supermarkets: ProviderListing[] } | null>(null);
+  const [goodsCategories, setGoodsCategories] = useState<{ id: string; name: string }[]>([]);
+  const [goodsId, setGoodsId] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,10 +40,15 @@ export default function CategoryBrowsePage() {
     void (async () => {
       try {
         const types = encodeURIComponent(category.providerTypes.join(","));
-        const res = await api<{ providers: ProviderListing[] }>(
-          `/zones/${slug}/browse/${category.id}?types=${types}`,
-        );
+        const goods = category.id === "market" && goodsId ? `&goods=${goodsId}` : "";
+        const res = await api<{
+          providers: ProviderListing[];
+          shelf?: { local: ProviderListing[]; supermarkets: ProviderListing[] };
+          goodsCategories?: { id: string; name: string }[];
+        }>(`/zones/${slug}/browse/${category.id}?types=${types}${goods}`);
         setProviders(res.providers);
+        setShelf(res.shelf ?? null);
+        setGoodsCategories(res.goodsCategories ?? []);
         await loadFavorites();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Không tải được");
@@ -48,7 +56,7 @@ export default function CategoryBrowsePage() {
         setLoading(false);
       }
     })();
-  }, [slug, category, loadFavorites]);
+  }, [slug, category, goodsId, loadFavorites]);
 
   async function toggleFavorite(locationId: string) {
     try {
@@ -94,7 +102,9 @@ export default function CategoryBrowsePage() {
             </span>
             {category.label}
           </h1>
-          <p className="stat">{category.subs.slice(0, 4).join(" · ")}</p>
+          {category.id === "market" ? null : (
+            <p className="stat">{category.subs.slice(0, 4).join(" · ")}</p>
+          )}
         </div>
         <NotificationBell audience="customer" />
       </div>
@@ -118,6 +128,30 @@ export default function CategoryBrowsePage() {
         </Link>
       </p>
 
+      {category.id === "market" && goodsCategories.length > 0 ? (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }} aria-label="Nhóm hàng">
+          <button
+            type="button"
+            className={goodsId ? "btn btn-secondary" : "btn"}
+            style={{ width: "auto", padding: "8px 12px" }}
+            onClick={() => setGoodsId(null)}
+          >
+            Tất cả
+          </button>
+          {goodsCategories.map((goods) => (
+            <button
+              key={goods.id}
+              type="button"
+              className={goodsId === goods.id ? "btn" : "btn btn-secondary"}
+              style={{ width: "auto", padding: "8px 12px" }}
+              onClick={() => setGoodsId(goods.id)}
+            >
+              {goods.name}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {category.id === "beauty" ? (
         <p className="stat" style={{ marginBottom: 12 }}>
           Đang lọc tiệm làm đẹp · tag dịch vụ con (cắt tóc, nail…) sẽ bổ sung sau.
@@ -137,11 +171,35 @@ export default function CategoryBrowsePage() {
           <p style={{ color: "#b91c1c", margin: 0 }}>{error}</p>
         </div>
       ) : (
+        category.id === "market" && shelf ? (
+          <>
+            <h2 className="section-title">Quanh bạn</h2>
+            <ProviderList
+              providers={shelf.local}
+              favoriteIds={favoriteIds}
+              onToggleFavorite={(id) => void toggleFavorite(id)}
+              emptyLabel="Chưa có cửa hàng trong nhóm này."
+            />
+            {shelf.supermarkets.length > 0 ? (
+              <>
+                <h2 className="section-title" style={{ marginTop: 20 }}>
+                  Siêu thị gần đây
+                </h2>
+                <ProviderList
+                  providers={shelf.supermarkets}
+                  favoriteIds={favoriteIds}
+                  onToggleFavorite={(id) => void toggleFavorite(id)}
+                />
+              </>
+            ) : null}
+          </>
+        ) : (
         <ProviderList
           providers={providers}
           favoriteIds={favoriteIds}
           onToggleFavorite={(id) => void toggleFavorite(id)}
         />
+        )
       )}
     </div>
   );

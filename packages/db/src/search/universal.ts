@@ -199,6 +199,7 @@ export async function searchZoneUniversal(
       WHERE pzm.zone_id = ${opts.zoneId}::uuid
         AND pzm.status = 'ACTIVE' AND pl.status = 'ACTIVE' AND p.status = 'ACTIVE'
         AND bdm.status = 'PUBLISHED'
+        AND bdm.daypart = 'BREAKFAST'
         AND bdm.service_date >= CURRENT_DATE
         AND bdm.service_date <= (CURRENT_DATE + 2)
         AND bi.status IN ('ACTIVE', 'SOLD_OUT')

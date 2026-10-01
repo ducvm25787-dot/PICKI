@@ -8,6 +8,7 @@ import {
   reserveFoodDeliveryFunding,
   snapshotLaundryCheckout,
   canCustomerCancel,
+  breakfastPreorderDailyMenus,
   breakfastPreorderDeliveryWindows,
   breakfastPreorderMenuItems,
   breakfastPreorderProviderSettings,
@@ -45,10 +46,19 @@ import {
   resolveTodayOffer,
   zoneFulfillmentSettings,
   commerceServiceDate,
+  DaypartCapacityError,
+  releaseDaypartMenuCapacity,
+  reserveDaypartMenuCapacity,
   reserveOfferingStock,
   StockConflictError,
 } from "@picki/db";
 import { PickiError } from "@picki/shared";
+import {
+  breakfastSellPhase,
+  foodDaypartForOrderKind,
+  isDaypartMenuOrder,
+  isLunchSellOpen,
+} from "@picki/shared";
 import {
   loadOrderContacts,
   loadProviderBrand,
@@ -115,7 +125,7 @@ export class OrdersService {
       };
     }
 
-    if (input.orderKind === "BREAKFAST_PREORDER") {
+    if (isDaypartMenuOrder(input.orderKind)) {
       const built = await this.buildBreakfastLineItems(input);
       const deliveryFeeVnd = await this.quotedCustomerDeliveryFee({
         userId,
@@ -126,7 +136,7 @@ export class OrdersService {
       });
       return {
         serviceVertical: "FOOD",
-        orderKind: "BREAKFAST_PREORDER",
+        orderKind: input.orderKind,
         subtotalVnd: built.subtotalVnd,
         deliveryFeeVnd,
         totalVnd: built.subtotalVnd + deliveryFeeVnd,
@@ -217,11 +227,11 @@ export class OrdersService {
 
     const isFamilyDinner = input.orderKind === "FAMILY_DINNER";
     const isLateDinner = input.orderKind === "LATE_DINNER";
-    const isBreakfast = input.orderKind === "BREAKFAST_PREORDER";
-    if ((isFamilyDinner || isLateDinner || isBreakfast) && serviceVertical !== "FOOD") {
+    const isDaypart = isDaypartMenuOrder(input.orderKind);
+    if ((isFamilyDinner || isLateDinner || isDaypart) && serviceVertical !== "FOOD") {
       throw new PickiError("VALIDATION_ERROR", "Chỉ áp dụng cho Food");
     }
-    if (!isFamilyDinner && !isLateDinner && !isBreakfast && serviceVertical === "FOOD") {
+    if (!isFamilyDinner && !isLateDinner && !isDaypart && serviceVertical === "FOOD") {
       await this.assertSellNowOpen(input.providerLocationId);
     }
 
@@ -294,7 +304,7 @@ export class OrdersService {
       paymentMode = "PAY_ON_PICKI";
       deliveryFeeVnd = await this.resolveDeliveryFeeVnd(input.zoneId, "FOOD", handoffMode);
       totalVnd = subtotalVnd + deliveryFeeVnd;
-    } else if (isBreakfast) {
+    } else if (isDaypart) {
       if (!input.serviceDate || !input.deliveryWindowId) {
         throw new PickiError("VALIDATION_ERROR", "Chọn ngày giao và khung giờ");
       }
@@ -349,7 +359,7 @@ export class OrdersService {
       if (isFamilyDinner && deliveryWindowId) {
         await this.reserveFamilyDinnerCapacity(tx, deliveryWindowId, lineItemsDinner);
       }
-      if (isBreakfast && breakfastDeliveryWindowId) {
+      if (isDaypart && breakfastDeliveryWindowId) {
         await this.reserveBreakfastCapacity(tx, breakfastDeliveryWindowId, lineItemsBreakfast);
       }
       if (isLateDinner && lateQuote) {
@@ -357,7 +367,7 @@ export class OrdersService {
       }
 
       const isLaundryOrder =
-        serviceVertical === "LAUNDRY" && !isFamilyDinner && !isLateDinner && !isBreakfast;
+        serviceVertical === "LAUNDRY" && !isFamilyDinner && !isLateDinner && !isDaypart;
       const funding = isLaundryOrder
         ? { snapshot: snapshotLaundryCheckout(), promotionId: null as string | null }
         : await reserveFoodDeliveryFunding(tx, {
@@ -376,8 +386,8 @@ export class OrdersService {
         ? "LATE_DINNER"
         : isFamilyDinner
           ? "FAMILY_DINNER"
-          : isBreakfast
-            ? "BREAKFAST_PREORDER"
+          : isDaypart
+            ? input.orderKind
             : "STANDARD";
       const [order] = await tx
         .insert(orders)
@@ -388,7 +398,7 @@ export class OrdersService {
           providerLocationId: input.providerLocationId,
           status: "CREATED",
           serviceVertical:
-            isFamilyDinner || isLateDinner || isBreakfast ? "FOOD" : serviceVertical,
+            isFamilyDinner || isLateDinner || isDaypart ? "FOOD" : serviceVertical,
           orderKind,
           serviceDate,
           deliveryWindowId,
@@ -397,7 +407,7 @@ export class OrdersService {
           laundryPickupMode,
           paymentMode,
           subtotalVnd:
-            serviceVertical === "LAUNDRY" && !isFamilyDinner && !isLateDinner && !isBreakfast
+            serviceVertical === "LAUNDRY" && !isFamilyDinner && !isLateDinner && !isDaypart
               ? 0
               : subtotalVnd,
           ...funding.snapshot,
@@ -453,7 +463,7 @@ export class OrdersService {
             lineTotalVnd: item.lineTotalVnd,
           })),
         );
-      } else if (isBreakfast) {
+      } else if (isDaypart) {
         await tx.insert(orderItems).values(
           lineItemsBreakfast.map((item) => ({
             orderId: order.id,
@@ -496,10 +506,10 @@ export class OrdersService {
         );
       }
 
-      if (!isLateDinner && (isFamilyDinner || isBreakfast || serviceVertical === "FOOD")) {
+      if (!isLateDinner && (isFamilyDinner || isDaypart || serviceVertical === "FOOD")) {
         const stockLines = isFamilyDinner
           ? lineItemsDinner
-          : isBreakfast
+          : isDaypart
             ? lineItemsBreakfast
             : lineItemsStandard;
         const stockDate = commerceServiceDate(serviceDate);
@@ -653,7 +663,7 @@ export class OrdersService {
     const href =
       order.orderKind === "FAMILY_DINNER" || order.orderKind === "LATE_DINNER"
         ? `/family-dinner/${locationId}`
-        : order.orderKind === "BREAKFAST_PREORDER"
+        : isDaypartMenuOrder(order.orderKind)
           ? `/breakfast/${locationId}`
           : `/locations/${locationId}?repeat=1`;
 
@@ -768,12 +778,12 @@ export class OrdersService {
       "Customer cancelled",
     );
 
-    if (order.orderKind === "FAMILY_DINNER" || order.orderKind === "LATE_DINNER" || order.orderKind === "BREAKFAST_PREORDER") {
+    if (order.orderKind === "FAMILY_DINNER" || order.orderKind === "LATE_DINNER" || isDaypartMenuOrder(order.orderKind)) {
       await this.db.transaction(async (tx) => {
         if (order.orderKind === "FAMILY_DINNER") {
           await this.restoreFamilyDinnerCapacity(tx, order);
         }
-        if (order.orderKind === "BREAKFAST_PREORDER") {
+        if (isDaypartMenuOrder(order.orderKind)) {
           await this.restoreBreakfastCapacity(tx, order);
         }
         if (order.orderKind === "LATE_DINNER" && order.lateDinnerOfferId) {
@@ -906,6 +916,12 @@ export class OrdersService {
     if (row?.model === "FOOD_SERVICE" && row.enabled === false) {
       throw new PickiError("FORBIDDEN", "Quán đang tắt bán ngay");
     }
+    if (
+      (row?.model === "FRESH_MARKET" || row?.model === "RETAIL_STORE") &&
+      row.enabled !== true
+    ) {
+      throw new PickiError("FORBIDDEN", "Cửa hàng chưa mở bán trên Pickee");
+    }
   }
 
   private async resolveLocation(providerLocationId: string, zoneId: string) {
@@ -994,27 +1010,56 @@ export class OrdersService {
       throw new PickiError("VALIDATION_ERROR", "Chọn ngày giao và khung giờ");
     }
 
-    const settings = await this.db
-      .select()
-      .from(breakfastPreorderProviderSettings)
-      .where(eq(breakfastPreorderProviderSettings.providerLocationId, input.providerLocationId))
-      .limit(1);
-    if (!settings[0]?.enabled) {
-      throw new PickiError("FORBIDDEN", "Quán chưa nhận đặt sáng");
-    }
-    const openFrom = formatTime(settings[0].openFromTime);
-    const cutoff = formatTime(settings[0].cutoffTime);
-    if (!isPastBreakfastCutoff(input.serviceDate, openFrom)) {
-      throw new PickiError(
-        "FORBIDDEN",
-        `Chưa tới giờ mở nhận đơn (${openFrom} tối hôm trước)`,
-      );
-    }
-    if (isPastBreakfastCutoff(input.serviceDate, cutoff)) {
-      throw new PickiError(
-        "CONFLICT",
-        `Đã qua giờ chốt đơn (${cutoff}) — thử quán khác hoặc ngày khác`,
-      );
+    const daypart = foodDaypartForOrderKind(input.orderKind);
+    if (daypart === "LUNCH") {
+      const [cap] = await this.db
+        .select({ enabled: providerCapabilities.enabled })
+        .from(providerCapabilities)
+        .innerJoin(
+          providerLocations,
+          eq(providerLocations.providerId, providerCapabilities.providerId),
+        )
+        .where(
+          and(
+            eq(providerLocations.id, input.providerLocationId),
+            eq(providerCapabilities.capability, "LUNCH"),
+            eq(providerCapabilities.enabled, true),
+          ),
+        )
+        .limit(1);
+      if (!cap) {
+        throw new PickiError("FORBIDDEN", "Quán chưa bán bữa trưa");
+      }
+      if (!isLunchSellOpen(input.serviceDate)) {
+        throw new PickiError("CONFLICT", "Bữa trưa vui vẻ bán từ 09:00 đến 13:00");
+      }
+    } else {
+      const settings = await this.db
+        .select()
+        .from(breakfastPreorderProviderSettings)
+        .where(eq(breakfastPreorderProviderSettings.providerLocationId, input.providerLocationId))
+        .limit(1);
+      if (!settings[0]?.enabled) {
+        throw new PickiError("FORBIDDEN", "Quán chưa nhận đặt sáng");
+      }
+      const openFrom = formatTime(settings[0].openFromTime);
+      const cutoff = formatTime(settings[0].cutoffTime);
+      const phase = breakfastSellPhase(input.serviceDate, openFrom, cutoff);
+      if (phase === "CLOSED") {
+        if (!isPastBreakfastCutoff(input.serviceDate, openFrom)) {
+          throw new PickiError(
+            "FORBIDDEN",
+            `Chưa tới giờ mở nhận đơn (${openFrom} tối hôm trước)`,
+          );
+        }
+        if (!isPastBreakfastCutoff(input.serviceDate, cutoff)) {
+          throw new PickiError("CONFLICT", `Đã qua giờ chốt đơn (${cutoff})`);
+        }
+        throw new PickiError(
+          "CONFLICT",
+          "Ngoài giờ ăn sáng — đặt trước tối hôm trước hoặc mua từ 06:00 đến 09:00",
+        );
+      }
     }
 
     const window = await this.db
@@ -1026,7 +1071,8 @@ export class OrdersService {
     if (
       !w ||
       w.providerLocationId !== input.providerLocationId ||
-      w.serviceDate !== input.serviceDate
+      w.serviceDate !== input.serviceDate ||
+      w.daypart !== daypart
     ) {
       throw new PickiError("VALIDATION_ERROR", "Khung giờ giao không hợp lệ");
     }
@@ -1036,23 +1082,42 @@ export class OrdersService {
 
     const menuItemIds = input.items.map((i) => i.menuItemId).filter(Boolean) as string[];
     if (menuItemIds.length !== input.items.length) {
-      throw new PickiError("VALIDATION_ERROR", "Sáng mai cần menuItemId");
+      throw new PickiError("VALIDATION_ERROR", "Menu ngày cần menuItemId");
     }
 
     const rows = await this.db
-      .select()
+      .select({
+        item: breakfastPreorderMenuItems,
+        menuDaypart: breakfastPreorderDailyMenus.daypart,
+        menuDate: breakfastPreorderDailyMenus.serviceDate,
+        menuStatus: breakfastPreorderDailyMenus.status,
+        menuLocationId: breakfastPreorderDailyMenus.providerLocationId,
+      })
       .from(breakfastPreorderMenuItems)
+      .innerJoin(
+        breakfastPreorderDailyMenus,
+        eq(breakfastPreorderDailyMenus.id, breakfastPreorderMenuItems.dailyMenuId),
+      )
       .where(
         sql`${breakfastPreorderMenuItems.id} IN (${sql.join(
           menuItemIds.map((id) => sql`${id}::uuid`),
           sql`, `,
         )})`,
       );
-    const byId = new Map(rows.map((r) => [r.id, r]));
+    const byId = new Map(rows.map((r) => [r.item.id, r]));
 
     const lineItems = input.items.map((item) => {
-      const row = byId.get(item.menuItemId!);
-      if (!row || row.status !== "ACTIVE") {
+      const hit = byId.get(item.menuItemId!);
+      const row = hit?.item;
+      if (
+        !hit ||
+        !row ||
+        row.status !== "ACTIVE" ||
+        hit.menuDaypart !== daypart ||
+        hit.menuDate !== input.serviceDate ||
+        hit.menuStatus !== "PUBLISHED" ||
+        hit.menuLocationId !== input.providerLocationId
+      ) {
         throw new PickiError("VALIDATION_ERROR", "Món không còn trên menu", {
           details: { menuItemId: item.menuItemId },
         });
@@ -1080,55 +1145,13 @@ export class OrdersService {
     deliveryWindowId: string,
     lineItems: { menuItemId: string; quantity: number; name: string }[],
   ) {
-    const [win] = await tx
-      .update(breakfastPreorderDeliveryWindows)
-      .set({
-        remainingCapacity: sql`${breakfastPreorderDeliveryWindows.remainingCapacity} - 1`,
-        status: sql`CASE WHEN ${breakfastPreorderDeliveryWindows.remainingCapacity} - 1 <= 0 THEN 'FULL' ELSE ${breakfastPreorderDeliveryWindows.status} END`,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(breakfastPreorderDeliveryWindows.id, deliveryWindowId),
-          eq(breakfastPreorderDeliveryWindows.status, "OPEN"),
-          sql`${breakfastPreorderDeliveryWindows.remainingCapacity} >= 1`,
-        ),
-      )
-      .returning();
-    if (!win) {
-      throw new PickiError("CONFLICT", "Khung giờ giao vừa hết chỗ");
-    }
-
-    for (const item of lineItems) {
-      const [updated] = await tx
-        .update(breakfastPreorderMenuItems)
-        .set({
-          remainingCapacity: sql`CASE
-            WHEN ${breakfastPreorderMenuItems.remainingCapacity} IS NULL THEN NULL
-            ELSE ${breakfastPreorderMenuItems.remainingCapacity} - ${item.quantity}
-          END`,
-          status: sql`CASE
-            WHEN ${breakfastPreorderMenuItems.remainingCapacity} IS NOT NULL
-              AND ${breakfastPreorderMenuItems.remainingCapacity} - ${item.quantity} <= 0
-            THEN 'SOLD_OUT'
-            ELSE ${breakfastPreorderMenuItems.status}
-          END`,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(breakfastPreorderMenuItems.id, item.menuItemId),
-            eq(breakfastPreorderMenuItems.status, "ACTIVE"),
-            sql`(
-              ${breakfastPreorderMenuItems.remainingCapacity} IS NULL
-              OR ${breakfastPreorderMenuItems.remainingCapacity} >= ${item.quantity}
-            )`,
-          ),
-        )
-        .returning();
-      if (!updated) {
-        throw new PickiError("CONFLICT", `Hết suất: ${item.name}`);
+    try {
+      await reserveDaypartMenuCapacity(tx, deliveryWindowId, lineItems);
+    } catch (err) {
+      if (err instanceof DaypartCapacityError) {
+        throw new PickiError("CONFLICT", err.message);
       }
+      throw err;
     }
   }
 
@@ -1136,17 +1159,6 @@ export class OrdersService {
     tx: Parameters<Parameters<PickiDb["transaction"]>[0]>[0],
     order: typeof orders.$inferSelect,
   ) {
-    if (order.breakfastDeliveryWindowId) {
-      await tx
-        .update(breakfastPreorderDeliveryWindows)
-        .set({
-          remainingCapacity: sql`${breakfastPreorderDeliveryWindows.remainingCapacity} + 1`,
-          status: sql`CASE WHEN ${breakfastPreorderDeliveryWindows.status} = 'FULL' THEN 'OPEN' ELSE ${breakfastPreorderDeliveryWindows.status} END`,
-          updatedAt: new Date(),
-        })
-        .where(eq(breakfastPreorderDeliveryWindows.id, order.breakfastDeliveryWindowId));
-    }
-
     const lines = await tx
       .select({
         menuItemId: orderItems.breakfastMenuItemId,
@@ -1154,24 +1166,7 @@ export class OrdersService {
       })
       .from(orderItems)
       .where(eq(orderItems.orderId, order.id));
-
-    for (const line of lines) {
-      if (!line.menuItemId) continue;
-      await tx
-        .update(breakfastPreorderMenuItems)
-        .set({
-          remainingCapacity: sql`CASE
-            WHEN ${breakfastPreorderMenuItems.remainingCapacity} IS NULL THEN NULL
-            ELSE ${breakfastPreorderMenuItems.remainingCapacity} + ${line.quantity}
-          END`,
-          status: sql`CASE
-            WHEN ${breakfastPreorderMenuItems.status} = 'SOLD_OUT' THEN 'ACTIVE'
-            ELSE ${breakfastPreorderMenuItems.status}
-          END`,
-          updatedAt: new Date(),
-        })
-        .where(eq(breakfastPreorderMenuItems.id, line.menuItemId));
-    }
+    await releaseDaypartMenuCapacity(tx, order.breakfastDeliveryWindowId, lines);
   }
 
   private async buildFamilyDinnerLineItems(input: OrderCheckoutInput) {
@@ -1516,6 +1511,13 @@ export class OrdersService {
     providerLocationId: string,
     items: CreateOrderInput["items"],
   ) {
+    const [shop] = await this.db
+      .select({ model: providers.commerceModel })
+      .from(providerLocations)
+      .innerJoin(providers, eq(providers.id, providerLocations.providerId))
+      .where(eq(providerLocations.id, providerLocationId))
+      .limit(1);
+    const marketCommerce = shop?.model === "FRESH_MARKET" || shop?.model === "RETAIL_STORE";
     const menu = await listLocationMenu(this.sql, providerLocationId);
     const menuById = new Map(menu.map((m) => [m.offering_id, m]));
     const optionGroups = await listOptionGroupsForOfferings(
@@ -1561,6 +1563,14 @@ export class OrdersService {
         offering.pricing_kind === "QUOTE_REQUIRED" ||
         offering.pricing_kind === "CONTACT" ||
         offering.pricing_kind === "FROM";
+      // Debt: reference-only lines still price at 0 for contact verticals. Market cart
+      // requires a FIXED price above 0 and a published daily quantity. Do not treat 0 as Hỏi giá.
+      if (
+        marketCommerce &&
+        (isReferenceOnly || today.todayStatus !== "AVAILABLE" || today.amountVnd < 1)
+      ) {
+        throw new PickiError("CONFLICT", `${offering.name} chưa mở bán hôm nay`);
+      }
       const unitPriceVnd = isReferenceOnly ? 0 : today.amountVnd + picked.extraVnd;
       const lineTotal = unitPriceVnd * item.quantity;
       const optionLabel = picked.snapshot.map((option) => option.name).join(", ");

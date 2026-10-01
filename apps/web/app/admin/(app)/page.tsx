@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AdminPageShell } from "../../components/admin-session-context";
 import { api } from "../../../lib/api";
 
@@ -53,6 +54,13 @@ export default function AdminDashboardPage() {
           ))}
         </div>
       ) : null}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <p className="section-title">Quán</p>
+        <p className="stat">Xác minh cơ sở và in QR dán tại cửa.</p>
+        <Link href="/admin/shops" className="btn" style={{ width: "auto", marginTop: 8 }}>
+          Mở danh sách quán
+        </Link>
+      </div>
       <div className="card">
         <p className="section-title">Habit analytics (7 ngày)</p>
         {!habit ? (

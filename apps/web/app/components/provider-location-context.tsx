@@ -14,6 +14,7 @@ export type ProviderLocation = {
   locationId: string | null;
   locationName: string;
   role: string;
+  sellNowEnabled?: boolean;
 };
 
 type ProviderLocationContextValue = {

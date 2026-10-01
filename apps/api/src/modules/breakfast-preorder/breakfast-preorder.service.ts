@@ -12,10 +12,11 @@ import {
   providerLocations,
   providerMembers,
   providers,
+  providerCapabilities,
   providerZoneMemberships,
   type PickiDb,
 } from "@picki/db";
-import { PickiError } from "@picki/shared";
+import { PickiError, breakfastSellPhase, isLunchSellOpen, vnClock, type FoodDaypart } from "@picki/shared";
 import { PICKI_DB } from "../../shared/tokens.js";
 import {
   formatTime,
@@ -95,6 +96,19 @@ export function isPastBreakfastCutoff(serviceDate: string, cutoffHhMm: string): 
   return isPastCutoff(subtractOneCalendarDay(serviceDate), cutoffHhMm);
 }
 
+const LUNCH_DELIVERY_START = "11:00";
+const LUNCH_DELIVERY_END = "13:00";
+
+/** Lunch is same-day until 13:00 VN, then the next calendar day. */
+export function defaultLunchServiceDate(now = new Date()): string {
+  const clock = vnClock(now);
+  if (clock.hm < "13:00") return clock.date;
+  const [y, m, d] = clock.date.split("-").map(Number);
+  const base = new Date(Date.UTC(y!, (m ?? 1) - 1, d ?? 1));
+  base.setUTCDate(base.getUTCDate() + 1);
+  return base.toISOString().slice(0, 10);
+}
+
 /** Default service date: before noon VN → today; else tomorrow. */
 export function defaultBreakfastServiceDate(now = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -124,18 +138,17 @@ function acceptingPreorderFlags(opts: {
 }) {
   const openFrom = formatTime(opts.openFromTime);
   const cutoff = formatTime(opts.cutoffTime);
-  const pastOpen = isPastBreakfastCutoff(opts.serviceDate, openFrom);
-  const pastCutoff = isPastBreakfastCutoff(opts.serviceDate, cutoff);
-  const accepting =
-    opts.enabled && opts.menuPublished && pastOpen && !pastCutoff;
-  return { acceptingPreorder: accepting, openFromTime: openFrom, cutoffTime: cutoff };
+  const phase = breakfastSellPhase(opts.serviceDate, openFrom, cutoff);
+  const accepting = opts.enabled && opts.menuPublished && phase !== "CLOSED";
+  return { acceptingPreorder: accepting, openFromTime: openFrom, cutoffTime: cutoff, phase };
 }
 
 @Injectable()
 export class BreakfastPreorderService {
   constructor(@Inject(PICKI_DB) private readonly db: PickiDb) {}
 
-  async listForZone(zoneId: string, serviceDate: string) {
+  async listForZone(zoneId: string, serviceDate: string, daypart: FoodDaypart = "BREAKFAST") {
+    if (daypart === "LUNCH") return this.listLunchForZone(zoneId, serviceDate);
     const rows = await this.db
       .select({
         locationId: providerLocations.id,
@@ -167,6 +180,7 @@ export class BreakfastPreorderService {
         and(
           eq(breakfastPreorderDailyMenus.providerLocationId, providerLocations.id),
           eq(breakfastPreorderDailyMenus.serviceDate, serviceDate),
+          eq(breakfastPreorderDailyMenus.daypart, "BREAKFAST"),
           eq(breakfastPreorderDailyMenus.status, "PUBLISHED"),
         ),
       )
@@ -202,13 +216,70 @@ export class BreakfastPreorderService {
     return { serviceDate, providers: providersOut };
   }
 
-  async getMenu(locationId: string, serviceDate: string) {
+  private async listLunchForZone(zoneId: string, serviceDate: string) {
+    if (!isLunchSellOpen(serviceDate)) {
+      return { serviceDate, daypart: "LUNCH" as const, providers: [] };
+    }
+    const rows = await this.db
+      .select({
+        locationId: providerLocations.id,
+        providerId: providers.id,
+        brandName: providers.brandName,
+        displayName: providerLocations.displayName,
+      })
+      .from(breakfastPreorderDailyMenus)
+      .innerJoin(
+        providerLocations,
+        eq(providerLocations.id, breakfastPreorderDailyMenus.providerLocationId),
+      )
+      .innerJoin(providers, eq(providers.id, providerLocations.providerId))
+      .innerJoin(
+        providerCapabilities,
+        and(
+          eq(providerCapabilities.providerId, providers.id),
+          eq(providerCapabilities.capability, "LUNCH"),
+          eq(providerCapabilities.enabled, true),
+        ),
+      )
+      .innerJoin(
+        providerZoneMemberships,
+        and(
+          eq(providerZoneMemberships.providerLocationId, providerLocations.id),
+          eq(providerZoneMemberships.zoneId, zoneId),
+          eq(providerZoneMemberships.status, "ACTIVE"),
+        ),
+      )
+      .where(
+        and(
+          eq(breakfastPreorderDailyMenus.serviceDate, serviceDate),
+          eq(breakfastPreorderDailyMenus.daypart, "LUNCH"),
+          eq(breakfastPreorderDailyMenus.status, "PUBLISHED"),
+          eq(providerLocations.status, "ACTIVE"),
+          eq(providers.status, "ACTIVE"),
+        ),
+      );
+    return {
+      serviceDate,
+      daypart: "LUNCH" as const,
+      providers: rows.map((r) => ({
+        locationId: r.locationId,
+        providerId: r.providerId,
+        brandName: r.brandName,
+        displayName: r.displayName,
+        cutoffTime: "13:00",
+        openFromTime: "09:00",
+        acceptingPreorder: true,
+      })),
+    };
+  }
+
+  async getMenu(locationId: string, serviceDate: string, daypart: FoodDaypart = "BREAKFAST") {
     const settings = await this.db
       .select()
       .from(breakfastPreorderProviderSettings)
       .where(eq(breakfastPreorderProviderSettings.providerLocationId, locationId))
       .limit(1);
-    if (!settings[0]) {
+    if (daypart === "BREAKFAST" && !settings[0]) {
       throw new PickiError("NOT_FOUND", "Quán chưa cấu hình Sáng mai ăn gì?");
     }
 
@@ -234,6 +305,7 @@ export class BreakfastPreorderService {
         and(
           eq(breakfastPreorderDailyMenus.providerLocationId, locationId),
           eq(breakfastPreorderDailyMenus.serviceDate, serviceDate),
+          eq(breakfastPreorderDailyMenus.daypart, daypart),
           eq(breakfastPreorderDailyMenus.status, "PUBLISHED"),
         ),
       )
@@ -255,17 +327,26 @@ export class BreakfastPreorderService {
         and(
           eq(breakfastPreorderDeliveryWindows.providerLocationId, locationId),
           eq(breakfastPreorderDeliveryWindows.serviceDate, serviceDate),
+          eq(breakfastPreorderDeliveryWindows.daypart, daypart),
         ),
       )
       .orderBy(asc(breakfastPreorderDeliveryWindows.startsAt));
 
-    const flags = acceptingPreorderFlags({
-      enabled: settings[0].enabled,
-      openFromTime: formatTime(settings[0].openFromTime),
-      cutoffTime: formatTime(settings[0].cutoffTime),
-      serviceDate,
-      menuPublished: true,
-    });
+    const lunchOpen = daypart === "LUNCH" && isLunchSellOpen(serviceDate);
+    const flags =
+      daypart === "LUNCH"
+        ? {
+            acceptingPreorder: lunchOpen,
+            openFromTime: "09:00",
+            cutoffTime: "13:00",
+          }
+        : acceptingPreorderFlags({
+            enabled: settings[0]?.enabled === true,
+            openFromTime: formatTime(settings[0]?.openFromTime ?? "20:00"),
+            cutoffTime: formatTime(settings[0]?.cutoffTime ?? "23:30"),
+            serviceDate,
+            menuPublished: true,
+          });
 
     return {
       locationId,
@@ -278,7 +359,7 @@ export class BreakfastPreorderService {
       cutoffTime: flags.cutoffTime,
       openFromTime: flags.openFromTime,
       acceptingPreorder: flags.acceptingPreorder,
-      receivingOpen: settings[0].enabled === true,
+      receivingOpen: daypart === "LUNCH" ? lunchOpen : settings[0]?.enabled === true,
       publishedAt: menu[0].publishedAt?.toISOString() ?? null,
       menuId: menu[0].id,
       items: items.map((i) => ({
@@ -312,12 +393,17 @@ export class BreakfastPreorderService {
     input: z.infer<typeof publishBreakfastMenuSchema>,
   ) {
     await this.assertProviderStaff(userId, locationId);
-    const serviceDate = input.serviceDate ?? defaultBreakfastServiceDate();
+    const daypart: FoodDaypart = input.daypart ?? "BREAKFAST";
+    const serviceDate =
+      input.serviceDate ??
+      (daypart === "LUNCH" ? defaultLunchServiceDate() : defaultBreakfastServiceDate());
     let windows =
       input.windows && input.windows.length > 0 ? input.windows : null;
     if (!windows) {
-      const start = input.deliveryStartAt ?? DEFAULT_DELIVERY_START;
-      const end = input.deliveryEndAt ?? DEFAULT_DELIVERY_END;
+      const start =
+        input.deliveryStartAt ?? (daypart === "LUNCH" ? LUNCH_DELIVERY_START : DEFAULT_DELIVERY_START);
+      const end =
+        input.deliveryEndAt ?? (daypart === "LUNCH" ? LUNCH_DELIVERY_END : DEFAULT_DELIVERY_END);
       const capacity = input.capacityPerSlot ?? DEFAULT_SLOT_CAPACITY;
       windows = generateBreakfastDeliverySlots(start, end, capacity);
       if (windows.length === 0) {
@@ -352,6 +438,7 @@ export class BreakfastPreorderService {
           and(
             eq(breakfastPreorderDailyMenus.providerLocationId, locationId),
             eq(breakfastPreorderDailyMenus.serviceDate, serviceDate),
+            eq(breakfastPreorderDailyMenus.daypart, daypart),
           ),
         )
         .limit(1);
@@ -367,6 +454,7 @@ export class BreakfastPreorderService {
             and(
               eq(breakfastPreorderDeliveryWindows.providerLocationId, locationId),
               eq(breakfastPreorderDeliveryWindows.serviceDate, serviceDate),
+              eq(breakfastPreorderDeliveryWindows.daypart, daypart),
             ),
           );
         await tx
@@ -379,6 +467,7 @@ export class BreakfastPreorderService {
           .values({
             providerLocationId: locationId,
             serviceDate,
+            daypart,
             status: "PUBLISHED",
             publishedAt: new Date(),
           })
@@ -405,6 +494,7 @@ export class BreakfastPreorderService {
         windows.map((w) => ({
           providerLocationId: locationId,
           serviceDate,
+          daypart,
           startsAt: w.startsAt,
           endsAt: w.endsAt,
           capacity: w.capacity,
@@ -422,7 +512,12 @@ export class BreakfastPreorderService {
     };
   }
 
-  async getOps(userId: string, locationId: string, serviceDate: string) {
+  async getOps(
+    userId: string,
+    locationId: string,
+    serviceDate: string,
+    daypart: FoodDaypart = "BREAKFAST",
+  ) {
     await this.assertProviderStaff(userId, locationId);
 
     const settingsRows = await this.db
@@ -439,6 +534,7 @@ export class BreakfastPreorderService {
         and(
           eq(breakfastPreorderDailyMenus.providerLocationId, locationId),
           eq(breakfastPreorderDailyMenus.serviceDate, serviceDate),
+          eq(breakfastPreorderDailyMenus.daypart, daypart),
         ),
       )
       .limit(1);
@@ -458,11 +554,12 @@ export class BreakfastPreorderService {
         and(
           eq(breakfastPreorderDeliveryWindows.providerLocationId, locationId),
           eq(breakfastPreorderDeliveryWindows.serviceDate, serviceDate),
+          eq(breakfastPreorderDeliveryWindows.daypart, daypart),
         ),
       )
       .orderBy(asc(breakfastPreorderDeliveryWindows.startsAt));
 
-    const liveTotals = await this.aggregatePaidOrders(locationId, serviceDate);
+    const liveTotals = await this.aggregatePaidOrders(locationId, serviceDate, daypart);
     const flags = settings
       ? acceptingPreorderFlags({
           enabled: settings.enabled,
@@ -636,7 +733,10 @@ export class BreakfastPreorderService {
     input: z.infer<typeof copyLastBreakfastMenuSchema>,
   ) {
     await this.assertProviderStaff(userId, locationId);
-    const serviceDate = input.serviceDate ?? defaultBreakfastServiceDate();
+    const daypart: FoodDaypart = input.daypart ?? "BREAKFAST";
+    const serviceDate =
+      input.serviceDate ??
+      (daypart === "LUNCH" ? defaultLunchServiceDate() : defaultBreakfastServiceDate());
 
     const last = await this.db
       .select()
@@ -645,6 +745,7 @@ export class BreakfastPreorderService {
         and(
           eq(breakfastPreorderDailyMenus.providerLocationId, locationId),
           eq(breakfastPreorderDailyMenus.status, "PUBLISHED"),
+          eq(breakfastPreorderDailyMenus.daypart, daypart),
           lt(breakfastPreorderDailyMenus.serviceDate, serviceDate),
         ),
       )
@@ -667,6 +768,7 @@ export class BreakfastPreorderService {
         and(
           eq(breakfastPreorderDeliveryWindows.providerLocationId, locationId),
           eq(breakfastPreorderDeliveryWindows.serviceDate, last[0].serviceDate),
+          eq(breakfastPreorderDeliveryWindows.daypart, daypart),
         ),
       )
       .orderBy(asc(breakfastPreorderDeliveryWindows.startsAt));
@@ -700,6 +802,7 @@ export class BreakfastPreorderService {
         and(
           eq(breakfastPreorderDailyMenus.providerLocationId, locationId),
           eq(breakfastPreorderDailyMenus.serviceDate, serviceDate),
+          eq(breakfastPreorderDailyMenus.daypart, daypart),
         ),
       )
       .limit(1);
@@ -709,6 +812,7 @@ export class BreakfastPreorderService {
 
     await this.publishMenu(userId, locationId, {
       serviceDate,
+      daypart,
       items: payload.items.map((i) => ({
         offeringId: i.offeringId ?? undefined,
         name: i.name,
@@ -727,6 +831,7 @@ export class BreakfastPreorderService {
         and(
           eq(breakfastPreorderDailyMenus.providerLocationId, locationId),
           eq(breakfastPreorderDailyMenus.serviceDate, serviceDate),
+          eq(breakfastPreorderDailyMenus.daypart, daypart),
         ),
       );
 
@@ -802,7 +907,11 @@ export class BreakfastPreorderService {
     return resolved;
   }
 
-  private async aggregatePaidOrders(locationId: string, serviceDate: string) {
+  private async aggregatePaidOrders(
+    locationId: string,
+    serviceDate: string,
+    daypart: FoodDaypart = "BREAKFAST",
+  ) {
     const paidOrders = await this.db
       .select({
         id: orders.id,
@@ -813,7 +922,7 @@ export class BreakfastPreorderService {
         and(
           eq(orders.providerLocationId, locationId),
           eq(orders.serviceDate, serviceDate),
-          eq(orders.orderKind, "BREAKFAST_PREORDER"),
+          eq(orders.orderKind, daypart === "LUNCH" ? "LUNCH" : "BREAKFAST_PREORDER"),
           inArray(orders.status, [...PAID_BREAKFAST_STATUSES]),
         ),
       );

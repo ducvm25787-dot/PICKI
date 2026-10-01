@@ -48,8 +48,13 @@ export function isMarketVertical(providerType?: string | null) {
   return (
     providerType === "MINIMART" ||
     providerType === "MARKET_VENDOR" ||
-    providerType === "RETAIL_STORE"
+    providerType === "RETAIL_STORE" ||
+    providerType === "SUPERMARKET"
   );
+}
+
+export function isSupermarket(providerType?: string | null) {
+  return providerType === "SUPERMARKET";
 }
 
 export function isTransportVertical(providerType?: string | null) {
@@ -242,7 +247,8 @@ export function isLaundryVertical(providerType?: string | null) {
 
 export function orderButtonLabel(providerType?: string | null) {
   if (isHomeServiceVertical(providerType)) return "Gửi yêu cầu";
-  return isLaundryVertical(providerType) ? "Đặt hàng" : "Đặt món";
+  if (isMarketVertical(providerType) || isLaundryVertical(providerType)) return "Đặt hàng";
+  return "Đặt món";
 }
 
 export function serviceRequestStatusLabel(

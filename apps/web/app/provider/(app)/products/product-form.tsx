@@ -6,7 +6,10 @@ import {
   ClassifiedPhotoPicker,
   type ClassifiedPhoto,
 } from "../../../components/classified-photo-picker";
+import { MARKET_UNITS } from "@picki/shared";
 import { api } from "../../../../lib/api";
+import { isMarketVertical } from "../../../../lib/providers";
+import { useProviderLocation } from "../../../components/provider-location-context";
 
 export const FOOD_UNITS = ["phần", "tô", "đĩa", "ly", "suất", "cái"] as const;
 
@@ -41,6 +44,9 @@ export function ProductForm({
   product?: FoodProduct;
 }) {
   const router = useRouter();
+  const { activeLocation } = useProviderLocation();
+  const market = isMarketVertical(activeLocation?.providerType);
+  const units = market ? MARKET_UNITS : FOOD_UNITS;
   const [categories, setCategories] = useState<Category[]>([]);
   const [name, setName] = useState(product?.name ?? "");
   const [price, setPrice] = useState(product ? String(product.priceVnd) : "");
@@ -57,6 +63,10 @@ export function ProductForm({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    if (!product && market) setUnit((current) => (current === "phần" ? "kg" : current));
+  }, [market, product]);
+
+  useEffect(() => {
     void api<{ categories: Category[] }>(`/provider/locations/${locationId}/product-categories`)
       .then((res) => setCategories(res.categories))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : "Không tải nhóm món"));
@@ -65,10 +75,14 @@ export function ProductForm({
   async function save() {
     const priceVnd = Number(price.replace(/\D/g, ""));
     if (!name.trim() || !Number.isFinite(priceVnd)) {
-      setError("Nhập tên và giá");
+      setError(market ? "Nhập tên sản phẩm và giá" : "Nhập tên và giá");
       return;
     }
-    const prepTimeMinutes = prep.trim() ? Number(prep) : null;
+    if (market && priceVnd < 1) {
+      setError("Nhập giá bán. Sản phẩm chưa có giá thì để khách hỏi hàng, không lưu giá 0.");
+      return;
+    }
+    const prepTimeMinutes = market ? null : prep.trim() ? Number(prep) : null;
     if (prepTimeMinutes != null && (!Number.isFinite(prepTimeMinutes) || prepTimeMinutes < 1)) {
       setError("Thời gian nấu chưa đúng");
       return;
@@ -121,15 +135,19 @@ export function ProductForm({
     <div className="card">
       {error ? <p style={{ color: "#b91c1c" }}>{error}</p> : null}
       <label className="field">
-        Tên món
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Gà hầm thuốc bắc" />
+        {market ? "Tên sản phẩm" : "Tên món"}
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={market ? "Gạo ST25 5kg" : "Gà hầm thuốc bắc"}
+        />
       </label>
       <label className="field">
         Mô tả ngắn
         <input
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="Nước dùng ninh xương, ăn kèm rau"
+          placeholder={market ? "Bao 5kg, giao trong ngày" : "Nước dùng ninh xương, ăn kèm rau"}
         />
       </label>
       <ClassifiedPhotoPicker photos={photos} onChange={setPhotos} maxPhotos={1} disabled={busy} />
@@ -140,7 +158,7 @@ export function ProductForm({
       <label className="field">
         Đơn vị
         <select value={unit} onChange={(e) => setUnit(e.target.value)}>
-          {FOOD_UNITS.map((item) => (
+          {units.map((item) => (
             <option key={item} value={item}>
               {item}
             </option>
@@ -148,7 +166,7 @@ export function ProductForm({
         </select>
       </label>
       <label className="field">
-        Nhóm
+        {market ? "Nhóm hàng" : "Nhóm"}
         <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
           <option value="">Chưa chọn</option>
           {categories.map((category) => (
@@ -161,7 +179,9 @@ export function ProductForm({
       <div className="field">
         <span>Lựa chọn</span>
         <p className="tagline" style={{ margin: "0 0 8px" }}>
-          Chỉ thêm khi món có loại hoặc món kèm đổi giá, ví dụ bún mọc / bò, thêm quẩy. Món một giá thì để trống.
+          {market
+            ? "Sản phẩm nào cần sơ chế thì thêm một nhóm, ví dụ nguyên / làm sạch / cắt khúc. Sản phẩm một giá thì để trống."
+            : "Chỉ thêm khi món có loại hoặc món kèm đổi giá, ví dụ bún mọc / bò, thêm quẩy. Món một giá thì để trống."}
         </p>
         {groups.map((group, groupIndex) => (
           <div key={groupIndex} className="card" style={{ marginBottom: 8 }}>
@@ -169,7 +189,7 @@ export function ProductForm({
               Tên nhóm
               <input
                 value={group.name}
-                placeholder="Loại thịt"
+                placeholder={market ? "Sơ chế" : "Loại thịt"}
                 onChange={(e) =>
                   setGroups((prev) =>
                     prev.map((row, index) => (index === groupIndex ? { ...row, name: e.target.value } : row)),
@@ -274,10 +294,12 @@ export function ProductForm({
           </button>
         ) : null}
       </div>
-      <label className="field">
-        Thời gian nấu (phút, không bắt buộc)
-        <input inputMode="numeric" value={prep} onChange={(e) => setPrep(e.target.value)} placeholder="20" />
-      </label>
+      {market ? null : (
+        <label className="field">
+          Thời gian nấu (phút, không bắt buộc)
+          <input inputMode="numeric" value={prep} onChange={(e) => setPrep(e.target.value)} placeholder="20" />
+        </label>
+      )}
       {product ? (
         <label className="field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
@@ -285,7 +307,7 @@ export function ProductForm({
         </label>
       ) : null}
       <button type="button" className="btn" disabled={busy} onClick={() => void save()}>
-        {busy ? "Đang lưu…" : "Lưu món"}
+        {busy ? "Đang lưu…" : market ? "Lưu sản phẩm" : "Lưu món"}
       </button>
     </div>
   );

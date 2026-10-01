@@ -5,10 +5,12 @@ import { useCallback, useEffect, useState } from "react";
 import { ProviderPageShell, useProviderLocation } from "../../../components/provider-location-context";
 import { api } from "../../../../lib/api";
 import { formatVnd } from "../../../../lib/money";
+import { isMarketVertical } from "../../../../lib/providers";
 import type { FoodProduct } from "./product-form";
 
 export default function ProviderProductsPage() {
-  const { locationId } = useProviderLocation();
+  const { locationId, activeLocation } = useProviderLocation();
+  const market = isMarketVertical(activeLocation?.providerType);
   const [products, setProducts] = useState<FoodProduct[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,10 +31,14 @@ export default function ProviderProductsPage() {
           Sản phẩm
         </h1>
         <Link href="/provider/products/new" className="btn" style={{ width: "auto" }}>
-          Thêm món
+          {market ? "Thêm sản phẩm" : "Thêm món"}
         </Link>
       </div>
-      <p className="tagline">Một món tạo một lần. Sáng, tối và bán ngay dùng chung món này.</p>
+      {market ? (
+        <p className="tagline">Sản phẩm giữ trong catalog. Hôm nay bán bao nhiêu thì nhập ở tab Hôm nay.</p>
+      ) : (
+        <p className="tagline">Một món tạo một lần. Sáng, tối và bán ngay dùng chung món này.</p>
+      )}
       {error ? <p style={{ color: "#b91c1c" }}>{error}</p> : null}
       {products.map((product) => (
         <Link
@@ -68,7 +74,7 @@ export default function ProviderProductsPage() {
               {product.categoryName ? ` · ${product.categoryName}` : ""}
               {product.active ? "" : " · Đã tắt"}
             </span>
-            {product.onBreakfastMenu ? (
+            {!market && product.onBreakfastMenu ? (
               <span className="stat" style={{ display: "block" }}>
                 Có trên menu sáng
               </span>

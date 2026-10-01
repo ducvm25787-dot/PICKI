@@ -1,11 +1,14 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   familyDinnerProviderSettings,
   getLocationHeader,
   listDailySpecialsForLocation,
   listLocationMenu,
   listOptionGroupsForOfferings,
+  providerCapabilities,
+  providerLocations,
+  providers,
   resolveTodayOffer,
   type PickiDb,
   type PickiSql,
@@ -54,10 +57,32 @@ export class CatalogService {
       .map((row) => row.offering_id);
     const optionGroups = await listOptionGroupsForOfferings(this.db, visibleIds);
 
-    const [providerPhone, brandName] = await Promise.all([
+    const [providerPhone, brandName, commerce] = await Promise.all([
       loadProviderContactPhone(this.db, locationId),
       loadProviderBrand(this.db, locationId),
+      this.db
+        .select({
+          model: providers.commerceModel,
+          sellNow: providerCapabilities.enabled,
+        })
+        .from(providerLocations)
+        .innerJoin(providers, eq(providers.id, providerLocations.providerId))
+        .leftJoin(
+          providerCapabilities,
+          and(
+            eq(providerCapabilities.providerId, providers.id),
+            eq(providerCapabilities.capability, "SELL_NOW"),
+          ),
+        )
+        .where(eq(providerLocations.id, locationId))
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
     ]);
+    const sellNow =
+      commerce?.model === "FOOD_SERVICE"
+        ? commerce.sellNow !== false
+        : (commerce?.model === "FRESH_MARKET" || commerce?.model === "RETAIL_STORE") &&
+          commerce.sellNow === true;
 
     return {
       location: {
@@ -78,6 +103,8 @@ export class CatalogService {
         addressLine: header.address_line,
         lat: header.lat,
         lng: header.lng,
+        pickeeVerified: header.verification_status === "VERIFIED",
+        sellNow,
         contacts: {
           provider: {
             phone: providerPhone,

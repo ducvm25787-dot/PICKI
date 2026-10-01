@@ -43,6 +43,7 @@ export type LocationHeaderRow = {
   address_line: string | null;
   lat: number | null;
   lng: number | null;
+  verification_status: string;
 };
 
 export async function getLocationHeader(
@@ -67,7 +68,8 @@ export async function getLocationHeader(
       pls.message AS live_message,
       pl.address_line,
       pl.lat,
-      pl.lng
+      pl.lng,
+      pl.verification_status
     FROM provider_locations pl
     INNER JOIN providers p ON p.id = pl.provider_id
     LEFT JOIN provider_profiles pp ON pp.provider_id = p.id

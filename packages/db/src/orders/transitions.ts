@@ -4,8 +4,9 @@ import {
   type LaundryPickupMode,
   type ServiceVertical,
 } from "./laundry-transitions.js";
+import { isDaypartMenuOrder } from "@picki/shared";
 
-/** Family Dinner / Late Dinner / Breakfast Preorder: nấu trước, tìm runner (hoặc tự giao) khi READY. */
+/** Family Dinner / Late Dinner / daily menu (breakfast + lunch): nấu trước, tìm runner khi READY. */
 export function isCookFirstFoodOrder(order: {
   serviceVertical?: string | null;
   orderKind?: string | null;
@@ -14,7 +15,7 @@ export function isCookFirstFoodOrder(order: {
   return (
     order.orderKind === "FAMILY_DINNER" ||
     order.orderKind === "LATE_DINNER" ||
-    order.orderKind === "BREAKFAST_PREORDER"
+    isDaypartMenuOrder(order.orderKind)
   );
 }
 
@@ -70,9 +71,9 @@ export function canTransition(
   ) {
     return true;
   }
-  // Breakfast: Quán nhận → Sẵn sàng (bỏ bước Nấu)
+  // Daily menu (breakfast + lunch): Quán nhận → Sẵn sàng (bỏ bước Nấu)
   if (
-    orderKind === "BREAKFAST_PREORDER" &&
+    isDaypartMenuOrder(orderKind) &&
     from === "PROVIDER_ACCEPTED" &&
     to === "READY"
   ) {

@@ -50,6 +50,15 @@ export const createDeliveryPromotionSchema = z.object({
     .default(["PICKEE_RUNNER"]),
 });
 
+export const setLocationVerificationSchema = z.object({
+  status: z.enum(["UNVERIFIED", "PENDING", "VERIFIED", "REJECTED"]),
+  note: z.string().max(500).optional(),
+});
+
+export const issueLocationQrSchema = z.object({
+  reason: z.string().max(500).optional(),
+});
+
 export const verifyLocationPinSchema = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),

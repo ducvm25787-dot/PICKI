@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ProviderPageShell, useProviderLocation } from "../../../components/provider-location-context";
+import { isMarketVertical } from "../../../../lib/providers";
 import { api } from "../../../../lib/api";
 import { formatVnd } from "../../../../lib/money";
 
@@ -16,6 +17,7 @@ type SellItem = {
   priceOverrideVnd: number | null;
   status: StockStatus;
   remaining: number | null;
+  featured?: boolean;
 };
 
 type MenuItem = {
@@ -34,20 +36,21 @@ type Board = {
   sellNow: SellItem[];
   sellNowEnabled: boolean;
   breakfast: { serviceDate: string | null; items: MenuItem[] } | null;
+  lunch: { serviceDate: string | null; items: MenuItem[] } | null;
   dinner: { serviceDate: string | null; items: MenuItem[] } | null;
 };
 
-function qtyLabel(status: string, remaining: number | null) {
+function qtyLabel(status: string, remaining: number | null, unsetLabel = "Không giới hạn") {
   if (status === "HIDDEN" || status === "PAUSED") return "Ẩn hôm nay";
   if (status === "SOLD_OUT" || remaining === 0) return "Hết";
-  if (remaining == null || status === "UNSET") return "Không giới hạn";
+  if (remaining == null || status === "UNSET") return unsetLabel;
   return `${remaining} còn`;
 }
 
 export default function ProviderBoardPage() {
-  const { locationId } = useProviderLocation();
+  const { locationId, activeLocation } = useProviderLocation();
+  const market = isMarketVertical(activeLocation?.providerType);
   const [board, setBoard] = useState<Board | null>(null);
-  const [addQty, setAddQty] = useState(5);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -100,7 +103,8 @@ export default function ProviderBoardPage() {
         <>
           <div className="card" style={{ marginBottom: 12 }}>
             <p style={{ margin: "0 0 8px" }}>
-              <strong>{board.orders.fresh}</strong> đơn mới · <strong>{board.orders.cooking}</strong> đang làm ·{" "}
+              <strong>{board.orders.fresh}</strong> đơn mới · <strong>{board.orders.cooking}</strong>{" "}
+              {market ? "đang soạn" : "đang làm"} ·{" "}
               <strong>{board.orders.waitingRunner}</strong> chờ runner
             </p>
             <div className="board-row">
@@ -108,22 +112,12 @@ export default function ProviderBoardPage() {
                 Xem đơn
               </Link>
               <Link href="/provider/live" className="btn btn-secondary">
-                Trạng thái quán
+                {market ? "Trạng thái cửa hàng" : "Trạng thái quán"}
               </Link>
             </div>
           </div>
 
           <div className="board-row" style={{ marginBottom: 16 }}>
-            <label className="field" style={{ margin: 0, minWidth: 96 }}>
-              <span>Bổ sung</span>
-              <input
-                type="number"
-                min={1}
-                max={500}
-                value={addQty}
-                onChange={(e) => setAddQty(Number(e.target.value))}
-              />
-            </label>
             <button
               type="button"
               className="btn btn-secondary"
@@ -136,17 +130,19 @@ export default function ProviderBoardPage() {
 
           {board.sellNowEnabled ? (
             <section style={{ marginBottom: 18 }}>
-              <h2 className="section-title">Bán ngay</h2>
+              <h2 className="section-title">{market ? "Hôm nay bán" : "Bán ngay"}</h2>
               {board.sellNow.length === 0 ? (
                 <p className="tagline">
-                  Chưa có món. <Link href="/provider/products">Thêm sản phẩm</Link>
+                  {market ? "Chưa có sản phẩm. " : "Chưa có món. "}
+                  <Link href="/provider/products">{market ? "Thêm sản phẩm" : "Thêm món"}</Link>
                 </p>
               ) : (
                 board.sellNow.map((item) => (
                   <article key={item.offeringId} className="card" style={{ marginBottom: 8 }}>
                     <strong>{item.name}</strong>
                     <p style={{ margin: "4px 0 8px" }}>
-                      {formatVnd(item.priceOverrideVnd ?? item.priceVnd)} · {qtyLabel(item.status, item.remaining)}
+                      {formatVnd(item.priceOverrideVnd ?? item.priceVnd)} ·{" "}
+                      {qtyLabel(item.status, item.remaining, market ? "Chưa mở bán hôm nay" : "Không giới hạn")}
                       {item.priceOverrideVnd != null ? ` · giá gốc ${formatVnd(item.priceVnd)}` : ""}
                     </p>
                     <TodayPrice
@@ -157,20 +153,16 @@ export default function ProviderBoardPage() {
                       }
                     />
                     <div className="board-row">
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={busy}
-                        onClick={() =>
-                          void run(
+                      <AddQty
+                        busy={busy}
+                        onAdd={(quantity) =>
+                          run(
                             "/board/stock",
-                            { offeringId: item.offeringId, action: "add", quantity: addQty },
+                            { offeringId: item.offeringId, action: "add", quantity },
                             "Đã bổ sung",
                           )
                         }
-                      >
-                        +{addQty}
-                      </button>
+                      />
                       <button
                         type="button"
                         className="btn btn-secondary"
@@ -198,6 +190,22 @@ export default function ProviderBoardPage() {
                       >
                         {item.status === "HIDDEN" ? "Bật lại" : "Ẩn hôm nay"}
                       </button>
+                      {market ? (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            void run(
+                              "/board/stock",
+                              { offeringId: item.offeringId, action: item.featured ? "unfeature" : "feature" },
+                              item.featured ? "Đã bỏ nổi bật" : "Đã đẩy nổi bật",
+                            )
+                          }
+                        >
+                          {item.featured ? "Bỏ nổi bật" : "Nổi bật"}
+                        </button>
+                      ) : null}
                     </div>
                   </article>
                 ))
@@ -210,7 +218,13 @@ export default function ProviderBoardPage() {
             section={board.breakfast}
             busy={busy}
             channel="breakfast"
-            quantity={addQty}
+            onRun={run}
+          />
+          <MenuSection
+            title="Bữa trưa"
+            section={board.lunch}
+            busy={busy}
+            channel="lunch"
             onRun={run}
           />
           <MenuSection
@@ -218,7 +232,6 @@ export default function ProviderBoardPage() {
             section={board.dinner}
             busy={busy}
             channel="dinner"
-            quantity={addQty}
             onRun={run}
           />
         </>
@@ -266,19 +279,62 @@ function TodayPrice({
   );
 }
 
+function AddQty({
+  busy,
+  onAdd,
+}: {
+  busy: boolean;
+  onAdd: (quantity: number) => Promise<void>;
+}) {
+  const [qty, setQty] = useState("1");
+  const parsed = Number(qty);
+  const valid = Number.isInteger(parsed) && parsed >= 1 && parsed <= 500;
+
+  function bump(delta: number) {
+    const base = valid ? parsed : 1;
+    setQty(String(Math.min(500, Math.max(1, base + delta))));
+  }
+
+  return (
+    <div className="qty-stepper">
+      <button type="button" className="btn btn-secondary" aria-label="Giảm" disabled={busy} onClick={() => bump(-1)}>
+        −
+      </button>
+      <input
+        type="number"
+        min={1}
+        max={500}
+        inputMode="numeric"
+        aria-label="Số lượng bổ sung"
+        value={qty}
+        onChange={(e) => setQty(e.target.value)}
+      />
+      <button type="button" className="btn btn-secondary" aria-label="Tăng" disabled={busy} onClick={() => bump(1)}>
+        +
+      </button>
+      <button
+        type="button"
+        className="btn"
+        disabled={busy || !valid}
+        onClick={() => void onAdd(parsed)}
+      >
+        Bổ sung
+      </button>
+    </div>
+  );
+}
+
 function MenuSection({
   title,
   section,
   busy,
   channel,
-  quantity,
   onRun,
 }: {
   title: string;
   section: Board["breakfast"];
   busy: boolean;
-  channel: "breakfast" | "dinner";
-  quantity: number;
+  channel: "breakfast" | "lunch" | "dinner";
   onRun: (path: string, body: unknown, ok: string) => Promise<void>;
 }) {
   if (!section) return null;
@@ -300,20 +356,16 @@ function MenuSection({
               {item.selfCook ? " · Nấu sẵn / Tự nấu" : ""}
             </p>
             <div className="board-row">
-              <button
-                type="button"
-                className="btn"
-                disabled={busy}
-                onClick={() =>
-                  void onRun(
+              <AddQty
+                busy={busy}
+                onAdd={(quantity) =>
+                  onRun(
                     "/board/menu-stock",
                     { channel, menuItemId: item.id, action: "add", quantity },
                     "Đã bổ sung",
                   )
                 }
-              >
-                +{quantity}
-              </button>
+              />
               <button
                 type="button"
                 className="btn btn-secondary"

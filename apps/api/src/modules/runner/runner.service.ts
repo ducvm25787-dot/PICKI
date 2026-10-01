@@ -103,11 +103,7 @@ export class RunnerService {
           isNull(orders.runnerUserId),
           or(
             and(eq(orders.serviceVertical, "FOOD"), eq(orders.status, "PROVIDER_ACCEPTED")),
-            and(
-              eq(orders.serviceVertical, "FOOD"),
-              eq(orders.status, "READY"),
-              inArray(orders.orderKind, ["FAMILY_DINNER", "LATE_DINNER", "BREAKFAST_PREORDER"]),
-            ),
+            and(eq(orders.serviceVertical, "FOOD"), eq(orders.status, "READY")),
             and(eq(orders.serviceVertical, "LAUNDRY"), eq(orders.status, "READY_FOR_RETURN")),
           ),
         ),
@@ -251,10 +247,10 @@ export class RunnerService {
         order[0].serviceVertical !== "LAUNDRY" &&
         !isCookFirstFoodOrder(order[0]) &&
         order[0].status === "PROVIDER_ACCEPTED";
-      const isCookFirstReady =
-        isCookFirstFoodOrder(order[0]) && order[0].status === "READY";
+      const isReadyForPickup =
+        order[0].serviceVertical !== "LAUNDRY" && order[0].status === "READY";
 
-      if (!isReturn && !isInbound && !isCookFirstReady) {
+      if (!isReturn && !isInbound && !isReadyForPickup) {
         throw new PickiError(
           "FORBIDDEN",
           isCookFirstFoodOrder(order[0])
@@ -285,7 +281,7 @@ export class RunnerService {
         await markOfferAccepted(tx, orderId, order[0]!.runnerOfferWave ?? 0, userId);
       });
 
-      if (isCookFirstReady) {
+      if (isReadyForPickup) {
         await this.db
           .update(orders)
           .set({ runnerUserId: userId, updatedAt: new Date() })

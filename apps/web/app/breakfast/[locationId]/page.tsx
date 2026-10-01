@@ -52,6 +52,8 @@ export default function BreakfastOrderPage() {
   const search = useSearchParams();
   const router = useRouter();
   const locationId = String(params.locationId);
+  const daypart = search.get("daypart") === "LUNCH" ? "LUNCH" : "BREAKFAST";
+  const orderKind = daypart === "LUNCH" ? "LUNCH" : "BREAKFAST_PREORDER";
   const [zoneId, setZoneId] = useState(search.get("zoneId") ?? "");
 
   const [menu, setMenu] = useState<MenuResponse | null>(null);
@@ -70,11 +72,13 @@ export default function BreakfastOrderPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
-    const data = await api<MenuResponse>(`/locations/${locationId}/breakfast-preorder`);
+    const data = await api<MenuResponse>(
+      `/locations/${locationId}/breakfast-preorder?daypart=${daypart}`,
+    );
     setMenu(data);
     const open = data.windows.find((w) => w.available);
     if (open) setWindowId(open.id);
-  }, [locationId]);
+  }, [locationId, daypart]);
 
   useEffect(() => {
     void load().catch((e: unknown) => {
@@ -129,7 +133,7 @@ export default function BreakfastOrderPage() {
       body: JSON.stringify({
         providerLocationId: locationId,
         zoneId,
-        orderKind: "BREAKFAST_PREORDER",
+        orderKind,
         serviceDate: menu.serviceDate,
         deliveryWindowId: windowId,
         deliveryHandoffMode: handoff,
@@ -147,7 +151,7 @@ export default function BreakfastOrderPage() {
         }),
       )
       .catch(() => setQuote(null));
-  }, [zoneId, windowId, menu, selectedLines, locationId, handoff]);
+  }, [zoneId, windowId, menu, selectedLines, locationId, handoff, orderKind]);
 
   async function placeOrder() {
     if (!zoneId || !windowId || !addressId || !menu || !checkoutReady) return;
@@ -160,7 +164,7 @@ export default function BreakfastOrderPage() {
           providerLocationId: locationId,
           zoneId,
           addressId,
-          orderKind: "BREAKFAST_PREORDER",
+          orderKind,
           serviceDate: menu.serviceDate,
           deliveryWindowId: windowId,
           deliveryHandoffMode: handoff,

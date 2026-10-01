@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
+import { vnClock } from "@picki/shared";
 import { NotificationBell } from "../components/notification-bell";
 
 type Kitchen = {
@@ -51,12 +52,16 @@ export default function BreakfastListPage() {
     );
   }
 
+  const morning = vnClock().hm >= "06:00" && vnClock().hm < "09:00";
+
   return (
     <div className="container">
       <div className="header-row">
         <div>
-          <h1 style={{ margin: 0, fontSize: 22 }}>Sáng mai ăn gì?</h1>
-          <p className="stat">Đặt tối — giao sáng · {serviceDate}</p>
+          <h1 style={{ margin: 0, fontSize: 22 }}>{morning ? "Ăn sáng" : "Sáng mai ăn gì?"}</h1>
+          <p className="stat">
+            {morning ? "Suất còn lại · giao quanh nhà" : "Đặt tối — giao sáng"} · {serviceDate}
+          </p>
         </div>
         <NotificationBell audience="customer" />
       </div>

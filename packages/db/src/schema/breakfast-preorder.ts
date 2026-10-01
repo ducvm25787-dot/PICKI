@@ -25,6 +25,8 @@ export const breakfastPreorderDeliveryWindows = pgTable("breakfast_preorder_deli
   endsAt: time("ends_at").notNull(),
   capacity: integer("capacity").notNull(),
   remainingCapacity: integer("remaining_capacity").notNull(),
+  /** BREAKFAST | LUNCH. Slot belongs to that daypart only. */
+  daypart: text("daypart").notNull().default("BREAKFAST"),
   status: text("status").notNull().default("OPEN"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -36,6 +38,8 @@ export const breakfastPreorderDailyMenus = pgTable("breakfast_preorder_daily_men
     .notNull()
     .references(() => providerLocations.id, { onDelete: "cascade" }),
   serviceDate: date("service_date").notNull(),
+  /** BREAKFAST | LUNCH. One menu per location, date, and daypart. */
+  daypart: text("daypart").notNull().default("BREAKFAST"),
   status: text("status").notNull().default("DRAFT"),
   publishedAt: timestamp("published_at", { withTimezone: true, mode: "date" }),
   copiedFromServiceDate: date("copied_from_service_date"),
