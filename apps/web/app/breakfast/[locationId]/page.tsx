@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../../lib/api";
 import { formatAddressLine, type SavedAddress } from "../../../lib/addresses";
+import { FoodBillLines } from "../../components/food-bill-lines";
 import { formatVnd } from "../../../lib/money";
 import { NotificationBell } from "../../components/notification-bell";
 import { LocationContactActions } from "../../components/location-contact-actions";
@@ -70,6 +71,9 @@ export default function BreakfastOrderPage() {
   const [quote, setQuote] = useState<{
     subtotalVnd: number;
     deliveryFeeVnd: number;
+    runnerPayableVnd?: number;
+    providerDeliverySubsidyVnd?: number;
+    pickeeDeliverySubsidyVnd?: number;
     totalVnd: number;
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -131,7 +135,14 @@ export default function BreakfastOrderPage() {
       setQuote(null);
       return;
     }
-    void api<{ subtotalVnd: number; deliveryFeeVnd: number; totalVnd: number }>("/orders/quote", {
+    void api<{
+      subtotalVnd: number;
+      deliveryFeeVnd: number;
+      runnerPayableVnd?: number;
+      providerDeliverySubsidyVnd?: number;
+      pickeeDeliverySubsidyVnd?: number;
+      totalVnd: number;
+    }>("/orders/quote", {
       method: "POST",
       body: JSON.stringify({
         providerLocationId: locationId,
@@ -140,21 +151,16 @@ export default function BreakfastOrderPage() {
         serviceDate: menu.serviceDate,
         deliveryWindowId: windowId,
         deliveryHandoffMode: handoff,
+        ...(addressId ? { addressId } : {}),
         items: selectedLines.map((l) => ({
           menuItemId: l.menuItemId,
           quantity: l.quantity,
         })),
       }),
     })
-      .then((res) =>
-        setQuote({
-          subtotalVnd: res.subtotalVnd,
-          deliveryFeeVnd: res.deliveryFeeVnd,
-          totalVnd: res.totalVnd,
-        }),
-      )
+      .then((res) => setQuote(res))
       .catch(() => setQuote(null));
-  }, [zoneId, windowId, menu, selectedLines, locationId, handoff, orderKind]);
+  }, [zoneId, windowId, menu, selectedLines, locationId, handoff, orderKind, addressId]);
 
   async function placeOrder() {
     if (!zoneId || !windowId || !addressId || !menu || !checkoutReady) return;
@@ -377,11 +383,16 @@ export default function BreakfastOrderPage() {
 
       {quote ? (
         <div className="card" style={{ marginBottom: 12 }}>
-          <p className="stat" style={{ margin: 0 }}>
-            Món {formatVnd(quote.subtotalVnd)} · Ship {formatVnd(quote.deliveryFeeVnd)}
-          </p>
-          <p style={{ margin: "8px 0 0", fontWeight: 700 }}>
-            Tổng {formatVnd(quote.totalVnd)} · thanh toán trên Pickee
+          <FoodBillLines
+            subtotalVnd={quote.subtotalVnd}
+            runnerPayableVnd={quote.runnerPayableVnd ?? quote.deliveryFeeVnd}
+            providerDeliverySubsidyVnd={quote.providerDeliverySubsidyVnd}
+            pickeeDeliverySubsidyVnd={quote.pickeeDeliverySubsidyVnd}
+            totalVnd={quote.totalVnd}
+            foodLabel="Món"
+          />
+          <p className="stat" style={{ margin: "8px 0 0" }}>
+            Thanh toán trên Pickee
           </p>
         </div>
       ) : null}

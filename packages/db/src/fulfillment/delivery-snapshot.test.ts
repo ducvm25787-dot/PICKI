@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assertDeliveryFundingSnapshot,
+  customerDeliveryChargeVnd,
   snapshotCustomerPickup,
   snapshotLaundryReturnRunner,
   snapshotPickeeRunner,
@@ -75,5 +76,29 @@ describe("delivery funding snapshots", () => {
     expect(next.runnerPayable).toBe(0);
     expect(next.providerDeliveryEarning).toBe(0);
     expect(next.deliveryFeeVnd).toBe(0);
+  });
+
+  it("adds only the runner amount above the funded base onto the customer total", () => {
+    expect(
+      customerDeliveryChargeVnd({
+        customerDeliveryFee: 0,
+        deliveryFeeBase: 20_000,
+        runnerPayable: 28_000,
+      }),
+    ).toBe(8_000);
+    expect(
+      customerDeliveryChargeVnd({
+        customerDeliveryFee: 0,
+        deliveryFeeBase: 20_000,
+        runnerPayable: 20_000,
+      }),
+    ).toBe(0);
+    expect(
+      customerDeliveryChargeVnd({
+        customerDeliveryFee: 20_000,
+        deliveryFeeBase: 20_000,
+        runnerPayable: 28_000,
+      }),
+    ).toBe(28_000);
   });
 });

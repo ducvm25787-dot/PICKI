@@ -30,6 +30,15 @@ export class ChainConsoleController {
     return this.chain.overview(userId, scopeTypeValue, scopeId);
   }
 
+  @Get("finance")
+  finance(
+    @CurrentUserId() userId: string,
+    @Query("scopeType") scopeTypeValue?: string,
+    @Query("scopeId") scopeId?: string,
+  ) {
+    return this.chain.finance(userId, scopeTypeValue, scopeId);
+  }
+
   @Get("locations")
   locations(
     @CurrentUserId() userId: string,

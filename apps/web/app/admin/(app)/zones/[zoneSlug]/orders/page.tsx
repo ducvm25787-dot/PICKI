@@ -76,10 +76,76 @@ export default function AdminOrdersPage() {
                   Hủy (ops)
                 </button>
               ) : null}
+              <OrderFinance orderId={o.id} status={o.status} />
             </article>
           ))
         )}
       </div>
     </AdminPageShell>
+  );
+}
+
+function OrderFinance({ orderId, status }: { orderId: string; status: string }) {
+  const [open, setOpen] = useState(false);
+  const [canWrite, setCanWrite] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const cancelled = ["CUSTOMER_CANCELLED", "SYSTEM_CANCELLED", "PROVIDER_REJECTED"].includes(status);
+
+  useEffect(() => {
+    if (!open) return;
+    void api<{ canWrite: boolean }>(`/admin/finance/orders/${orderId}`)
+      .then((row) => setCanWrite(row.canWrite))
+      .catch(() => setCanWrite(false));
+  }, [open, orderId]);
+
+  if (!open) {
+    return (
+      <button type="button" className="btn btn-secondary" style={{ width: "auto", marginTop: 8 }} onClick={() => setOpen(true)}>
+        Tài chính đơn
+      </button>
+    );
+  }
+
+  return (
+    <form
+      style={{ display: "grid", gap: 8, marginTop: 8 }}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void api<{ message?: string }>(`/admin/finance/orders/${orderId}/refund`, {
+          method: "POST",
+          body: JSON.stringify({ amountVnd: Number(amount), reason }),
+        }).then((row) => setMessage(row.message ?? "Đã ghi hoàn tiền trên sổ. Hoàn ngân hàng vẫn thủ công."));
+      }}
+    >
+      {canWrite ? (
+        <>
+          <input placeholder="Số tiền hoàn" value={amount} onChange={(event) => setAmount(event.target.value)} />
+          <input placeholder="Lý do" value={reason} onChange={(event) => setReason(event.target.value)} />
+          <button type="submit" className="btn">Ghi hoàn tiền nội bộ</button>
+          <p className="stat">Sổ ghi nhận hoàn tiền. PayOS/ngân hàng không tự hoàn — trạng thái ngoài là chờ xử lý thủ công.</p>
+          {cancelled ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                const why = window.prompt("Lý do xác nhận đã giao sau hủy") ?? "";
+                if (!why) return;
+                void api(`/admin/finance/orders/${orderId}/fulfilled-after-cancel`, {
+                  method: "POST",
+                  body: JSON.stringify({ reason: why }),
+                }).then(() => setMessage("Đã xác nhận giao sau hủy. Phí chỉ ghi một lần."));
+              }}
+            >
+              Xác nhận đã giao sau khi hủy
+            </button>
+          ) : null}
+        </>
+      ) : (
+        <p className="stat">Chỉ SUPER_ADMIN hoặc FINANCE đúng khu được ghi hoàn tiền.</p>
+      )}
+      {message ? <p>{message}</p> : null}
+    </form>
   );
 }

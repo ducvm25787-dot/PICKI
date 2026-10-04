@@ -8,6 +8,7 @@ import { OrderChat } from "../../components/order-chat";
 import { OrderPhoneLinks } from "../../components/order-phone-links";
 import { api } from "../../../lib/api";
 import { OrderNumberHeading } from "../../components/order-number-heading";
+import { FoodBillLines } from "../../components/food-bill-lines";
 import { formatLaundryReferencePrice, formatOrderAmount, formatVnd } from "../../../lib/money";
 import { fdFormatItemQtyLabel } from "../../../lib/family-dinner";
 import { isLaundryVertical, orderButtonLabel } from "../../../lib/providers";
@@ -37,6 +38,9 @@ type OrderDetail = {
   paymentMode: string;
   subtotalVnd?: number;
   deliveryFeeVnd?: number;
+  runnerPayableVnd?: number;
+  providerDeliverySubsidyVnd?: number;
+  pickeeDeliverySubsidyVnd?: number;
   totalVnd: number;
   customerNote?: string | null;
   deliveryWindow?: { startsAt: string; endsAt: string; label: string } | null;
@@ -422,22 +426,44 @@ export default function OrderDetailPage() {
           </p>
         ) : (
           <>
-            {order.deliveryFeeVnd != null && order.deliveryFeeVnd > 0 ? (
-              <>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span>Tiền hàng</span>
-                  <span>{formatVnd(order.subtotalVnd ?? order.totalVnd - order.deliveryFeeVnd)}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span>Phí giao</span>
-                  <span>{formatVnd(order.deliveryFeeVnd)}</span>
-                </div>
-              </>
-            ) : null}
-            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
-              <span>Tổng</span>
-              <strong>{formatVnd(order.totalVnd)}</strong>
-            </div>
+            {(() => {
+              const subtotal = order.subtotalVnd ?? order.totalVnd - (order.deliveryFeeVnd ?? 0);
+              const runner = order.runnerPayableVnd ?? 0;
+              const pickee = order.pickeeDeliverySubsidyVnd ?? 0;
+              const provider = order.providerDeliverySubsidyVnd ?? 0;
+              const billAddsUp = subtotal + runner - pickee - provider === order.totalVnd;
+              if (runner > 0 && billAddsUp) {
+                return (
+                  <FoodBillLines
+                    subtotalVnd={subtotal}
+                    runnerPayableVnd={runner}
+                    pickeeDeliverySubsidyVnd={pickee}
+                    providerDeliverySubsidyVnd={provider}
+                    totalVnd={order.totalVnd}
+                  />
+                );
+              }
+              return (
+                <>
+                  {order.deliveryFeeVnd != null && order.deliveryFeeVnd > 0 ? (
+                    <>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                        <span>Tiền hàng</span>
+                        <span>{formatVnd(subtotal)}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                        <span>Phí giao</span>
+                        <span>{formatVnd(order.deliveryFeeVnd)}</span>
+                      </div>
+                    </>
+                  ) : null}
+                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
+                    <span>Tổng</span>
+                    <strong>{formatVnd(order.totalVnd)}</strong>
+                  </div>
+                </>
+              );
+            })()}
           </>
         )}
       </div>

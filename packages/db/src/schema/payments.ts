@@ -1,4 +1,4 @@
-import { integer, jsonb, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import { bigint, integer, jsonb, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { createdAt, updatedAt } from "./helpers.js";
 import { orders } from "./orders.js";
 
@@ -12,6 +12,7 @@ export const payments = pgTable("payments", {
   status: text("status").notNull().default("PENDING"),
   providerKind: text("provider_kind").notNull().default("DEV_STUB"),
   providerRef: text("provider_ref"),
+  payosOrderCode: bigint("payos_order_code", { mode: "number" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

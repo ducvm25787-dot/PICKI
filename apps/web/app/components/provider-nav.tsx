@@ -164,6 +164,19 @@ const tabs: Tab[] = [
     foodBreakfastOnly: false,
   },
   {
+    href: "/provider/subscription",
+    label: "Gói dịch vụ",
+    Icon: IconClipboard,
+    exact: false,
+    hideForBeauty: false,
+    beautyOnly: false,
+    hideForEducation: false,
+    healthOnly: false,
+    pharmacyOnly: false,
+    homeCookOnly: false,
+    foodBreakfastOnly: false,
+  },
+  {
     href: "/provider/settings",
     label: "Cài đặt",
     Icon: IconSettings,
@@ -211,6 +224,8 @@ export function ProviderNav() {
         { href: "/provider", label: "Đơn", Icon: IconClipboard, exact: true },
         { href: "/provider/products", label: "Sản phẩm", Icon: IconOrders, exact: false },
         { href: "/provider/selling", label: "Cách bán", Icon: IconDinner, exact: false },
+        { href: "/provider/finance", label: "Tài chính", Icon: IconClipboard, exact: false },
+        { href: "/provider/subscription", label: "Gói dịch vụ", Icon: IconClipboard, exact: false },
         { href: "/provider/settings", label: "Cài đặt gian hàng", Icon: IconSettings, exact: false },
       ]
     : marketShop
@@ -218,6 +233,8 @@ export function ProviderNav() {
           { href: "/provider/board", label: "Hôm nay", Icon: IconLive, exact: false },
           { href: "/provider", label: "Đơn", Icon: IconClipboard, exact: true },
           { href: "/provider/products", label: "Sản phẩm", Icon: IconOrders, exact: false },
+          { href: "/provider/finance", label: "Tài chính", Icon: IconClipboard, exact: false },
+          { href: "/provider/subscription", label: "Gói dịch vụ", Icon: IconClipboard, exact: false },
           { href: "/provider/settings", label: "Cài đặt gian hàng", Icon: IconSettings, exact: false },
         ]
     : tabs.filter((tab) => {
@@ -248,6 +265,7 @@ export function ProviderNav() {
     { href: "/provider/organization/orders", label: "Đơn hàng", exact: false },
     { href: "/provider/organization/products", label: "Sản phẩm", exact: false },
     { href: "/provider/organization/today", label: "Hôm nay", exact: false },
+    { href: "/provider/organization/finance", label: "Tài chính", exact: false },
     ...(chain?.canManageCampaigns
       ? [{ href: "/provider/organization/campaigns", label: "Chương trình", exact: false }]
       : []),

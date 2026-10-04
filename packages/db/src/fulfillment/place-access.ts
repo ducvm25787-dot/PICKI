@@ -68,6 +68,7 @@ export function placeAccessNote(
 /**
  * Adds building wait onto runner payable only.
  * Opening Week still covers the original delivery base, not this extra.
+ * The extra is added to the customer total by `customerDeliveryChargeVnd`.
  */
 export function applyRunnerWaitFee(
   snapshot: DeliveryFundingSnapshot,

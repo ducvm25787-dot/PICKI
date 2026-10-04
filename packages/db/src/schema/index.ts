@@ -8,6 +8,7 @@ export * from "./delivery-promotions.js";
 export * from "./discovery.js";
 export * from "./relationships.js";
 export * from "./habit.js";
+export * from "./finance.js";
 export * from "./fulfillment.js";
 export * from "./health.js";
 export * from "./helpers.js";

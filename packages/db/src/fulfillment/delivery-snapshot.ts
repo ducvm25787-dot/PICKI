@@ -202,6 +202,20 @@ export function switchToSelfDelivery(
   return snapshot;
 }
 
+/**
+ * What the customer adds to the food subtotal.
+ * Opening Week can cover `deliveryFeeBase`. Building wait sits above that base
+ * and is still added here, once.
+ */
+export function customerDeliveryChargeVnd(snapshot: {
+  customerDeliveryFee: number;
+  runnerPayable: number;
+  deliveryFeeBase: number;
+}): number {
+  const buildingExtra = Math.max(0, snapshot.runnerPayable - snapshot.deliveryFeeBase);
+  return snapshot.customerDeliveryFee + buildingExtra;
+}
+
 export function fundingFromOrder(order: {
   fulfillmentMode: string;
   deliveryFeeBase: number;

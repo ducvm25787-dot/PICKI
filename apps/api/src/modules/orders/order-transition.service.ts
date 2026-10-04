@@ -6,6 +6,7 @@ import {
   orderItems,
   orders,
   orderStatusHistory,
+  recognizeTransactionFee,
   upsertRelationshipFromOrders,
   confirmOfferingStock,
   releaseOfferingStock,
@@ -108,6 +109,9 @@ export class OrderTransitionService {
       if (toStatus === "PROVIDER_REJECTED") {
         patch.cancelReason = extra?.cancelReason?.trim() || null;
       }
+      if (toStatus === "DELIVERED") {
+        patch.commercialFulfillmentStatus = "FULFILLED";
+      }
 
       const [updated] = await tx
         .update(orders)
@@ -134,6 +138,15 @@ export class OrderTransitionService {
       }
       if (STOCK_RELEASE_STATUSES.has(toStatus)) {
         await releaseOfferingStock(tx, orderId);
+      }
+      if (toStatus === "DELIVERED") {
+        await recognizeTransactionFee(tx, {
+          id: updated.id,
+          providerLocationId: updated.providerLocationId,
+          zoneId: updated.zoneId,
+          runnerUserId: updated.runnerUserId,
+          financialSnapshot: updated.financialSnapshot,
+        });
       }
 
       const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));

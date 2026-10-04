@@ -8,6 +8,7 @@ import {
   reserveFoodDeliveryFunding,
   snapshotLaundryCheckout,
   applyRunnerWaitFee,
+  customerDeliveryChargeVnd,
   quoteDelivery,
   normalizePlaceCode,
   placeAccessNote,
@@ -55,6 +56,10 @@ import {
   scheduledFulfillmentSettings,
   zoneFulfillmentSettings,
   zonePlaces,
+  zones,
+  buildLiveOrderSnapshot,
+  commerceBlockReason,
+  insertOpeningLedger,
   commerceServiceDate,
   discoverZonesAtPoint,
   DaypartCapacityError,
@@ -109,19 +114,20 @@ export class OrdersService {
 
     if (input.orderKind === "FAMILY_DINNER") {
       const built = await this.buildFamilyDinnerLineItems(input);
-      const deliveryFeeVnd = await this.quotedCustomerDeliveryFee({
+      const priced = await this.foodDeliveryQuote({
         userId,
         zoneId: input.zoneId,
         providerId: location.providerId,
+        providerLocationId: input.providerLocationId,
         subtotalVnd: built.subtotalVnd,
         handoffMode: input.deliveryHandoffMode,
+        addressId: input.addressId,
       });
       return {
         serviceVertical: "FOOD",
         orderKind: "FAMILY_DINNER",
         subtotalVnd: built.subtotalVnd,
-        deliveryFeeVnd,
-        totalVnd: built.subtotalVnd + deliveryFeeVnd,
+        ...priced,
         items: built.lineItems.map((i) => ({
           menuItemId: i.menuItemId,
           name: i.name,
@@ -138,19 +144,20 @@ export class OrdersService {
 
     if (isDaypartMenuOrder(input.orderKind)) {
       const built = await this.buildBreakfastLineItems(input);
-      const deliveryFeeVnd = await this.quotedCustomerDeliveryFee({
+      const priced = await this.foodDeliveryQuote({
         userId,
         zoneId: input.zoneId,
         providerId: location.providerId,
+        providerLocationId: input.providerLocationId,
         subtotalVnd: built.subtotalVnd,
         handoffMode: input.deliveryHandoffMode,
+        addressId: input.addressId,
       });
       return {
         serviceVertical: "FOOD",
         orderKind: input.orderKind,
         subtotalVnd: built.subtotalVnd,
-        deliveryFeeVnd,
-        totalVnd: built.subtotalVnd + deliveryFeeVnd,
+        ...priced,
         items: built.lineItems.map((i) => ({
           menuItemId: i.menuItemId,
           name: i.name,
@@ -163,19 +170,20 @@ export class OrdersService {
 
     if (input.orderKind === "LATE_DINNER") {
       const built = await this.buildLateDinnerQuote(input);
-      const deliveryFeeVnd = await this.quotedCustomerDeliveryFee({
+      const priced = await this.foodDeliveryQuote({
         userId,
         zoneId: input.zoneId,
         providerId: location.providerId,
+        providerLocationId: input.providerLocationId,
         subtotalVnd: built.subtotalVnd,
         handoffMode: input.deliveryHandoffMode,
+        addressId: input.addressId,
       });
       return {
         serviceVertical: "FOOD",
         orderKind: "LATE_DINNER",
         subtotalVnd: built.subtotalVnd,
-        deliveryFeeVnd,
-        totalVnd: built.subtotalVnd + deliveryFeeVnd,
+        ...priced,
         items: [
           {
             lateDinnerOfferId: built.offerId,
@@ -192,22 +200,29 @@ export class OrdersService {
       input.providerLocationId,
       input.items,
     );
-    const deliveryFeeVnd =
+    const priced =
       serviceVertical === "LAUNDRY"
-        ? 0
-        : await this.quotedCustomerDeliveryFee({
+        ? {
+            deliveryFeeVnd: 0,
+            runnerPayableVnd: 0,
+            providerDeliverySubsidyVnd: 0,
+            pickeeDeliverySubsidyVnd: 0,
+            totalVnd: subtotalVnd,
+          }
+        : await this.foodDeliveryQuote({
             userId,
             zoneId: input.zoneId,
             providerId: location.providerId,
+            providerLocationId: input.providerLocationId,
             subtotalVnd,
             handoffMode: input.deliveryHandoffMode,
+            addressId: input.addressId,
           });
     return {
       serviceVertical,
       orderKind: "STANDARD",
       subtotalVnd,
-      deliveryFeeVnd,
-      totalVnd: subtotalVnd + deliveryFeeVnd,
+      ...priced,
       items: lineItems.map((i) => ({
         offeringId: i.offeringId,
         name: i.name,
@@ -449,7 +464,33 @@ export class OrdersService {
           : funding.snapshot;
       const chargedTotal = isLaundryOrder
         ? 0
-        : subtotalVnd + funding.snapshot.customerDeliveryFee;
+        : subtotalVnd + customerDeliveryChargeVnd(fundedSnapshot);
+      const commerceBlock = await commerceBlockReason(tx, {
+        providerId,
+        locationId: input.providerLocationId,
+        zoneId: input.zoneId,
+      });
+      if (commerceBlock) {
+        throw new PickiError("FORBIDDEN", commerceBlock);
+      }
+      const [zoneRow] = await tx
+        .select({ cityId: zones.cityId })
+        .from(zones)
+        .where(eq(zones.id, input.zoneId))
+        .limit(1);
+      const financeSnapshot = await buildLiveOrderSnapshot(tx, {
+        providerId,
+        providerLocationId: input.providerLocationId,
+        zoneId: input.zoneId,
+        merchandiseGmv: isLaundryOrder ? 0 : subtotalVnd,
+        customerDeliveryFee: isLaundryOrder ? 0 : fundedSnapshot.customerDeliveryFee,
+        providerDeliverySubsidy: isLaundryOrder ? 0 : fundedSnapshot.providerDeliverySubsidy,
+        pickeeDeliverySubsidy: isLaundryOrder ? 0 : fundedSnapshot.pickeeDeliverySubsidy,
+        runnerPayable: isLaundryOrder ? 0 : fundedSnapshot.runnerPayable,
+        providerFundedDiscount: 0,
+        pickeeFundedDiscount: 0,
+        customerPays: chargedTotal,
+      });
 
       const orderNumber = await allocateOrderNumber(tx, input.providerLocationId);
       const orderKind = isLateDinner
@@ -485,6 +526,7 @@ export class OrdersService {
               ? 0
               : subtotalVnd,
           ...fundedSnapshot,
+          financialSnapshot: financeSnapshot,
           deliveryPricingSnapshot: tripQuote
             ? {
                 ...tripQuote.pricingRuleSnapshot,
@@ -521,6 +563,13 @@ export class OrdersService {
       if (!order) {
         throw new PickiError("INTERNAL_ERROR", "Failed to create order");
       }
+
+      await insertOpeningLedger(tx, order.id, financeSnapshot, {
+        providerId,
+        locationId: input.providerLocationId,
+        zoneId: input.zoneId,
+        cityId: zoneRow?.cityId ?? null,
+      });
 
       if (funding.promotionId) {
         await commitDeliveryRedemption(tx, {
@@ -1109,22 +1158,53 @@ export class OrdersService {
     return row[0] ?? null;
   }
 
-  private async quotedCustomerDeliveryFee(input: {
+  private async foodDeliveryQuote(input: {
     userId: string;
     zoneId: string;
     providerId: string;
+    providerLocationId: string;
     subtotalVnd: number;
     handoffMode: "LOBBY_PICKUP" | "DOOR_DELIVERY";
+    addressId?: string;
   }) {
-    const baseVnd = await this.resolveDeliveryFeeVnd(input.zoneId, "FOOD", input.handoffMode);
-    const funded = await previewFoodDeliveryFunding(this.db, {
+    let building: string | null = null;
+    let classify = false;
+    if (input.addressId) {
+      const addr = await this.addresses.resolveDeliveryAddress(
+        input.userId,
+        input.zoneId,
+        input.addressId,
+      );
+      classify = true;
+      building = addr.addressType === "STREET_ADDRESS" ? null : (addr.building ?? null);
+    }
+    let baseVnd = await this.resolveDeliveryFeeVnd(input.zoneId, "FOOD", input.handoffMode);
+    const tripQuote = classify
+      ? await this.quoteClassifiedDelivery(input.zoneId, input.providerLocationId, building)
+      : null;
+    if (tripQuote) baseVnd = tripQuote.runnerPayable;
+    const funding = await previewFoodDeliveryFunding(this.db, {
       zoneId: input.zoneId,
       providerId: input.providerId,
       customerUserId: input.userId,
       subtotalVnd: input.subtotalVnd,
       baseVnd,
     });
-    return funded.snapshot.customerDeliveryFee;
+    const placeAccess =
+      classify && !tripQuote
+        ? await this.resolveDeliveryPlace(input.zoneId, building, input.handoffMode)
+        : null;
+    const snapshot = placeAccess
+      ? applyRunnerWaitFee(funding.snapshot, placeAccess.runnerWaitFeeVnd)
+      : funding.snapshot;
+    const deliveryFeeVnd = customerDeliveryChargeVnd(snapshot);
+    return {
+      deliveryFeeVnd,
+      runnerPayableVnd: snapshot.runnerPayable,
+      providerDeliverySubsidyVnd: snapshot.providerDeliverySubsidy,
+      pickeeDeliverySubsidyVnd: snapshot.pickeeDeliverySubsidy,
+      totalVnd: input.subtotalVnd + deliveryFeeVnd,
+    };
   }
 
   private async quoteClassifiedDelivery(zoneId: string, providerLocationId: string, building: string | null) {
@@ -1971,6 +2051,9 @@ export class OrdersService {
       productionLockedAt: order.productionLockedAt?.toISOString() ?? null,
       subtotalVnd: order.subtotalVnd,
       deliveryFeeVnd: order.deliveryFeeVnd,
+      runnerPayableVnd: order.runnerPayable,
+      providerDeliverySubsidyVnd: order.providerDeliverySubsidy,
+      pickeeDeliverySubsidyVnd: order.pickeeDeliverySubsidy,
       totalVnd: order.totalVnd,
       customerNote: order.customerNote,
       delivery: {

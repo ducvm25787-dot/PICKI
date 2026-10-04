@@ -11,6 +11,7 @@ import {
   chainProducts,
   chainToday,
   loadChainViewer,
+  summarizeProviderLedger,
   locationsCoveredByGrants,
   locationsInScope,
   offerings,
@@ -65,6 +66,25 @@ export class ChainConsoleService {
     const { scope, locations } = await this.scoped(userId, scopeType, scopeId);
     const metrics = await chainOverview(this.db, locations, scope);
     return { scope, ...metrics };
+  }
+
+  async finance(userId: string, scopeType?: string, scopeId?: string) {
+    const { scope, locations } = await this.scoped(userId, scopeType, scopeId);
+    const summary = await summarizeProviderLedger(this.db, {
+      locationIds: locations.map((location) => location.id),
+      providerIds: [...new Set(locations.map((location) => location.providerId))],
+    });
+    return { scope, ...summary };
+  }
+
+  async locationFinance(userId: string, locationId: string) {
+    const viewer = await loadChainViewer(this.db, userId);
+    const location = viewer.locations.find((row) => row.id === locationId);
+    if (!location) throw new PickiError("FORBIDDEN", "Không có quyền xem tài chính điểm bán này");
+    return summarizeProviderLedger(this.db, {
+      locationIds: [location.id],
+      providerIds: [location.providerId],
+    });
   }
 
   async locations(userId: string, scopeType?: string, scopeId?: string) {

@@ -58,18 +58,25 @@ export function createPayosAdapter(config: PickiConfig): PaymentAdapter {
     providerKey: "PAYOS",
 
     async createIntent(intent: PaymentIntent) {
-      const orderCode = payosOrderCode(intent.pickiPaymentId);
+      const coded = intent.metadata?.payosOrderCode;
+      const orderCode = typeof coded === "number" ? coded : payosOrderCode(intent.pickiPaymentId);
       const description =
         typeof intent.metadata?.orderNumber === "string"
           ? `Picki ${intent.metadata.orderNumber}`
-          : `Picki ${intent.pickiPaymentId.slice(0, 8)}`;
+          : typeof intent.metadata?.description === "string"
+            ? intent.metadata.description
+            : `Picki ${intent.pickiPaymentId.slice(0, 8)}`;
+      const returnPath =
+        typeof intent.metadata?.returnPath === "string"
+          ? intent.metadata.returnPath
+          : `/orders/${String(intent.metadata?.orderId ?? "")}`;
 
       const body = {
         orderCode,
         amount: intent.amountVnd,
-        description,
-        cancelUrl: `${webOrigin}/orders/${String(intent.metadata?.orderId ?? "")}?pay=cancelled`,
-        returnUrl: `${webOrigin}/orders/${String(intent.metadata?.orderId ?? "")}?pay=return`,
+        description: description.slice(0, 25),
+        cancelUrl: `${webOrigin}${returnPath}${returnPath.includes("?") ? "&" : "?"}pay=cancelled`,
+        returnUrl: `${webOrigin}${returnPath}${returnPath.includes("?") ? "&" : "?"}pay=return`,
       };
 
       const res = await fetch("https://api-merchant.payos.vn/v2/payment-requests", {

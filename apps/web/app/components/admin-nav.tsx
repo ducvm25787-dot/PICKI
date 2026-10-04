@@ -14,6 +14,7 @@ const ZONE_TABS = [
   { module: "reviews", label: "Duyệt" },
   { module: "campaigns", label: "Chương trình" },
   { module: "orders", label: "Đơn hàng" },
+  { module: "finance", label: "Tài chính" },
   { module: "logs", label: "Nhật ký" },
   { module: "settings", label: "Cài đặt" },
 ] as const;
@@ -23,6 +24,7 @@ const GLOBAL_TABS = [
   { href: "/admin/zones", label: "Khu vực", exact: false },
   { href: "/admin/experiences", label: "Trải nghiệm", exact: false },
   { href: "/admin/settings", label: "Banner", exact: false },
+  { href: "/admin/finance", label: "Tài chính", exact: false },
   { href: "/admin/audit", label: "Nhật ký", exact: false },
   { href: "/admin/campaigns", label: "Chương trình", exact: false },
 ] as const;

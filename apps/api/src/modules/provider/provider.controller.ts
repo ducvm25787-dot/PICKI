@@ -13,12 +13,22 @@ import {
   upsertLoyaltyBenefitSchema,
   upsertLoyaltyProgramSchema,
 } from "./dto.js";
+import { ChainConsoleService } from "./chain-console.service.js";
 import { ProviderService } from "./provider.service.js";
 
 @Controller("provider")
 @UseGuards(SessionAuthGuard)
 export class ProviderController {
-  constructor(@Inject(ProviderService) private readonly providerService: ProviderService) {}
+  constructor(
+    @Inject(ProviderService) private readonly providerService: ProviderService,
+    @Inject(ChainConsoleService) private readonly chain: ChainConsoleService,
+  ) {}
+
+  @Get("finance")
+  locationFinance(@CurrentUserId() userId: string, @Query("locationId") locationId?: string) {
+    if (!locationId) throw new PickiError("VALIDATION_ERROR", "Thiếu điểm bán");
+    return this.chain.locationFinance(userId, locationId);
+  }
 
   @Get("locations/mine")
   async myLocations(@CurrentUserId() userId: string) {

@@ -170,9 +170,31 @@ export function canReadFinance(
   if (access.superAdmin || access.financeGlobal || access.supportReadOnlyGlobal) return true;
   if (target.scope === "GLOBAL") return false;
   if (target.scope === "CITY") {
-    return access.financeCities[target.id] === true || access.cities[target.id] === "support";
+    return access.financeCities[target.id] === true || access.cities[target.id] != null;
   }
-  return access.financeZones[target.id] === true || access.zones[target.id] === "support";
+  const grant = access.zones[target.id];
+  return access.financeZones[target.id] === true || grant === "admin" || grant === "support";
+}
+
+export function canWriteFinance(
+  access: AdminAccess,
+  target: { scope: "GLOBAL" } | { scope: "CITY"; id: string } | { scope: "ZONE"; id: string },
+): boolean {
+  if (access.superAdmin) return true;
+  if (target.scope === "GLOBAL") return access.financeGlobal;
+  if (target.scope === "CITY") return access.financeCities[target.id] === true;
+  return access.financeZones[target.id] === true;
+}
+
+export function canManageCommercial(
+  access: AdminAccess,
+  target: { scope: "GLOBAL" } | { scope: "CITY"; id: string } | { scope: "ZONE"; id: string },
+): boolean {
+  return canWriteFinance(access, target);
+}
+
+export function canManageProviderBilling(role: string): boolean {
+  return role === "OWNER" || role === "MANAGER";
 }
 
 /** Location pause and verification change the location for every Zone it serves. */

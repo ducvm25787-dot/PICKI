@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../../lib/api";
 import { formatAddressLine, type SavedAddress } from "../../../lib/addresses";
+import { FoodBillLines } from "../../components/food-bill-lines";
 import { formatVnd } from "../../../lib/money";
 import {
   FD_CATEGORY_LABEL,
@@ -87,6 +88,9 @@ export default function FamilyDinnerBuilderPage() {
   const [quote, setQuote] = useState<{
     subtotalVnd: number;
     deliveryFeeVnd: number;
+    runnerPayableVnd?: number;
+    providerDeliverySubsidyVnd?: number;
+    pickeeDeliverySubsidyVnd?: number;
     totalVnd: number;
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -251,7 +255,14 @@ export default function FamilyDinnerBuilderPage() {
       setQuote(null);
       return;
     }
-    void api<{ subtotalVnd: number; deliveryFeeVnd: number; totalVnd: number }>("/orders/quote", {
+    void api<{
+      subtotalVnd: number;
+      deliveryFeeVnd: number;
+      runnerPayableVnd?: number;
+      providerDeliverySubsidyVnd?: number;
+      pickeeDeliverySubsidyVnd?: number;
+      totalVnd: number;
+    }>("/orders/quote", {
       method: "POST",
       body: JSON.stringify({
         providerLocationId: locationId,
@@ -260,6 +271,7 @@ export default function FamilyDinnerBuilderPage() {
         serviceDate: menu.serviceDate,
         deliveryWindowId: windowId,
         deliveryHandoffMode: handoff,
+        ...(addressId ? { addressId } : {}),
         items: selectedLines.map((l) => ({
           menuItemId: l.menuItemId,
           quantity: l.quantity,
@@ -267,15 +279,9 @@ export default function FamilyDinnerBuilderPage() {
         })),
       }),
     })
-      .then((res) =>
-        setQuote({
-          subtotalVnd: res.subtotalVnd,
-          deliveryFeeVnd: res.deliveryFeeVnd,
-          totalVnd: res.totalVnd,
-        }),
-      )
+      .then((res) => setQuote(res))
       .catch(() => setQuote(null));
-  }, [zoneId, windowId, menu, checkoutReady, selectedLines, locationId, handoff]);
+  }, [zoneId, windowId, menu, checkoutReady, selectedLines, locationId, handoff, addressId]);
 
   if (!menu && !error) {
     return (
@@ -768,25 +774,14 @@ export default function FamilyDinnerBuilderPage() {
             />
             {quote ? (
               <div style={{ marginTop: 12, fontSize: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span>Món</span>
-                  <span>{formatVnd(quote.subtotalVnd)}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span>Phí runner giao hàng</span>
-                  <span>{formatVnd(quote.deliveryFeeVnd)}</span>
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    marginTop: 6,
-                    fontWeight: 700,
-                  }}
-                >
-                  <span>Tổng thanh toán</span>
-                  <span>{formatVnd(quote.totalVnd)}</span>
-                </div>
+                <FoodBillLines
+                  subtotalVnd={quote.subtotalVnd}
+                  runnerPayableVnd={quote.runnerPayableVnd ?? quote.deliveryFeeVnd}
+                  providerDeliverySubsidyVnd={quote.providerDeliverySubsidyVnd}
+                  pickeeDeliverySubsidyVnd={quote.pickeeDeliverySubsidyVnd}
+                  totalVnd={quote.totalVnd}
+                  foodLabel="Món"
+                />
               </div>
             ) : checkoutReady && zoneId ? (
               <p className="muted" style={{ fontSize: 13 }}>

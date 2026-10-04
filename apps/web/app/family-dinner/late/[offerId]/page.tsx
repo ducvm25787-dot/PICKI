@@ -94,12 +94,13 @@ export default function LateDinnerCheckoutPage() {
         orderKind: "LATE_DINNER",
         lateDinnerOfferId: offerId,
         deliveryHandoffMode: handoff,
+        ...(addressId ? { addressId } : {}),
         items: [{ quantity: 1 }],
       }),
     })
       .then(setQuote)
       .catch(() => setQuote(null));
-  }, [locationId, zoneId, offerId, handoff]);
+  }, [locationId, zoneId, offerId, handoff, addressId]);
 
   async function checkout() {
     if (!offer || !zoneId || !locationId || !addressId) return;

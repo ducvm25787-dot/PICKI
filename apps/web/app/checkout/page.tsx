@@ -18,6 +18,7 @@ import { cartTotalVnd, readCart, setCartLineQuantity, writeCart, type Cart } fro
 import { getCurrentPositionOnce } from "../../lib/geolocation";
 import { mapsDirectionsUrl } from "../../lib/maps";
 import { formatVnd } from "../../lib/money";
+import { FoodBillLines } from "../components/food-bill-lines";
 import { isLaundryVertical, isMarketVertical, orderButtonLabel } from "../../lib/providers";
 
 type OrderResult = {
@@ -30,6 +31,9 @@ type OrderResult = {
 type OrderQuote = {
   subtotalVnd: number;
   deliveryFeeVnd: number;
+  runnerPayableVnd: number;
+  providerDeliverySubsidyVnd: number;
+  pickeeDeliverySubsidyVnd: number;
   totalVnd: number;
 };
 
@@ -142,6 +146,10 @@ export default function CheckoutPage() {
       setQuote(null);
       return;
     }
+    if (!selectedAddressId) {
+      setQuote(null);
+      return;
+    }
     const selected = addresses.find((a) => a.id === selectedAddressId);
     const isApt = selected ? isApartmentAddress(selected) : true;
     const handoff = isApt ? handoffMode : "DOOR_DELIVERY";
@@ -152,7 +160,14 @@ export default function CheckoutPage() {
           body: JSON.stringify({
             providerLocationId: cart.providerLocationId,
             zoneId: cart.zoneId,
+            addressId: selectedAddressId,
             deliveryHandoffMode: handoff,
+            ...(cart.scheduledDeliveryWindowId
+              ? {
+                  scheduledDeliveryWindowId: cart.scheduledDeliveryWindowId,
+                  serviceDate: cart.serviceDate,
+                }
+              : {}),
             items: cart.items.map((i) => ({
               offeringId: i.offeringId,
               quantity: i.quantity,
@@ -462,8 +477,7 @@ export default function CheckoutPage() {
       ? place.doorWaitMinutes
       : place.lobbyWaitMinutes
     : 0;
-  const placeWaitFee = placeWaitMinutes * (place?.runnerFeePerMinuteVnd ?? 0);
-  const subtotal = cartTotalVnd(cart);
+  const subtotal = !isLaundry && quote ? quote.subtotalVnd : cartTotalVnd(cart);
   const deliveryFee = !isLaundry && quote ? quote.deliveryFeeVnd : 0;
   const total = !isLaundry && quote ? quote.totalVnd : subtotal;
 
@@ -738,9 +752,6 @@ export default function CheckoutPage() {
               {place.securityNote ? ` · ${place.securityNote}` : ""}
               {place.callUpRequired ? " · Bảo vệ gọi lên căn trước khi lên" : ""}
               {placeWaitMinutes > 0 ? ` · Chờ khoảng ${String(placeWaitMinutes)} phút` : ""}
-              {placeWaitFee > 0
-                ? ` · Phí runner thêm ${formatVnd(placeWaitFee)} (quán trả, không cộng vào tiền khách)`
-                : ""}
             </p>
           ) : null}
           <label className="field" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
@@ -889,30 +900,23 @@ export default function CheckoutPage() {
               Thanh toán online (demo stub)
             </label>
             )}
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
-              <span>Tiền hàng</span>
-              <span>{formatVnd(subtotal)}</span>
-            </div>
-            {deliveryFee > 0 ? (
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
-                <span>Phí giao</span>
-                <span>{formatVnd(deliveryFee)}</span>
+            {quote ? (
+              <FoodBillLines
+                subtotalVnd={quote.subtotalVnd}
+                runnerPayableVnd={quote.runnerPayableVnd}
+                providerDeliverySubsidyVnd={quote.providerDeliverySubsidyVnd}
+                pickeeDeliverySubsidyVnd={quote.pickeeDeliverySubsidyVnd}
+                totalVnd={quote.totalVnd}
+              />
+            ) : (
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
+                <span>Tiền hàng</span>
+                <span>{formatVnd(subtotal)}</span>
               </div>
-            ) : null}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontWeight: 700,
-                marginTop: 12,
-              }}
-            >
-              <span>Tổng</span>
-              <span>{formatVnd(total)}</span>
-            </div>
-            {deliveryFee > 0 ? (
+            )}
+            {quote && quote.runnerPayableVnd > 0 ? (
               <p className="stat" style={{ margin: "8px 0 0", fontSize: 13 }}>
-                Quán nhận tổng đơn; tự trả runner theo thống kê ngày.
+                Phí runner được cộng vào tổng. Phần Pickee hoặc quán hỗ trợ được trừ trên dòng riêng.
               </p>
             ) : null}
           </>

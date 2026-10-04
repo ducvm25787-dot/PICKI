@@ -23,6 +23,7 @@ const orderCheckoutFields = {
   deliveryWindowId: z.string().uuid().optional(),
   scheduledDeliveryWindowId: z.string().uuid().optional(),
   lateDinnerOfferId: z.string().uuid().optional(),
+  addressId: z.string().uuid().optional(),
 };
 
 function refineOrderCheckout(

@@ -664,7 +664,7 @@ export default function ProviderOrdersPage() {
                   <p className="stat" style={{ margin: "0 0 8px", fontSize: 13 }}>
                     {o.delivery.accessNote}
                     {(o.delivery.runnerWaitFeeVnd ?? 0) > 0
-                      ? ` · Phí chờ ${formatVnd(o.delivery.runnerWaitFeeVnd ?? 0)} (quán trả, cộng vào phí runner)`
+                      ? ` · Phí chờ ${formatVnd(o.delivery.runnerWaitFeeVnd ?? 0)} đã cộng vào phí runner của đơn`
                       : ""}
                   </p>
                 ) : null}
