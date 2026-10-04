@@ -12,6 +12,7 @@ const ZONE_TABS = [
   { module: "providers", label: "Quán" },
   { module: "runners", label: "Tài xế" },
   { module: "reviews", label: "Duyệt" },
+  { module: "campaigns", label: "Chương trình" },
   { module: "orders", label: "Đơn hàng" },
   { module: "logs", label: "Nhật ký" },
   { module: "settings", label: "Cài đặt" },
@@ -23,6 +24,7 @@ const GLOBAL_TABS = [
   { href: "/admin/experiences", label: "Trải nghiệm", exact: false },
   { href: "/admin/settings", label: "Banner", exact: false },
   { href: "/admin/audit", label: "Nhật ký", exact: false },
+  { href: "/admin/campaigns", label: "Chương trình", exact: false },
 ] as const;
 
 const CITY_TABS = [
@@ -95,7 +97,7 @@ export function AdminNav() {
               );
             })
           : globalReader
-            ? GLOBAL_TABS.map((tab) => {
+            ? GLOBAL_TABS.filter((tab) => tab.href !== "/admin/campaigns" || session?.superAdmin).map((tab) => {
                 const active = tab.exact ? pathname === tab.href : pathname.startsWith(tab.href);
                 return (
                   <Link key={tab.href} href={tab.href} className={active ? "admin-nav-link active" : "admin-nav-link"} aria-current={active ? "page" : undefined}>

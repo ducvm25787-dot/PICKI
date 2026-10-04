@@ -142,6 +142,17 @@ export function canReadZone(access: AdminAccess, zoneId: string): boolean {
   return access.superAdmin || access.zones[zoneId] != null;
 }
 
+/** Central campaign approvers. Zone roles are intentionally absent. */
+export const CENTRAL_CAMPAIGN_APPROVER_ROLES = ["SUPER_ADMIN", "PARTNER_OPS", "PARTNER_ADMIN"] as const;
+
+export function canApproveChainCampaign(access: AdminAccess): boolean {
+  return access.superAdmin;
+}
+
+export function canSuppressChainCampaign(access: AdminAccess, zoneId: string): boolean {
+  return canOperateZone(access, zoneId);
+}
+
 export function canOperateZone(access: AdminAccess, zoneId: string): boolean {
   if (access.superAdmin) return true;
   const grant = access.zones[zoneId];

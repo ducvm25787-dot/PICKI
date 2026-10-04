@@ -27,6 +27,8 @@ import {
   listFamiliarProvidersInZone,
   listNowAroundInZone,
   listApprovedHomeSurface,
+  listCampaignHomeCards,
+  mergeHomeCandidates,
   type HomeSurfaceRow,
   listLateDinnerNowInZone,
   HOME_FOOD_PROVIDER_TYPES,
@@ -588,11 +590,16 @@ export class DiscoveryService {
     const familiarRows = await listFamiliarProvidersInZone(this.sql, userId, zone.id, 5);
     const familiarIds = new Set(familiarRows.map((r) => r.location_id));
     const nowRows = await listNowAroundInZone(this.sql, zone.id, 5);
-    const [specialRows, snackRows, marketRows] = await Promise.all([
+    const [specialRows, snackRows, marketRows, campaignCards] = await Promise.all([
       listApprovedHomeSurface(this.sql, zone.id, "SPECIAL_TODAY", 24),
       listApprovedHomeSurface(this.sql, zone.id, "SNACK_DESSERT", 24),
       listApprovedHomeSurface(this.sql, zone.id, "MARKET_TODAY", 24),
+      listCampaignHomeCards(this.sql, zone.id),
     ]);
+    const foodCampaigns = campaignCards.filter((row) => row.commerce_model === "FOOD_SERVICE");
+    const marketCampaigns = campaignCards.filter(
+      (row) => row.commerce_model === "FRESH_MARKET" || row.commerce_model === "RETAIL_STORE",
+    );
     const dinnerServiceDate = defaultDinnerServiceDate();
     const dinnerByLocation = await familyDinnerHomeStatus(
       this.sql,
@@ -748,10 +755,10 @@ export class DiscoveryService {
           }
         : null,
       heroImages,
-      todaySpecials: takeOnePerLocation(specialRows, 24).map(mapHomeSurface),
+      todaySpecials: takeOnePerLocation(mergeHomeCandidates(specialRows, foodCampaigns), 24).map(mapHomeSurface),
       snackDesserts: takePerProvider(snackRows, 24, 2).map(mapHomeSurface),
       marketToday: rankMarketHero(
-        marketRows.map((row) => ({
+        mergeHomeCandidates(marketRows, marketCampaigns).map((row) => ({
           ...mapHomeSurface(row),
           providerId: row.provider_id,
           providerClass: marketTierBadge(row.provider_type) ?? "Đi chợ",
@@ -868,11 +875,11 @@ export class DiscoveryService {
   }
 }
 
-function mapHomeSurface(row: HomeSurfaceRow) {
+function mapHomeSurface(row: HomeSurfaceRow & { campaign_id?: string; location_name?: string }) {
   return {
     id: row.id,
     locationId: row.location_id,
-    brandName: row.brand_name,
+    brandName: row.campaign_id && row.location_name ? `${row.brand_name} · ${row.location_name}` : row.brand_name,
     title: row.title,
     imageUrl: row.image_url,
     liveStatus: row.live_status,
@@ -880,6 +887,7 @@ function mapHomeSurface(row: HomeSurfaceRow) {
     listAmountVnd: row.list_amount_vnd,
     categoryName: row.category_name,
     providerType: row.provider_type,
+    campaignId: row.campaign_id ?? null,
     href: `/locations/${row.location_id}?offer=${row.offering_id}`,
   };
 }

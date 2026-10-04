@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { canReadGlobal, canReadZone, PickiError, type AdminAccess } from "@picki/shared";
+import { CampaignAdminService } from "./campaign-admin.service.js";
 import { AdminRoleGuard } from "../auth/admin-role.guard.js";
 import { CurrentAdmin, CurrentUserId } from "../auth/current-user.decorator.js";
 import { SessionAuthGuard } from "../auth/session-auth.guard.js";
@@ -22,7 +23,10 @@ import {
 @Controller("admin")
 @UseGuards(SessionAuthGuard, AdminRoleGuard)
 export class AdminController {
-  constructor(@Inject(AdminService) private readonly adminService: AdminService) {}
+  constructor(
+    @Inject(AdminService) private readonly adminService: AdminService,
+    @Inject(CampaignAdminService) private readonly campaigns: CampaignAdminService,
+  ) {}
 
   @Get("session")
   async session(@CurrentAdmin() access: AdminAccess) {
@@ -115,6 +119,19 @@ export class AdminController {
     @Param("placeId") placeId: string,
   ) {
     return this.adminService.archiveZonePlace(access, userId, zoneId, placeId);
+  }
+
+  @Patch("zones/:zoneId/locations/:locationId/place")
+  async assignLocationPlace(
+    @CurrentAdmin() access: AdminAccess,
+    @CurrentUserId() userId: string,
+    @Param("zoneId") zoneId: string,
+    @Param("locationId") locationId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = z.object({ zonePlaceId: z.string().uuid().nullable() }).safeParse(body);
+    if (!parsed.success) throw new PickiError("VALIDATION_ERROR", "Chưa chọn tòa hoặc cụm");
+    return this.adminService.assignLocationPlace(access, userId, zoneId, locationId, parsed.data.zonePlaceId);
   }
 
   @Post("zones/:zoneId/boundary")
@@ -444,6 +461,16 @@ export class AdminController {
         foodDeliveryFeeVnd: z.number().int().min(0),
         foodDoorDeliveryFeeVnd: z.number().int().min(0),
         laundryReturnRunnerFeeVnd: z.number().int().min(0),
+        sameBuildingBaseFee: z.number().int().min(0),
+        buildingToBuildingBaseFee: z.number().int().min(0),
+        groundToBuildingBaseFee: z.number().int().min(0),
+        buildingToGroundBaseFee: z.number().int().min(0),
+        groundToGroundBaseFee: z.number().int().min(0),
+        minimumRunnerPayable: z.number().int().min(0),
+        hotFoodSurcharge: z.number().int().min(0),
+        heavySurcharge: z.number().int().min(0),
+        bulkySurcharge: z.number().int().min(0),
+        batchExtraOrderFee: z.number().int().min(0),
       })
       .safeParse(body);
     if (!parsed.success) throw new PickiError("VALIDATION_ERROR", "Cấu hình khu vực chưa hợp lệ");
@@ -526,5 +553,66 @@ export class AdminController {
     @Param("updateId") updateId: string,
   ) {
     return this.adminService.reviewSpotlight(access, userId, updateId, false, undefined, zoneKey);
+  }
+
+  @Get("campaigns")
+  campaignQueue(@CurrentAdmin() access: AdminAccess) {
+    return this.campaigns.queue(access);
+  }
+
+  @Post("campaigns/:campaignId/approve")
+  approveCampaign(
+    @CurrentAdmin() access: AdminAccess,
+    @CurrentUserId() userId: string,
+    @Param("campaignId") campaignId: string,
+  ) {
+    return this.campaigns.approve(access, userId, campaignId);
+  }
+
+  @Post("campaigns/:campaignId/reject")
+  rejectCampaign(
+    @CurrentAdmin() access: AdminAccess,
+    @CurrentUserId() userId: string,
+    @Param("campaignId") campaignId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = z.object({ reason: z.string().trim().min(1).max(300) }).safeParse(body);
+    if (!parsed.success) throw new PickiError("VALIDATION_ERROR", "Cần lý do từ chối");
+    return this.campaigns.reject(access, userId, campaignId, parsed.data.reason);
+  }
+
+  @Get("zones/:zoneKey/campaigns")
+  zoneCampaigns(@CurrentAdmin() access: AdminAccess, @Param("zoneKey") zoneKey: string) {
+    return this.adminService.readZone(access, zoneKey).then((zone) => this.campaigns.zoneBoard(access, zone.id));
+  }
+
+  @Post("zones/:zoneKey/campaigns/:campaignId/suppress")
+  suppressCampaign(
+    @CurrentAdmin() access: AdminAccess,
+    @CurrentUserId() userId: string,
+    @Param("zoneKey") zoneKey: string,
+    @Param("campaignId") campaignId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = z.object({ reason: z.string().trim().min(1).max(300), locationId: z.string().uuid().nullable().optional() }).safeParse(body);
+    if (!parsed.success) throw new PickiError("VALIDATION_ERROR", "Cần lý do ẩn");
+    return this.adminService.readZone(access, zoneKey).then((zone) =>
+      this.campaigns.suppress(access, userId, zone.id, campaignId, parsed.data.reason, parsed.data.locationId),
+    );
+  }
+
+  @Post("zones/:zoneKey/campaigns/:campaignId/unsuppress")
+  unsuppressCampaign(
+    @CurrentAdmin() access: AdminAccess,
+    @CurrentUserId() userId: string,
+    @Param("zoneKey") zoneKey: string,
+    @Param("campaignId") campaignId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = z.object({ locationId: z.string().uuid().nullable().optional() }).safeParse(body ?? {});
+    if (!parsed.success) throw new PickiError("VALIDATION_ERROR", "Không mở lại được");
+    return this.adminService.readZone(access, zoneKey).then((zone) =>
+      this.campaigns.unsuppress(access, userId, zone.id, campaignId, parsed.data.locationId),
+    );
   }
 }

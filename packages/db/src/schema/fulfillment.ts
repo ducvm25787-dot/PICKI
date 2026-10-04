@@ -28,6 +28,7 @@ export const deliveryRoutes = pgTable("delivery_routes", {
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),
   status: text("status").notNull().default("PLANNED"),
+  runnerPayable: integer("runner_payable").notNull().default(0),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -44,6 +45,7 @@ export const routeOrders = pgTable("route_orders", {
   deliveryId: uuid("delivery_id")
     .notNull()
     .references(() => deliveries.id, { onDelete: "cascade" }),
+  runnerCostAllocation: integer("runner_cost_allocation").notNull().default(0),
   createdAt: createdAt(),
 });
 
@@ -104,6 +106,10 @@ export const zonePlaces = pgTable(
     lobbyWaitMinutes: integer("lobby_wait_minutes").notNull().default(0),
     doorWaitMinutes: integer("door_wait_minutes").notNull().default(0),
     runnerFeePerMinuteVnd: integer("runner_fee_per_minute_vnd").notNull().default(0),
+    doorSurcharge: integer("door_surcharge").notNull().default(0),
+    slowElevatorSurcharge: integer("slow_elevator_surcharge").notNull().default(0),
+    elevatorWaitMinutes: integer("elevator_wait_minutes").notNull().default(0),
+    anchorCode: text("anchor_code"),
     notes: text("notes"),
     status: text("status").notNull().default("ACTIVE"),
     createdAt: createdAt(),
@@ -122,6 +128,16 @@ export const zoneFulfillmentSettings = pgTable("zone_fulfillment_settings", {
   foodDeliveryFeeVnd: integer("food_delivery_fee_vnd").notNull().default(15000),
   foodDoorDeliveryFeeVnd: integer("food_door_delivery_fee_vnd").notNull().default(20000),
   laundryReturnRunnerFeeVnd: integer("laundry_return_runner_fee_vnd").notNull().default(15000),
+  sameBuildingBaseFee: integer("same_building_base_fee").notNull().default(5000),
+  buildingToBuildingBaseFee: integer("building_to_building_base_fee").notNull().default(10000),
+  groundToBuildingBaseFee: integer("ground_to_building_base_fee").notNull().default(15000),
+  buildingToGroundBaseFee: integer("building_to_ground_base_fee").notNull().default(15000),
+  groundToGroundBaseFee: integer("ground_to_ground_base_fee").notNull().default(15000),
+  minimumRunnerPayable: integer("minimum_runner_payable").notNull().default(0),
+  hotFoodSurcharge: integer("hot_food_surcharge").notNull().default(0),
+  heavySurcharge: integer("heavy_surcharge").notNull().default(0),
+  bulkySurcharge: integer("bulky_surcharge").notNull().default(0),
+  batchExtraOrderFee: integer("batch_extra_order_fee").notNull().default(2000),
   updatedAt: updatedAt(),
 });
 

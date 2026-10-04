@@ -4,7 +4,20 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { formatVnd } from "../../lib/money";
 
-type PlaceKind = "BUILDING" | "AREA";
+type PlaceKind =
+  | "BUILDING"
+  | "AREA"
+  | "TRADITIONAL_MARKET"
+  | "RESIDENTIAL_PODIUM_CLUSTER"
+  | "GROUND_STREET_CLUSTER";
+
+const KIND_LABEL: Record<PlaceKind, string> = {
+  BUILDING: "Tòa nhà",
+  AREA: "Khu vực",
+  TRADITIONAL_MARKET: "Chợ truyền thống",
+  RESIDENTIAL_PODIUM_CLUSTER: "Cụm kiosk / chợ hiện đại",
+  GROUND_STREET_CLUSTER: "Cụm cửa hàng mặt đất",
+};
 
 type ZonePlace = {
   id: string;
@@ -19,7 +32,18 @@ type ZonePlace = {
   lobbyWaitMinutes: number;
   doorWaitMinutes: number;
   runnerFeePerMinuteVnd: number;
+  doorSurcharge: number;
+  slowElevatorSurcharge: number;
+  elevatorWaitMinutes: number;
+  anchorCode: string | null;
   notes: string | null;
+};
+
+type ShopPin = {
+  locationId: string;
+  brandName: string;
+  displayName: string;
+  zonePlaceId: string | null;
 };
 
 type Draft = {
@@ -35,6 +59,10 @@ type Draft = {
   lobbyWaitMinutes: string;
   doorWaitMinutes: string;
   runnerFeePerMinuteVnd: string;
+  doorSurcharge: string;
+  slowElevatorSurcharge: string;
+  elevatorWaitMinutes: string;
+  anchorCode: string;
   notes: string;
 };
 
@@ -51,6 +79,10 @@ function blankDraft(): Draft {
     lobbyWaitMinutes: "0",
     doorWaitMinutes: "0",
     runnerFeePerMinuteVnd: "0",
+    doorSurcharge: "0",
+    slowElevatorSurcharge: "0",
+    elevatorWaitMinutes: "0",
+    anchorCode: "",
     notes: "",
   };
 }
@@ -69,6 +101,10 @@ function fromPlace(place: ZonePlace): Draft {
     lobbyWaitMinutes: String(place.lobbyWaitMinutes),
     doorWaitMinutes: String(place.doorWaitMinutes),
     runnerFeePerMinuteVnd: String(place.runnerFeePerMinuteVnd),
+    doorSurcharge: String(place.doorSurcharge ?? 0),
+    slowElevatorSurcharge: String(place.slowElevatorSurcharge ?? 0),
+    elevatorWaitMinutes: String(place.elevatorWaitMinutes ?? 0),
+    anchorCode: place.anchorCode ?? "",
     notes: place.notes ?? "",
   };
 }
@@ -82,14 +118,19 @@ function feePreview(minutesRaw: string, rateRaw: string): number {
 
 export function AdminZonePlaces({ zoneId }: { zoneId: string }) {
   const [places, setPlaces] = useState<ZonePlace[]>([]);
+  const [shops, setShops] = useState<ShopPin[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await api<{ places: ZonePlace[] }>(`/admin/zones/${zoneId}/places`);
+    const [res, shopRes] = await Promise.all([
+      api<{ places: ZonePlace[] }>(`/admin/zones/${zoneId}/places`),
+      api<{ shops: ShopPin[] }>(`/admin/zones/${zoneId}/shops`),
+    ]);
     setPlaces(res.places);
+    setShops(shopRes.shops);
   }, [zoneId]);
 
   useEffect(() => {
@@ -123,6 +164,10 @@ export function AdminZonePlaces({ zoneId }: { zoneId: string }) {
           lobbyWaitMinutes: Number(draft.lobbyWaitMinutes),
           doorWaitMinutes: Number(draft.doorWaitMinutes),
           runnerFeePerMinuteVnd: Number(draft.runnerFeePerMinuteVnd),
+          doorSurcharge: Number(draft.doorSurcharge),
+          slowElevatorSurcharge: Number(draft.slowElevatorSurcharge),
+          elevatorWaitMinutes: Number(draft.elevatorWaitMinutes),
+          anchorCode: draft.anchorCode || null,
           notes: draft.notes || null,
         }),
       });
@@ -154,8 +199,7 @@ export function AdminZonePlaces({ zoneId }: { zoneId: string }) {
   return (
     <div style={{ padding: 20, overflow: "auto", height: "100%" }}>
       <p className="stat" style={{ marginTop: 0 }}>
-        Thang máy, thẻ, bảo vệ và gọi lên căn quyết định giao lên căn hay chỉ sảnh. Phí runner thêm =
-        phút chờ × đơn giá. Khách không trả khoản này. Opening Week vẫn chỉ bao phí giao gốc.
+        Tòa, chợ, cụm kiosk và cụm mặt đất. Phụ phí cửa, thang chậm và phút chờ cộng vào tiền runner của chuyến đã phân loại. Runner vẫn tìm khách bằng pin, địa chỉ và cuộc gọi.
       </p>
       {msg ? <p className="admin-workspace-msg ok">{msg}</p> : null}
       {err ? <p className="admin-workspace-msg err">{err}</p> : null}
@@ -172,7 +216,7 @@ export function AdminZonePlaces({ zoneId }: { zoneId: string }) {
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                 <div>
                   <strong>
-                    {place.code} · {place.kind === "BUILDING" ? "Tòa" : "Khu"}
+                    {place.displayName} · {KIND_LABEL[place.kind] ?? place.kind}
                   </strong>
                   <p className="stat" style={{ margin: "4px 0 0" }}>
                     {place.doorDeliveryAllowed ? "Được lên căn" : "Chỉ sảnh"}
@@ -182,6 +226,8 @@ export function AdminZonePlaces({ zoneId }: { zoneId: string }) {
                     {place.doorDeliveryAllowed
                       ? ` · Lên căn ${String(place.doorWaitMinutes)} phút (${formatVnd(place.doorWaitMinutes * rate)})`
                       : ""}
+                    {` · Cửa ${formatVnd(place.doorSurcharge ?? 0)} · Thang chậm ${formatVnd(place.slowElevatorSurcharge ?? 0)}`}
+                    {place.notes ? ` · ${place.notes}` : ""}
                   </p>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
@@ -196,6 +242,35 @@ export function AdminZonePlaces({ zoneId }: { zoneId: string }) {
             </article>
           );
         })}
+      </div>
+
+      <h2 style={{ marginTop: 24 }}>Điểm bán</h2>
+      <div style={{ display: "grid", gap: 8 }}>
+        {shops.map((shop) => (
+          <label key={shop.locationId} className="field">
+            {shop.brandName} · {shop.displayName}
+            <select
+              value={shop.zonePlaceId ?? ""}
+              onChange={(event) => {
+                const zonePlaceId = event.target.value || null;
+                setShops((current) =>
+                  current.map((row) => (row.locationId === shop.locationId ? { ...row, zonePlaceId } : row)),
+                );
+                void api(`/admin/zones/${zoneId}/locations/${shop.locationId}/place`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ zonePlaceId }),
+                }).catch((e: unknown) => setErr(e instanceof Error ? e.message : "Không gắn được điểm bán"));
+              }}
+            >
+              <option value="">Chưa gắn</option>
+              {places.map((place) => (
+                <option key={place.id} value={place.id}>
+                  {place.code} · {place.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
       </div>
 
       {draft ? (
@@ -214,8 +289,11 @@ export function AdminZonePlaces({ zoneId }: { zoneId: string }) {
             <label className="field">
               Loại
               <select value={draft.kind} onChange={(e) => patch({ kind: e.target.value as PlaceKind })}>
-                <option value="BUILDING">Tòa nhà</option>
-                <option value="AREA">Khu vực</option>
+                {Object.entries(KIND_LABEL).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="field">
@@ -290,6 +368,30 @@ export function AdminZonePlaces({ zoneId }: { zoneId: string }) {
               />
             </label>
             <label className="field">
+              Chờ thang (phút)
+              <input
+                inputMode="numeric"
+                value={draft.elevatorWaitMinutes}
+                onChange={(e) => patch({ elevatorWaitMinutes: e.target.value })}
+              />
+            </label>
+            <label className="field">
+              Phụ phí cửa (VND)
+              <input
+                inputMode="numeric"
+                value={draft.doorSurcharge}
+                onChange={(e) => patch({ doorSurcharge: e.target.value })}
+              />
+            </label>
+            <label className="field">
+              Phụ phí thang chậm (VND)
+              <input
+                inputMode="numeric"
+                value={draft.slowElevatorSurcharge}
+                onChange={(e) => patch({ slowElevatorSurcharge: e.target.value })}
+              />
+            </label>
+            <label className="field">
               Đơn giá mỗi phút (VND)
               <input
                 inputMode="numeric"
@@ -303,7 +405,11 @@ export function AdminZonePlaces({ zoneId }: { zoneId: string }) {
             {draft.doorDeliveryAllowed ? ` · Lên căn: ${formatVnd(doorFee)}` : " · Không lên căn"}
           </p>
           <label className="field">
-            Ghi chú thêm
+            Mã tòa neo (kiosk chân tòa dùng mã tòa để tính cùng tòa)
+            <input value={draft.anchorCode} onChange={(e) => patch({ anchorCode: e.target.value })} placeholder="CT12A" />
+          </label>
+          <label className="field">
+            Ghi chú giao hàng
             <input value={draft.notes} onChange={(e) => patch({ notes: e.target.value })} />
           </label>
           <div style={{ display: "flex", gap: 8 }}>

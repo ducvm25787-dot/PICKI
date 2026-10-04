@@ -1,6 +1,6 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { OrderChat } from "../../components/order-chat";
 import { OrderPhoneLinks } from "../../components/order-phone-links";
@@ -124,9 +124,20 @@ function handoffBatchMessage(batch: HandoffBatch): string {
 }
 
 export default function ProviderOrdersPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const focusOrderId = searchParams.get("focus");
-  const { locationId, locations, activeLocation } = useProviderLocation();
+  const { chain, loading: locationLoading, locationId, locations, activeLocation } = useProviderLocation();
+  useEffect(() => {
+    if (locationLoading || !chain?.chainEnabled) return;
+    if (focusOrderId) {
+      sessionStorage.setItem("picki-provider-local", "1");
+      return;
+    }
+    if (sessionStorage.getItem("picki-provider-local") !== "1") {
+      router.replace("/provider/organization");
+    }
+  }, [chain?.chainEnabled, focusOrderId, locationLoading, router]);
   const [orders, setOrders] = useState<ProviderOrder[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);

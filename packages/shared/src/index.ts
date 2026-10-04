@@ -1,4 +1,5 @@
 export * from "./admin-access.js";
+export * from "./chain-scope.js";
 export * from "./auth.js";
 export * from "./domain.js";
 export * from "./discovery-surface.js";

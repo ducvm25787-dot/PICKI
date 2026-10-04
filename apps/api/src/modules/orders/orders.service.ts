@@ -8,6 +8,7 @@ import {
   reserveFoodDeliveryFunding,
   snapshotLaundryCheckout,
   applyRunnerWaitFee,
+  quoteDelivery,
   normalizePlaceCode,
   placeAccessNote,
   placeWaitForHandoff,
@@ -416,6 +417,10 @@ export class OrdersService {
       isLaundryOrder ? null : deliveryBuilding,
       handoffMode,
     );
+    const tripQuote = isLaundryOrder
+      ? null
+      : await this.quoteClassifiedDelivery(input.zoneId, input.providerLocationId, deliveryBuilding);
+    if (tripQuote) deliveryFeeVnd = tripQuote.runnerPayable;
 
     return this.db.transaction(async (tx) => {
       if (isFamilyDinner && deliveryWindowId) {
@@ -437,9 +442,11 @@ export class OrdersService {
             subtotalVnd,
             baseVnd: deliveryFeeVnd,
           });
-      const fundedSnapshot = placeAccess
-        ? applyRunnerWaitFee(funding.snapshot, placeAccess.runnerWaitFeeVnd)
-        : funding.snapshot;
+      const fundedSnapshot = tripQuote
+        ? funding.snapshot
+        : placeAccess
+          ? applyRunnerWaitFee(funding.snapshot, placeAccess.runnerWaitFeeVnd)
+          : funding.snapshot;
       const chargedTotal = isLaundryOrder
         ? 0
         : subtotalVnd + funding.snapshot.customerDeliveryFee;
@@ -478,8 +485,17 @@ export class OrdersService {
               ? 0
               : subtotalVnd,
           ...fundedSnapshot,
+          deliveryPricingSnapshot: tripQuote
+            ? {
+                ...tripQuote.pricingRuleSnapshot,
+                customerDeliveryFee: fundedSnapshot.customerDeliveryFee,
+                providerDeliverySubsidy: fundedSnapshot.providerDeliverySubsidy,
+                pickeeDeliverySubsidy: fundedSnapshot.pickeeDeliverySubsidy,
+                deliveryFeeBase: fundedSnapshot.deliveryFeeBase,
+              }
+            : null,
           runnerWaitMinutes: placeAccess?.waitMinutes ?? 0,
-          runnerWaitFeeVnd: placeAccess?.runnerWaitFeeVnd ?? 0,
+          runnerWaitFeeVnd: tripQuote ? 0 : (placeAccess?.runnerWaitFeeVnd ?? 0),
           deliveryAccessNote: placeAccess?.note ?? null,
           deliveryPromotionId: funding.promotionId,
           totalVnd: chargedTotal,
@@ -1109,6 +1125,67 @@ export class OrdersService {
       baseVnd,
     });
     return funded.snapshot.customerDeliveryFee;
+  }
+
+  private async quoteClassifiedDelivery(zoneId: string, providerLocationId: string, building: string | null) {
+    const [settings] = await this.db
+      .select()
+      .from(zoneFulfillmentSettings)
+      .where(eq(zoneFulfillmentSettings.zoneId, zoneId))
+      .limit(1);
+    if (!settings) return null;
+    const [location] = await this.db
+      .select({ zonePlaceId: providerLocations.zonePlaceId })
+      .from(providerLocations)
+      .where(eq(providerLocations.id, providerLocationId))
+      .limit(1);
+    if (!location?.zonePlaceId) return null;
+    const [origin] = await this.db
+      .select()
+      .from(zonePlaces)
+      .where(and(eq(zonePlaces.id, location.zonePlaceId), eq(zonePlaces.zoneId, zoneId), eq(zonePlaces.status, "ACTIVE")))
+      .limit(1);
+    if (!origin) return null;
+    const code = normalizePlaceCode(building ?? "");
+    const [destination] = code
+      ? await this.db
+          .select()
+          .from(zonePlaces)
+          .where(and(eq(zonePlaces.zoneId, zoneId), eq(zonePlaces.code, code), eq(zonePlaces.status, "ACTIVE")))
+          .limit(1)
+      : [];
+    if (code && !destination) return null;
+    const toPlace = (row: typeof origin) => ({
+      id: row.id,
+      zoneId: row.zoneId,
+      kind: row.kind,
+      code: row.code,
+      anchorCode: row.anchorCode,
+      doorSurcharge: row.doorSurcharge,
+      slowElevatorSurcharge: row.slowElevatorSurcharge,
+      lobbyWaitMinutes: row.lobbyWaitMinutes,
+      elevatorWaitMinutes: row.elevatorWaitMinutes,
+      doorWaitMinutes: row.doorWaitMinutes,
+      runnerFeePerMinuteVnd: row.runnerFeePerMinuteVnd,
+    });
+    return quoteDelivery({
+      zone: {
+        zoneId,
+        sameBuildingBaseFee: settings.sameBuildingBaseFee,
+        buildingToBuildingBaseFee: settings.buildingToBuildingBaseFee,
+        groundToBuildingBaseFee: settings.groundToBuildingBaseFee,
+        buildingToGroundBaseFee: settings.buildingToGroundBaseFee,
+        groundToGroundBaseFee: settings.groundToGroundBaseFee,
+        minimumRunnerPayable: settings.minimumRunnerPayable,
+        hotFoodSurcharge: settings.hotFoodSurcharge,
+        heavySurcharge: settings.heavySurcharge,
+        bulkySurcharge: settings.bulkySurcharge,
+        batchExtraOrderFee: settings.batchExtraOrderFee,
+      },
+      origin: toPlace(origin),
+      destination: destination ? toPlace(destination) : null,
+      destinationIsGround: !destination,
+    });
   }
 
   private async resolveDeliveryFeeVnd(

@@ -17,6 +17,7 @@ export type TodaySpecial = {
   categoryName?: string | null;
   providerType?: string;
   providerClass?: string;
+  campaignId?: string | null;
   href: string;
 };
 

@@ -1,8 +1,9 @@
 "use client";
 
+import { CHAIN_SCOPE_STORAGE_KEY, decodeChainScope } from "@picki/shared";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import type { ComponentType } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useEffect, useState, type ComponentType } from "react";
 import {
   isContactLiveOnlyShop,
   isCustomerVisitVertical,
@@ -177,9 +178,23 @@ const tabs: Tab[] = [
   },
 ];
 
+const LOCAL_MODE = "picki-provider-local";
+
 export function ProviderNav() {
   const pathname = usePathname();
-  const { activeLocation } = useProviderLocation();
+  const searchParams = useSearchParams();
+  const { activeLocation, chain } = useProviderLocation();
+  const onChain = pathname.startsWith("/provider/organization");
+  const scopeType = searchParams.get("scopeType");
+  const scopeId = searchParams.get("scopeId");
+  const [rememberedQuery, setRememberedQuery] = useState("");
+  useEffect(() => {
+    const scope = decodeChainScope(sessionStorage.getItem(CHAIN_SCOPE_STORAGE_KEY));
+    setRememberedQuery(scope ? `?scopeType=${encodeURIComponent(scope.scopeType)}&scopeId=${encodeURIComponent(scope.scopeId)}` : "");
+  }, [scopeType, scopeId]);
+  const scopeQuery = onChain && scopeType && scopeId
+    ? `?scopeType=${encodeURIComponent(scopeType)}&scopeId=${encodeURIComponent(scopeId)}`
+    : onChain ? rememberedQuery : "";
   const providerType = activeLocation?.providerType;
   const isCustomerVisit = isCustomerVisitVertical(providerType);
   const hideServiceRequests = isQueueOnlyShop(providerType);
@@ -227,8 +242,60 @@ export function ProviderNav() {
     return true;
   });
 
+  const chainTabs = [
+    { href: "/provider/organization", label: "Tổng quan", exact: true },
+    { href: "/provider/organization/locations", label: "Điểm bán", exact: false },
+    { href: "/provider/organization/orders", label: "Đơn hàng", exact: false },
+    { href: "/provider/organization/products", label: "Sản phẩm", exact: false },
+    { href: "/provider/organization/today", label: "Hôm nay", exact: false },
+    ...(chain?.canManageCampaigns
+      ? [{ href: "/provider/organization/campaigns", label: "Chương trình", exact: false }]
+      : []),
+    ...(chain?.canManageMembers
+      ? [{ href: "/provider/organization/members", label: "Người dùng", exact: false }]
+      : []),
+  ];
+
+  if (chain?.chainEnabled && onChain) {
+    return (
+      <nav className="provider-nav" aria-label="Điều hướng chuỗi">
+        {chainTabs.map((tab) => {
+          const active = tab.exact ? pathname === tab.href : pathname.startsWith(tab.href);
+          return (
+            <Link
+              key={tab.href}
+              href={`${tab.href}${scopeQuery}`}
+              className={active ? "provider-nav-link active" : "provider-nav-link"}
+              aria-current={active ? "page" : undefined}
+              onClick={() => sessionStorage.removeItem(LOCAL_MODE)}
+            >
+              <span>{tab.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+    );
+  }
+
   return (
     <nav className="provider-nav" aria-label="Điều hướng Provider">
+      {chain?.canManageCampaigns && !chain.chainEnabled ? (
+        <Link
+          href={`/provider/organization/campaigns${rememberedQuery}`}
+          className={pathname.startsWith("/provider/organization/campaigns") ? "provider-nav-link active" : "provider-nav-link"}
+        >
+          <span>Chương trình</span>
+        </Link>
+      ) : null}
+      {chain?.chainEnabled ? (
+        <Link
+          href={`/provider/organization${rememberedQuery}`}
+          className="provider-nav-link"
+          onClick={() => sessionStorage.removeItem(LOCAL_MODE)}
+        >
+          <span>Chuỗi</span>
+        </Link>
+      ) : null}
       {visibleTabs.map((tab) => {
         const active = tab.exact ? pathname === tab.href : pathname.startsWith(tab.href);
         return (

@@ -87,6 +87,7 @@ export const orders = pgTable("orders", {
   runnerWaitMinutes: integer("runner_wait_minutes").notNull().default(0),
   runnerWaitFeeVnd: integer("runner_wait_fee_vnd").notNull().default(0),
   deliveryAccessNote: text("delivery_access_note"),
+  deliveryPricingSnapshot: jsonb("delivery_pricing_snapshot"),
   /** Message from the customer to the shop. Separate from the address delivery note. */
   customerNote: text("customer_note"),
   deliveryLat: doublePrecision("delivery_lat"),

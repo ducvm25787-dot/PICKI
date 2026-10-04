@@ -493,6 +493,65 @@ body {
   line-height: 1;
 }
 
+.chain-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 16px;
+  font-weight: 600;
+}
+
+.chain-scope select,
+.chain-table input,
+.chain-table select,
+.board-row input,
+.board-row select {
+  width: 100%;
+}
+
+.chain-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.chain-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chain-stat strong {
+  font-size: 22px;
+}
+
+.chain-table-wrap {
+  overflow-x: auto;
+}
+
+.chain-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.chain-table th,
+.chain-table td {
+  text-align: left;
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--role-accent-dark, #1b4332);
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .board-row {
   display: flex;
   flex-wrap: wrap;

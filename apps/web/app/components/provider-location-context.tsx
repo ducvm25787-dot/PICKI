@@ -18,12 +18,28 @@ export type ProviderLocation = {
   locationStatus?: string;
 };
 
+export type ChainScopeChoice = {
+  scopeType: "PROVIDER" | "CITY" | "ZONE" | "LOCATION";
+  scopeId: string;
+  label: string;
+};
+
+export type ChainAccess = {
+  chainEnabled: boolean;
+  canManageMembers: boolean;
+  canManageCampaigns: boolean;
+  canEditCatalog: boolean;
+  brandName: string;
+  scopes: ChainScopeChoice[];
+};
+
 type ProviderLocationContextValue = {
   locations: ProviderLocation[];
   locationId: string;
   activeLocation: ProviderLocation | undefined;
   loading: boolean;
   accessError: string | null;
+  chain: ChainAccess | null;
   setLocationId: (id: string) => void;
   refreshLocations: () => Promise<void>;
 };
@@ -38,6 +54,7 @@ export function ProviderLocationProvider({ children }: { children: React.ReactNo
   const [locationId, setLocationIdState] = useState("");
   const [loading, setLoading] = useState(true);
   const [accessError, setAccessError] = useState<string | null>(null);
+  const [chain, setChain] = useState<ChainAccess | null>(null);
 
   const refreshLocations = useCallback(async () => {
     await api("/me");
@@ -56,6 +73,8 @@ export function ProviderLocationProvider({ children }: { children: React.ReactNo
 
     setLocations(withIds);
     setAccessError(null);
+    const access = await api<ChainAccess>("/provider/organization/access").catch(() => null);
+    setChain(access);
 
     const stored = localStorage.getItem(STORAGE_KEY);
     const validStored = withIds.find((l) => l.locationId === stored)?.locationId;
@@ -97,10 +116,11 @@ export function ProviderLocationProvider({ children }: { children: React.ReactNo
       activeLocation,
       loading,
       accessError,
+      chain,
       setLocationId,
       refreshLocations,
     }),
-    [locations, locationId, activeLocation, loading, accessError, setLocationId, refreshLocations],
+    [locations, locationId, activeLocation, loading, accessError, chain, setLocationId, refreshLocations],
   );
 
   return <ProviderLocationContext.Provider value={value}>{children}</ProviderLocationContext.Provider>;

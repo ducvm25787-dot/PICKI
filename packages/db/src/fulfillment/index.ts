@@ -1,4 +1,5 @@
 export * from "./batching.js";
+export * from "./trip-pricing.js";
 export * from "./delivery-backfill.js";
 export * from "./delivery-fee.js";
 export * from "./delivery-promotion.js";

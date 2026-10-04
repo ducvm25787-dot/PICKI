@@ -86,7 +86,7 @@ export const issueLocationQrSchema = z.object({
 
 export const upsertZonePlaceSchema = z.object({
   id: z.string().uuid().optional(),
-  kind: z.enum(["BUILDING", "AREA"]),
+  kind: z.enum(["BUILDING", "AREA", "TRADITIONAL_MARKET", "RESIDENTIAL_PODIUM_CLUSTER", "GROUND_STREET_CLUSTER"]),
   code: z.string().trim().min(1).max(40),
   displayName: z.string().trim().min(1).max(80),
   elevatorNote: z.string().trim().max(300).nullable().optional(),
@@ -97,6 +97,10 @@ export const upsertZonePlaceSchema = z.object({
   lobbyWaitMinutes: z.number().int().min(0).max(180),
   doorWaitMinutes: z.number().int().min(0).max(180),
   runnerFeePerMinuteVnd: z.number().int().min(0).max(100_000),
+  doorSurcharge: z.number().int().min(0).max(100_000).default(0),
+  slowElevatorSurcharge: z.number().int().min(0).max(100_000).default(0),
+  elevatorWaitMinutes: z.number().int().min(0).max(180).default(0),
+  anchorCode: z.string().trim().max(40).nullable().optional(),
   notes: z.string().trim().max(500).nullable().optional(),
 });
 

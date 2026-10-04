@@ -589,9 +589,11 @@ export default function HomePage() {
             allHref="/pushes/special"
             items={todaySpecials}
             badgeFor={(item) =>
-              item.listAmountVnd && item.amountVnd && item.listAmountVnd > item.amountVnd
-                ? "Ưu đãi giảm giá"
-                : "Đặc biệt"
+              item.campaignId
+                ? "Chương trình"
+                : item.listAmountVnd && item.amountVnd && item.listAmountVnd > item.amountVnd
+                  ? "Ưu đãi giảm giá"
+                  : "Đặc biệt"
             }
             zoneId={zoneId}
             trackSource="today_special"

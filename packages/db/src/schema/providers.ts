@@ -39,6 +39,7 @@ export const providerLocations = pgTable("provider_locations", {
   displayName: text("display_name").notNull(),
   status: text("status").notNull().default("DRAFT"),
   addressLine: text("address_line"),
+  zonePlaceId: uuid("zone_place_id"),
   lat: doublePrecision("lat"),
   lng: doublePrecision("lng"),
   pinVerifiedAt: timestamp("pin_verified_at", { withTimezone: true, mode: "date" }),

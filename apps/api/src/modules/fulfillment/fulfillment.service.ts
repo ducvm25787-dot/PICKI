@@ -12,6 +12,7 @@ import {
   planLaundryInboundStops,
   planLaundryReturnStops,
   planRouteStops,
+  priceBatchRoute,
   providerLocations,
   routeOrders,
   routeStops,
@@ -120,6 +121,7 @@ export class FulfillmentService {
         });
 
       await this.rebuildStops(tx, route.id);
+      await this.repriceRoute(tx, route.id);
       return { routeId: route.id };
     });
   }
@@ -897,6 +899,66 @@ export class FulfillmentService {
         pickiPointId,
       });
     }
+  }
+
+  private async repriceRoute(tx: PickiTx, routeId: string) {
+    const rows = await tx
+      .select({
+        orderId: orders.id,
+        zoneId: orders.zoneId,
+        snapshot: orders.deliveryPricingSnapshot,
+      })
+      .from(routeOrders)
+      .innerJoin(orders, eq(routeOrders.orderId, orders.id))
+      .where(eq(routeOrders.routeId, routeId));
+    const priced = rows.map((row) => this.batchPricing(row.orderId, row.snapshot));
+    if (priced.some((row) => row == null)) return;
+    const zoneId = rows[0]?.zoneId;
+    if (!zoneId) return;
+    const [settings] = await tx
+      .select({ batchExtraOrderFee: zoneFulfillmentSettings.batchExtraOrderFee })
+      .from(zoneFulfillmentSettings)
+      .where(eq(zoneFulfillmentSettings.zoneId, zoneId))
+      .limit(1);
+    const result = priceBatchRoute({
+      orders: priced.filter((row) => row != null),
+      extraOrderFee: settings?.batchExtraOrderFee ?? 2000,
+    });
+    await tx.update(deliveryRoutes).set({ runnerPayable: result.routeRunnerPayable }).where(eq(deliveryRoutes.id, routeId));
+    for (const allocation of result.allocations) {
+      await tx
+        .update(routeOrders)
+        .set({ runnerCostAllocation: allocation.amount })
+        .where(and(eq(routeOrders.routeId, routeId), eq(routeOrders.orderId, allocation.orderId)));
+    }
+  }
+
+  private batchPricing(orderId: string, snapshot: unknown) {
+    if (!snapshot || typeof snapshot !== "object") return null;
+    const row = snapshot as {
+      tripBase?: unknown;
+      buildingKey?: unknown;
+      buildingSurcharge?: unknown;
+      handlingSurcharge?: unknown;
+      runnerPayable?: unknown;
+    };
+    if (
+      typeof row.tripBase !== "number" ||
+      typeof row.buildingKey !== "string" ||
+      typeof row.buildingSurcharge !== "number" ||
+      typeof row.handlingSurcharge !== "number" ||
+      typeof row.runnerPayable !== "number"
+    ) {
+      return null;
+    }
+    return {
+      orderId,
+      tripBase: row.tripBase,
+      buildingKey: row.buildingKey,
+      buildingSurcharge: row.buildingSurcharge,
+      handlingSurcharge: row.handlingSurcharge,
+      runnerPayable: row.runnerPayable,
+    };
   }
 
   private async loadBatchSettings(tx: PickiTx, zoneId: string) {

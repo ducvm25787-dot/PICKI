@@ -1007,7 +1007,7 @@ export class AdminService {
     input: z.infer<typeof upsertZonePlaceSchema>,
   ) {
     const zone = await this.resolveZone(zoneKey);
-    this.assertWriteGlobal(access);
+    this.assertConfigureZone(access, zone.id);
     const zoneId = zone.id;
     const code = normalizePlaceCode(input.code);
     if (!code) throw new PickiError("VALIDATION_ERROR", "Thiếu mã tòa hoặc khu");
@@ -1032,6 +1032,10 @@ export class AdminService {
       lobbyWaitMinutes: input.lobbyWaitMinutes,
       doorWaitMinutes: input.doorWaitMinutes,
       runnerFeePerMinuteVnd: input.runnerFeePerMinuteVnd,
+      doorSurcharge: input.doorSurcharge,
+      slowElevatorSurcharge: input.slowElevatorSurcharge,
+      elevatorWaitMinutes: input.elevatorWaitMinutes,
+      anchorCode: blankText(input.anchorCode),
       notes: blankText(input.notes),
       status: "ACTIVE" as const,
       updatedAt: new Date(),
@@ -1068,7 +1072,7 @@ export class AdminService {
 
   async archiveZonePlace(access: AdminAccess, adminUserId: string, zoneKey: string, placeId: string) {
     const zone = await this.resolveZone(zoneKey);
-    this.assertWriteGlobal(access);
+    this.assertConfigureZone(access, zone.id);
     const zoneId = zone.id;
     const saved = await this.db
       .update(zonePlaces)
@@ -1099,6 +1103,7 @@ export class AdminService {
       verificationStatus: providerLocations.verificationStatus,
       verificationNote: providerLocations.verificationNote,
       qrToken: providerLocations.verifiedQrToken,
+      zonePlaceId: providerLocations.zonePlaceId,
     };
     const rows = zoneId
       ? await this.db
@@ -1138,8 +1143,53 @@ export class AdminService {
         verificationStatus: row.verificationStatus,
         verificationNote: row.verificationNote,
         qrPath: row.qrToken ? `/v/${row.qrToken}` : null,
+        zonePlaceId: row.zonePlaceId,
       })),
     };
+  }
+
+  async assignLocationPlace(
+    access: AdminAccess,
+    adminUserId: string,
+    zoneKey: string,
+    locationId: string,
+    zonePlaceId: string | null,
+  ) {
+    const zone = await this.resolveZone(zoneKey);
+    this.assertConfigureZone(access, zone.id);
+    const membership = await this.db
+      .select({ id: providerZoneMemberships.id })
+      .from(providerZoneMemberships)
+      .where(
+        and(
+          eq(providerZoneMemberships.providerLocationId, locationId),
+          eq(providerZoneMemberships.zoneId, zone.id),
+          eq(providerZoneMemberships.status, "ACTIVE"),
+        ),
+      )
+      .limit(1);
+    if (!membership[0]) throw new PickiError("NOT_FOUND", "Điểm bán không thuộc khu này");
+    if (zonePlaceId) {
+      const place = await this.db
+        .select({ id: zonePlaces.id })
+        .from(zonePlaces)
+        .where(and(eq(zonePlaces.id, zonePlaceId), eq(zonePlaces.zoneId, zone.id), eq(zonePlaces.status, "ACTIVE")))
+        .limit(1);
+      if (!place[0]) throw new PickiError("VALIDATION_ERROR", "Tòa hoặc cụm không thuộc khu này");
+    }
+    await this.db
+      .update(providerLocations)
+      .set({ zonePlaceId, updatedAt: new Date() })
+      .where(eq(providerLocations.id, locationId));
+    await this.db.insert(auditLogs).values({
+      actorUserId: adminUserId,
+      action: "LOCATION_ZONE_PLACE",
+      entityType: "provider_location",
+      entityId: locationId,
+      metadata: { zonePlaceId },
+      zoneId: zone.id,
+    });
+    return { ok: true };
   }
 
   async setDraftBeer(
@@ -1619,6 +1669,16 @@ export class AdminService {
         foodDeliveryFeeVnd: fulfillment?.foodDeliveryFeeVnd ?? 15000,
         foodDoorDeliveryFeeVnd: fulfillment?.foodDoorDeliveryFeeVnd ?? 20000,
         laundryReturnRunnerFeeVnd: fulfillment?.laundryReturnRunnerFeeVnd ?? 15000,
+        sameBuildingBaseFee: fulfillment?.sameBuildingBaseFee ?? 5000,
+        buildingToBuildingBaseFee: fulfillment?.buildingToBuildingBaseFee ?? 10000,
+        groundToBuildingBaseFee: fulfillment?.groundToBuildingBaseFee ?? 15000,
+        buildingToGroundBaseFee: fulfillment?.buildingToGroundBaseFee ?? 15000,
+        groundToGroundBaseFee: fulfillment?.groundToGroundBaseFee ?? 15000,
+        minimumRunnerPayable: fulfillment?.minimumRunnerPayable ?? 0,
+        hotFoodSurcharge: fulfillment?.hotFoodSurcharge ?? 0,
+        heavySurcharge: fulfillment?.heavySurcharge ?? 0,
+        bulkySurcharge: fulfillment?.bulkySurcharge ?? 0,
+        batchExtraOrderFee: fulfillment?.batchExtraOrderFee ?? 2000,
       },
     };
   }
@@ -1635,6 +1695,16 @@ export class AdminService {
       foodDeliveryFeeVnd: number;
       foodDoorDeliveryFeeVnd: number;
       laundryReturnRunnerFeeVnd: number;
+      sameBuildingBaseFee: number;
+      buildingToBuildingBaseFee: number;
+      groundToBuildingBaseFee: number;
+      buildingToGroundBaseFee: number;
+      groundToGroundBaseFee: number;
+      minimumRunnerPayable: number;
+      hotFoodSurcharge: number;
+      heavySurcharge: number;
+      bulkySurcharge: number;
+      batchExtraOrderFee: number;
     },
   ) {
     const zone = await this.resolveZone(zoneKey);
@@ -1662,6 +1732,16 @@ export class AdminService {
       foodDeliveryFeeVnd: input.foodDeliveryFeeVnd,
       foodDoorDeliveryFeeVnd: input.foodDoorDeliveryFeeVnd,
       laundryReturnRunnerFeeVnd: input.laundryReturnRunnerFeeVnd,
+      sameBuildingBaseFee: input.sameBuildingBaseFee,
+      buildingToBuildingBaseFee: input.buildingToBuildingBaseFee,
+      groundToBuildingBaseFee: input.groundToBuildingBaseFee,
+      buildingToGroundBaseFee: input.buildingToGroundBaseFee,
+      groundToGroundBaseFee: input.groundToGroundBaseFee,
+      minimumRunnerPayable: input.minimumRunnerPayable,
+      hotFoodSurcharge: input.hotFoodSurcharge,
+      heavySurcharge: input.heavySurcharge,
+      bulkySurcharge: input.bulkySurcharge,
+      batchExtraOrderFee: input.batchExtraOrderFee,
       updatedAt: new Date(),
     };
     await this.db
@@ -1701,7 +1781,12 @@ function blankText(value: string | null | undefined): string | null {
 function toZonePlaceDto(row: typeof zonePlaces.$inferSelect) {
   return {
     id: row.id,
-    kind: row.kind as "BUILDING" | "AREA",
+    kind: row.kind as
+      | "BUILDING"
+      | "AREA"
+      | "TRADITIONAL_MARKET"
+      | "RESIDENTIAL_PODIUM_CLUSTER"
+      | "GROUND_STREET_CLUSTER",
     code: row.code,
     displayName: row.displayName,
     elevatorNote: row.elevatorNote,
@@ -1712,6 +1797,10 @@ function toZonePlaceDto(row: typeof zonePlaces.$inferSelect) {
     lobbyWaitMinutes: row.lobbyWaitMinutes,
     doorWaitMinutes: row.doorWaitMinutes,
     runnerFeePerMinuteVnd: row.runnerFeePerMinuteVnd,
+    doorSurcharge: row.doorSurcharge,
+    slowElevatorSurcharge: row.slowElevatorSurcharge,
+    elevatorWaitMinutes: row.elevatorWaitMinutes,
+    anchorCode: row.anchorCode,
     notes: row.notes,
     status: row.status,
   };

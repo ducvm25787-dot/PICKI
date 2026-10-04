@@ -2,6 +2,7 @@ export * from "./addresses.js";
 export * from "./analytics.js";
 export * from "./experiences.js";
 export * from "./communication.js";
+export * from "./campaigns.js";
 export * from "./catalog.js";
 export * from "./delivery-promotions.js";
 export * from "./discovery.js";

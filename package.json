@@ -40,7 +40,8 @@
     "db:seed:transport": "bash scripts/db-seed-transport.sh",
     "db:seed:geo-pins": "bash scripts/db-seed-geo-pins.sh",
     "db:seed:lost": "bash scripts/db-seed-lost.sh",
-    "db:seed:family-dinner": "bash scripts/db-seed-family-dinner.sh"
+    "db:seed:family-dinner": "bash scripts/db-seed-family-dinner.sh",
+    "db:seed:demo-chain": "bash scripts/db-seed-demo-chain.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",

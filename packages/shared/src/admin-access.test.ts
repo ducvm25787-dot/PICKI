@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  CENTRAL_CAMPAIGN_APPROVER_ROLES,
+  canApproveChainCampaign,
   canConfigureZone,
   canOperateLocation,
   canOperateZone,
@@ -7,6 +9,7 @@ import {
   canReadFinance,
   canReadGlobal,
   canReadZone,
+  canSuppressChainCampaign,
   canWriteCity,
   canWriteGlobal,
   resolveAdminAccess,
@@ -118,6 +121,16 @@ describe("resolveAdminAccess", () => {
     expect(canReadFinance(zoneFinance!, { scope: "ZONE", id: zoneB })).toBe(false);
     expect(canReadFinance(zoneFinance!, { scope: "GLOBAL" })).toBe(false);
     expect(canReadZone(zoneFinance!, zoneA)).toBe(false);
+  });
+
+  it("lets only a central approver accept a chain campaign", () => {
+    const zoneAdmin = resolveAdminAccess([{ role: "ZONE_ADMIN", scopeType: "ZONE", scopeId: zoneA }]);
+    const central = resolveAdminAccess([{ role: "SUPER_ADMIN", scopeType: null, scopeId: null }]);
+    expect(canApproveChainCampaign(zoneAdmin!)).toBe(false);
+    expect(canApproveChainCampaign(central!)).toBe(true);
+    expect(canSuppressChainCampaign(zoneAdmin!, zoneA)).toBe(true);
+    expect(canSuppressChainCampaign(zoneAdmin!, zoneB)).toBe(false);
+    expect(CENTRAL_CAMPAIGN_APPROVER_ROLES).toEqual(["SUPER_ADMIN", "PARTNER_OPS", "PARTNER_ADMIN"]);
   });
 
   it("refuses a location that also serves a zone the admin cannot operate", () => {
