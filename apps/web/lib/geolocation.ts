@@ -6,10 +6,14 @@
 
 export type GeoPosition = { lat: number; lng: number };
 
-const KVL_FALLBACK: GeoPosition = { lat: 20.974, lng: 105.821 };
+/**
+ * Map center only when the browser has no fix. Kim Văn – Kim Lũ (CT12), not a GPS reading.
+ * Callers must persist a point only when source === "gps".
+ */
+const KVL_MAP_CENTER: GeoPosition = { lat: 20.9883, lng: 105.8414 };
 
 export function zoneFallbackCenter(fallback?: GeoPosition | null): GeoPosition {
-  return fallback ? { ...fallback } : { ...KVL_FALLBACK };
+  return fallback ? { ...fallback } : { ...KVL_MAP_CENTER };
 }
 
 export async function getCurrentPositionOnce(options?: {

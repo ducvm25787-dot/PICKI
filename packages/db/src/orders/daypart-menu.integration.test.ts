@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createPickiDb } from "../client.js";
 import { migrate } from "../migrator.js";
 import { offerings, productDailyAvailability } from "../schema/catalog.js";
+import { experienceCities } from "../schema/experiences.js";
 import { users } from "../schema/identity.js";
 import { orders } from "../schema/orders.js";
 import {
@@ -37,12 +38,18 @@ describe.skipIf(!databaseUrl)("food daypart menus", () => {
   beforeAll(async () => {
     await migrate({ databaseUrl });
     const [user] = await db.insert(users).values({ displayName: slug }).returning();
+    const [city] = await db
+      .select({ id: experienceCities.id })
+      .from(experienceCities)
+      .where(eq(experienceCities.code, "Hanoi"))
+      .limit(1);
     const [zone] = await db
       .insert(zones)
       .values({
         slug,
         name: slug,
         displayName: slug,
+        cityId: city!.id,
         anchorLng: 105.84,
         anchorLat: 20.98,
       })
@@ -77,6 +84,7 @@ describe.skipIf(!databaseUrl)("food daypart menus", () => {
     offeringId = offering!.id;
     await db.insert(productDailyAvailability).values({
       providerId,
+      providerLocationId: locationId,
       offeringId,
       serviceDate,
       status: "AVAILABLE",
@@ -176,6 +184,7 @@ describe.skipIf(!databaseUrl)("food daypart menus", () => {
       ]);
       await reserveOfferingStock(tx, {
         orderId,
+        providerLocationId: locationId,
         serviceDate,
         lines: [{ offeringId, quantity: 1, name: "Phở trưa" }],
       });

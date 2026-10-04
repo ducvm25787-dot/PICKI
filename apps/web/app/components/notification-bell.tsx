@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CartButton } from "./cart-button";
 import { IconBell } from "./nav-icons";
 import { api } from "../../lib/api";
 
@@ -224,7 +225,7 @@ export function NotificationBell({
 
   const unread = data?.unreadCount ?? 0;
 
-  return (
+  const bell = (
     <div
       className={inline ? "notification-bell notification-bell-inline" : "notification-bell"}
       ref={panelRef}
@@ -282,6 +283,14 @@ export function NotificationBell({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+
+  if (audience !== "customer") return bell;
+  return (
+    <div className="header-tools">
+      <CartButton />
+      {bell}
     </div>
   );
 }

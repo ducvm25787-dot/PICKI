@@ -1,5 +1,30 @@
 import { z } from "zod";
 
+export const HOME_HERO_CONTEXTS = [
+  "breakfast-morning",
+  "lunch",
+  "family-dinner",
+  "breakfast-preorder",
+  "overnight",
+] as const;
+
+export const homeHeroImageSchema = z.object({
+  contextId: z.enum(HOME_HERO_CONTEXTS),
+  dataUrl: z.string().min(32).max(450_000),
+});
+
+export const saveHomeHeroSchema = z.object({
+  contextId: z.enum(HOME_HERO_CONTEXTS),
+  slots: z
+    .array(
+      z.union([
+        z.object({ id: z.string().uuid() }),
+        z.object({ dataUrl: z.string().min(32).max(450_000) }),
+      ]),
+    )
+    .max(5),
+});
+
 export const adminOrderActionSchema = z.object({
   action: z.enum(["cancel"]),
   reason: z.string().max(500).optional(),
@@ -57,6 +82,22 @@ export const setLocationVerificationSchema = z.object({
 
 export const issueLocationQrSchema = z.object({
   reason: z.string().max(500).optional(),
+});
+
+export const upsertZonePlaceSchema = z.object({
+  id: z.string().uuid().optional(),
+  kind: z.enum(["BUILDING", "AREA"]),
+  code: z.string().trim().min(1).max(40),
+  displayName: z.string().trim().min(1).max(80),
+  elevatorNote: z.string().trim().max(300).nullable().optional(),
+  accessCardRequired: z.boolean(),
+  securityNote: z.string().trim().max(300).nullable().optional(),
+  callUpRequired: z.boolean(),
+  doorDeliveryAllowed: z.boolean(),
+  lobbyWaitMinutes: z.number().int().min(0).max(180),
+  doorWaitMinutes: z.number().int().min(0).max(180),
+  runnerFeePerMinuteVnd: z.number().int().min(0).max(100_000),
+  notes: z.string().trim().max(500).nullable().optional(),
 });
 
 export const verifyLocationPinSchema = z.object({

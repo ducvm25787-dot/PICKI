@@ -71,7 +71,7 @@ const presenceSelect = `
   pl.created_at,
   (
     SELECT o.name FROM offerings o
-    WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+    WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
     ORDER BY o.sort_order LIMIT 1
   ) AS sample_offering,
   pr.id AS promo_id,

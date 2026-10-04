@@ -64,7 +64,7 @@ export class OrderTransitionService {
     toStatus: string,
     actorUserId: string,
     note?: string,
-    extra?: { runnerUserId?: string },
+    extra?: { runnerUserId?: string; cancelReason?: string | null },
   ) {
     const row = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
     const order = row[0];
@@ -93,7 +93,7 @@ export class OrderTransitionService {
     toStatus: string,
     actorUserId: string,
     note?: string,
-    extra?: { runnerUserId?: string },
+    extra?: { runnerUserId?: string; cancelReason?: string | null },
   ) {
     const orderId = order.id;
 
@@ -104,6 +104,9 @@ export class OrderTransitionService {
       };
       if (extra?.runnerUserId) {
         patch.runnerUserId = extra.runnerUserId;
+      }
+      if (toStatus === "PROVIDER_REJECTED") {
+        patch.cancelReason = extra?.cancelReason?.trim() || null;
       }
 
       const [updated] = await tx

@@ -48,15 +48,174 @@ export async function listTodayUpdatesInZone(
     INNER JOIN provider_locations pl ON pl.id = u.provider_location_id
     INNER JOIN providers p ON p.id = pl.provider_id
     INNER JOIN provider_zone_memberships pzm ON pzm.provider_location_id = pl.id
+    INNER JOIN provider_daily_update_zone_targets tgt
+      ON tgt.update_id = u.id
+     AND tgt.zone_id = pzm.zone_id
+     AND tgt.review_status = 'APPROVED'
     LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
     WHERE pzm.zone_id = ${zoneId}::uuid
       AND pzm.status = 'ACTIVE'
       AND pl.status = 'ACTIVE'
       AND p.status = 'ACTIVE'
-      AND u.status = 'ACTIVE'
       AND u.valid_from <= now()
       AND u.expires_at > now()
     ORDER BY u.created_at DESC
+    LIMIT ${limit}
+  `;
+}
+
+export type TodayFeaturedRow = {
+  id: string;
+  offering_id: string;
+  location_id: string;
+  brand_name: string;
+  title: string;
+  amount_vnd: number;
+  list_amount_vnd: number;
+  update_type: string;
+  image_url: string | null;
+  live_status: string;
+};
+
+/** One shop's featured dish for today, chosen from the catalog. Home spotlight. */
+export async function listTodayFeaturedInZone(
+  sql: postgres.Sql,
+  zoneId: string,
+  limit = 8,
+): Promise<TodayFeaturedRow[]> {
+  return sql<TodayFeaturedRow[]>`
+    SELECT DISTINCT ON (pl.id)
+      day.id,
+      o.id AS offering_id,
+      pl.id AS location_id,
+      p.brand_name,
+      o.name AS title,
+      COALESCE(day.price_override_vnd, loc_price.amount_vnd, master_price.amount_vnd) AS amount_vnd,
+      COALESCE(loc_price.amount_vnd, master_price.amount_vnd) AS list_amount_vnd,
+      COALESCE(upd.update_type, 'DAILY_SPECIAL') AS update_type,
+      o.image_url,
+      COALESCE(pls.status, 'OFFLINE') AS live_status
+    FROM product_daily_availability day
+    INNER JOIN offerings o ON o.id = day.offering_id
+    INNER JOIN provider_locations pl ON pl.id = day.provider_location_id
+    INNER JOIN providers p ON p.id = pl.provider_id
+    INNER JOIN provider_zone_memberships pzm ON pzm.provider_location_id = pl.id
+    LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
+    LEFT JOIN offering_prices loc_price
+      ON loc_price.offering_id = o.id AND loc_price.provider_location_id = pl.id
+    LEFT JOIN offering_prices master_price
+      ON master_price.offering_id = o.id AND master_price.provider_location_id IS NULL
+    LEFT JOIN LATERAL (
+      SELECT u.update_type
+      FROM provider_daily_updates u
+      INNER JOIN provider_daily_update_zone_targets t
+        ON t.update_id = u.id
+       AND t.zone_id = ${zoneId}::uuid
+       AND t.review_status = 'APPROVED'
+      WHERE u.provider_location_id = pl.id
+        AND u.linked_entity_id = o.id
+        AND u.expires_at > now()
+      ORDER BY u.created_at DESC
+      LIMIT 1
+    ) upd ON true
+    WHERE pzm.zone_id = ${zoneId}::uuid
+      AND pzm.status = 'ACTIVE'
+      AND pl.status = 'ACTIVE'
+      AND p.status = 'ACTIVE'
+      AND o.status = 'ACTIVE'
+      AND o.alcohol_restricted = false
+      AND day.featured = true
+      AND day.service_date = (timezone('Asia/Ho_Chi_Minh', now()))::date
+      AND day.status IS DISTINCT FROM 'HIDDEN'
+      AND day.status IS DISTINCT FROM 'SOLD_OUT'
+      AND COALESCE(day.price_override_vnd, loc_price.amount_vnd, master_price.amount_vnd) > 0
+    ORDER BY pl.id, day.updated_at DESC NULLS LAST
+    LIMIT ${limit}
+  `;
+}
+
+export type HomeSurfaceRow = {
+  id: string;
+  offering_id: string;
+  location_id: string;
+  provider_id: string;
+  brand_name: string;
+  provider_type: string;
+  title: string;
+  amount_vnd: number;
+  list_amount_vnd: number;
+  image_url: string | null;
+  live_status: string;
+  category_name: string | null;
+  created_at: Date;
+};
+
+/**
+ * Approved merchandising only. featured is ignored.
+ * Food surfaces require FOOD_SERVICE. MARKET_TODAY requires market commerce.
+ */
+export async function listApprovedHomeSurface(
+  sql: postgres.Sql,
+  zoneId: string,
+  surface: "SPECIAL_TODAY" | "SNACK_DESSERT" | "MARKET_TODAY",
+  limit = 24,
+): Promise<HomeSurfaceRow[]> {
+  const market = surface === "MARKET_TODAY";
+  return sql<HomeSurfaceRow[]>`
+    SELECT *
+    FROM (
+      SELECT DISTINCT ON (o.id)
+        u.id,
+        o.id AS offering_id,
+        pl.id AS location_id,
+        p.id AS provider_id,
+        p.brand_name,
+        p.provider_type,
+        o.name AS title,
+        COALESCE(day.price_override_vnd, loc_price.amount_vnd, master_price.amount_vnd) AS amount_vnd,
+        COALESCE(loc_price.amount_vnd, master_price.amount_vnd) AS list_amount_vnd,
+        o.image_url,
+        COALESCE(pls.status, 'OFFLINE') AS live_status,
+        cat.name AS category_name,
+        u.created_at
+      FROM provider_daily_updates u
+    INNER JOIN offerings o ON o.id = u.linked_entity_id
+    INNER JOIN provider_locations pl ON pl.id = u.provider_location_id
+    INNER JOIN providers p ON p.id = pl.provider_id
+    INNER JOIN provider_zone_memberships pzm ON pzm.provider_location_id = pl.id
+    INNER JOIN provider_daily_update_zone_targets tgt
+      ON tgt.update_id = u.id
+     AND tgt.zone_id = pzm.zone_id
+    LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
+    LEFT JOIN product_categories cat ON cat.id = o.category_id
+    LEFT JOIN product_daily_availability day
+      ON day.offering_id = o.id
+      AND day.provider_location_id = pl.id
+      AND day.service_date = (timezone('Asia/Ho_Chi_Minh', now()))::date
+    LEFT JOIN offering_prices loc_price
+      ON loc_price.offering_id = o.id AND loc_price.provider_location_id = pl.id
+    LEFT JOIN offering_prices master_price
+      ON master_price.offering_id = o.id AND master_price.provider_location_id IS NULL
+    WHERE pzm.zone_id = ${zoneId}::uuid
+      AND pzm.status = 'ACTIVE'
+      AND pl.status = 'ACTIVE'
+      AND p.status = 'ACTIVE'
+      AND o.status = 'ACTIVE'
+      AND o.alcohol_restricted = false
+      AND u.linked_entity_type = 'OFFERING'
+      AND u.expires_at > now()
+      AND tgt.review_status = 'APPROVED'
+      AND tgt.approved_surface = ${surface}
+      AND (
+        (${market} AND p.commerce_model IN ('FRESH_MARKET', 'RETAIL_STORE'))
+        OR (NOT ${market} AND p.commerce_model = 'FOOD_SERVICE')
+      )
+      AND (day.id IS NULL OR day.status IS DISTINCT FROM 'HIDDEN')
+      AND (day.id IS NULL OR day.status IS DISTINCT FROM 'SOLD_OUT')
+      AND COALESCE(day.price_override_vnd, loc_price.amount_vnd, master_price.amount_vnd) > 0
+      ORDER BY o.id, u.created_at DESC
+    ) picked
+    ORDER BY created_at DESC
     LIMIT ${limit}
   `;
 }
@@ -162,7 +321,7 @@ export async function listNowAroundInZone(
         pp.tagline,
         (
           SELECT o.name FROM offerings o
-          WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+          WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
           ORDER BY o.sort_order
           LIMIT 1
         ) AS sample_offering,
@@ -182,13 +341,16 @@ export async function listNowAroundInZone(
       LEFT JOIN provider_profiles pp ON pp.provider_id = p.id
       LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
       LEFT JOIN LATERAL (
-        SELECT id, title, description
-        FROM provider_daily_updates
-        WHERE provider_location_id = pl.id
-          AND status = 'ACTIVE'
-          AND valid_from <= now()
-          AND expires_at > now()
-        ORDER BY created_at DESC
+        SELECT u.id, u.title, u.description
+        FROM provider_daily_updates u
+        INNER JOIN provider_daily_update_zone_targets t
+          ON t.update_id = u.id
+         AND t.zone_id = pzm.zone_id
+         AND t.review_status = 'APPROVED'
+        WHERE u.provider_location_id = pl.id
+          AND u.valid_from <= now()
+          AND u.expires_at > now()
+        ORDER BY u.created_at DESC
         LIMIT 1
       ) u ON true
       WHERE pzm.zone_id = ${zoneId}::uuid

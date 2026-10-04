@@ -1,13 +1,16 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   applyDailyStockAction,
+  setDailySellableQty,
   setDailyPrice,
   breakfastPreorderDailyMenus,
   breakfastPreorderMenuItems,
   breakfastPreorderProviderSettings,
   commerceServiceDate,
   copyPreviousDailyAvailability,
+  ensureScheduledWindows,
+  scheduledFulfillmentSettings,
   familyDinnerDailyMenus,
   familyDinnerMenuItems,
   familyDinnerProviderSettings,
@@ -20,13 +23,33 @@ import {
   orders,
   productDailyAvailability,
   providerCapabilities,
+  providerDailyUpdates,
+  providerDailyUpdateZoneTargets,
+  providerZoneMemberships,
+  userCoversLocation,
   providerLocations,
-  providerMembers,
   providers,
   type PickiDb,
 } from "@picki/db";
-import { MARKET_CATALOG_CAP, MARKET_FEATURED_QUOTA, PickiError } from "@picki/shared";
+import {
+  DRAFT_BEER_BASE_VOLUME,
+  DRAFT_BEER_CAPABILITY,
+  DRAFT_BEER_OFFERING_NAME,
+  DRAFT_BEER_VOLUMES,
+  MARKET_CATALOG_CAP,
+  MARKET_FEATURED_QUOTA,
+  MARKET_MORNING_PURPOSE,
+  PickiError,
+  tomorrowDate,
+  suggestDiscoverySurface,
+  type DraftBeerVolume,
+} from "@picki/shared";
 import { PICKI_DB } from "../../shared/tokens.js";
+
+function endOfVnDay(now = new Date()): Date {
+  const day = commerceServiceDate(undefined, now);
+  return new Date(`${day}T17:00:00.000Z`);
+}
 
 const CHANNELS = [
   { capability: "SELL_NOW", label: "Bán ngay", href: null },
@@ -134,12 +157,14 @@ export class FoodBoardService {
         soldQty: productDailyAvailability.soldQty,
         dayStatus: productDailyAvailability.status,
         priceOverrideVnd: productDailyAvailability.priceOverrideVnd,
-        featured: productDailyAvailability.featured,
+        categoryId: offerings.categoryId,
+        alcoholRestricted: offerings.alcoholRestricted,
       })
       .from(offerings)
       .leftJoin(
         productDailyAvailability,
         and(
+          eq(productDailyAvailability.providerLocationId, locationId),
           eq(productDailyAvailability.offeringId, offerings.id),
           eq(productDailyAvailability.serviceDate, today),
         ),
@@ -150,6 +175,7 @@ export class FoodBoardService {
       locationId,
       productRows.map((row) => row.id),
     );
+    const previousQty = await this.previousQtyMap(locationId, today);
 
     const sellNow = productRows.map((row) => {
       const day = remainingOf(
@@ -170,7 +196,12 @@ export class FoodBoardService {
         priceOverrideVnd: row.priceOverrideVnd,
         status: day.status,
         remaining: day.remaining,
-        featured: row.featured === true,
+        suggestedSurface: suggestDiscoverySurface({
+          commerceModel: access.commerceModel,
+          categoryId: row.categoryId,
+        }),
+        alcoholRestricted: row.alcoholRestricted,
+        previousQty: previousQty.get(row.id) ?? null,
       };
     });
 
@@ -188,7 +219,75 @@ export class FoodBoardService {
         : null,
       lunch: caps.LUNCH ? await this.menuSection(locationId, today, "lunch") : null,
       dinner: caps.FAMILY_DINNER ? await this.menuSection(locationId, today, "dinner") : null,
+      spotlights: await this.listSpotlights(locationId),
+      morning:
+        access.commerceModel === "FRESH_MARKET" || access.commerceModel === "RETAIL_STORE"
+          ? await this.morningShelf(access.providerId, locationId)
+          : null,
     };
+  }
+
+  async saveMorningSettings(
+    userId: string,
+    locationId: string,
+    input: {
+      enabled: boolean;
+      cutoffTime: string;
+      prepareLeadMinutes: number;
+      slots: { startsAt: string; endsAt: string }[];
+    },
+  ) {
+    const access = await this.assertFoodLocation(userId, locationId);
+    if (access.commerceModel !== "FRESH_MARKET" && access.commerceModel !== "RETAIL_STORE") {
+      throw new PickiError("FORBIDDEN", "Sáng mai giao dành cho đi chợ");
+    }
+    if (input.slots.length < 1) {
+      throw new PickiError("VALIDATION_ERROR", "Chọn ít nhất một khung giờ");
+    }
+    const slots = input.slots.map((slot) => ({
+      startsAt: slot.startsAt.slice(0, 5),
+      endsAt: slot.endsAt.slice(0, 5),
+    }));
+    const [existing] = await this.db
+      .select({ id: scheduledFulfillmentSettings.id })
+      .from(scheduledFulfillmentSettings)
+      .where(
+        and(
+          eq(scheduledFulfillmentSettings.providerLocationId, locationId),
+          eq(scheduledFulfillmentSettings.purpose, MARKET_MORNING_PURPOSE),
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      await this.db
+        .update(scheduledFulfillmentSettings)
+        .set({
+          enabled: input.enabled,
+          cutoffTime: input.cutoffTime,
+          prepareLeadMinutes: input.prepareLeadMinutes,
+          slots,
+          updatedAt: new Date(),
+        })
+        .where(eq(scheduledFulfillmentSettings.id, existing.id));
+    } else {
+      await this.db.insert(scheduledFulfillmentSettings).values({
+        providerLocationId: locationId,
+        purpose: MARKET_MORNING_PURPOSE,
+        enabled: input.enabled,
+        cutoffTime: input.cutoffTime,
+        prepareLeadMinutes: input.prepareLeadMinutes,
+        slots,
+      });
+    }
+    if (input.enabled) {
+      await ensureScheduledWindows(this.db, {
+        providerLocationId: locationId,
+        serviceDate: tomorrowDate(new Date()),
+        purpose: MARKET_MORNING_PURPOSE,
+        slots,
+      });
+    }
+    return this.board(userId, locationId);
   }
 
   async stockAction(
@@ -197,33 +296,54 @@ export class FoodBoardService {
     input: {
       offeringId: string;
       serviceDate?: string;
-      action: "add" | "sold_out" | "hide" | "show" | "price" | "feature" | "unfeature";
+      action: "add" | "set" | "sold_out" | "hide" | "show" | "price" | "feature" | "unfeature";
       quantity?: number;
       priceVnd?: number | null;
     },
   ) {
     const access = await this.assertFoodLocation(userId, locationId);
     await this.assertOffering(access.providerId, input.offeringId);
-    if (input.action === "feature" || input.action === "unfeature") {
-      await this.setFeatured(access.providerId, input.offeringId, input.action === "feature");
+    const action = input.action;
+    if (action === "feature" || action === "unfeature") {
+      throw new PickiError(
+        "VALIDATION_ERROR",
+        "Đẩy Hôm nay để gửi món lên trang chủ. Ops duyệt rồi mới hiện.",
+      );
+    }
+    if (action === "set") {
+      if (!input.quantity || input.quantity < 1) {
+        throw new PickiError("VALIDATION_ERROR", "Nhập số bán hôm nay");
+      }
+      await this.db.transaction((tx) =>
+        setDailySellableQty(tx, {
+          providerLocationId: locationId,
+          offeringId: input.offeringId,
+          serviceDate: input.serviceDate ?? commerceServiceDate(),
+          quantity: input.quantity!,
+        }),
+      );
       return this.board(userId, locationId);
     }
-    await this.db.transaction(async (tx) => {
-      if (input.action === "price") {
-        await setDailyPrice(tx, {
+    if (action === "price") {
+      await this.db.transaction((tx) =>
+        setDailyPrice(tx, {
+          providerLocationId: locationId,
           offeringId: input.offeringId,
           serviceDate: input.serviceDate ?? commerceServiceDate(),
           priceVnd: input.priceVnd ?? null,
-        });
-        return;
-      }
-      await applyDailyStockAction(tx, {
+        }),
+      );
+      return this.board(userId, locationId);
+    }
+    await this.db.transaction((tx) =>
+      applyDailyStockAction(tx, {
+        providerLocationId: locationId,
         offeringId: input.offeringId,
         serviceDate: input.serviceDate ?? commerceServiceDate(),
-        action: input.action,
+        action,
         quantity: input.quantity,
-      });
-    });
+      }),
+    );
     return this.board(userId, locationId);
   }
 
@@ -246,6 +366,7 @@ export class FoodBoardService {
         .from(productDailyAvailability)
         .where(
           and(
+            eq(productDailyAvailability.providerLocationId, locationId),
             eq(productDailyAvailability.offeringId, item.offeringId),
             eq(productDailyAvailability.serviceDate, menuDate),
           ),
@@ -274,10 +395,130 @@ export class FoodBoardService {
   async copyPrevious(userId: string, locationId: string) {
     const access = await this.assertFoodLocation(userId, locationId);
     const result = await this.db.transaction((tx) =>
-      copyPreviousDailyAvailability(tx, access.providerId, commerceServiceDate()),
+      copyPreviousDailyAvailability(tx, access.providerId, locationId, commerceServiceDate()),
     );
     const board = await this.board(userId, locationId);
     return { ...result, board };
+  }
+
+  async submitSpotlight(
+    userId: string,
+    locationId: string,
+    input: { offeringId: string; title: string; description?: string; promoPriceVnd?: number },
+  ) {
+    const access = await this.assertFoodLocation(userId, locationId);
+    const [offering] = await this.db
+      .select({
+        id: offerings.id,
+        name: offerings.name,
+        status: offerings.status,
+        alcoholRestricted: offerings.alcoholRestricted,
+        categoryId: offerings.categoryId,
+      })
+      .from(offerings)
+      .where(and(eq(offerings.id, input.offeringId), eq(offerings.providerId, access.providerId)))
+      .limit(1);
+    if (!offering || offering.status !== "ACTIVE") {
+      throw new PickiError("VALIDATION_ERROR", "Chỉ đẩy món đang bán");
+    }
+    if (offering.alcoholRestricted) {
+      throw new PickiError("VALIDATION_ERROR", "Bia hơi không đẩy lên trang chủ");
+    }
+    const suggestedSurface = suggestDiscoverySurface({
+      commerceModel: access.commerceModel,
+      categoryId: offering.categoryId,
+    });
+    if (suggestedSurface === "MARKET_TODAY") {
+      const caps = await this.capabilityMap(access.providerId);
+      if (caps.TODAY_FEATURE !== true) {
+        throw new PickiError("FORBIDDEN", "Cửa hàng chưa được bật đẩy hàng lên Đi chợ");
+      }
+      const active = await this.countActiveSurface(access.providerId, "MARKET_TODAY");
+      if (active >= MARKET_FEATURED_QUOTA) {
+        throw new PickiError(
+          "CONFLICT",
+          `Chỉ đẩy ${String(MARKET_FEATURED_QUOTA)} món Đi chợ mỗi ngày`,
+        );
+      }
+    }
+    let promoPriceVnd: number | null = null;
+    if (input.promoPriceVnd != null) {
+      const listPrice = await this.listPriceVnd(locationId, offering.id);
+      if (input.promoPriceVnd <= 0) {
+        throw new PickiError("VALIDATION_ERROR", "Nhập giá khuyến mại");
+      }
+      if (!listPrice || input.promoPriceVnd >= listPrice) {
+        throw new PickiError("VALIDATION_ERROR", "Giá khuyến mại phải thấp hơn giá gốc");
+      }
+      promoPriceVnd = input.promoPriceVnd;
+    }
+    const pending = await this.listSpotlights(locationId);
+    if (pending.some((row) => row.status === "PENDING_REVIEW")) {
+      throw new PickiError("CONFLICT", "Đang có bài chờ duyệt. Rút bài đó trước khi gửi bài mới.");
+    }
+    const expiresAt = endOfVnDay();
+    const [created] = await this.db
+      .insert(providerDailyUpdates)
+      .values({
+        providerLocationId: locationId,
+        updateType: promoPriceVnd != null ? "PROMOTION" : "DAILY_SPECIAL",
+        title: input.title.trim(),
+        description: input.description?.trim() || null,
+        linkedEntityType: "OFFERING",
+        linkedEntityId: offering.id,
+        promoPriceVnd,
+        suggestedSurface,
+        ctaLabel: "Xem món",
+        ctaHref: `/locations/${locationId}?offer=${offering.id}`,
+        validFrom: new Date(),
+        expiresAt,
+        status: "PENDING_REVIEW",
+        createdBy: userId,
+      })
+      .returning({ id: providerDailyUpdates.id });
+    if (!created) throw new PickiError("INTERNAL_ERROR", "Không gửi được bài");
+    const zones = await this.db
+      .select({ zoneId: providerZoneMemberships.zoneId })
+      .from(providerZoneMemberships)
+      .where(
+        and(
+          eq(providerZoneMemberships.providerLocationId, locationId),
+          eq(providerZoneMemberships.status, "ACTIVE"),
+        ),
+      );
+    if (zones.length > 0) {
+      await this.db.insert(providerDailyUpdateZoneTargets).values(
+        zones.map((zone) => ({
+          updateId: created.id,
+          zoneId: zone.zoneId,
+          reviewStatus: "PENDING_REVIEW",
+        })),
+      );
+    }
+    return this.board(userId, locationId);
+  }
+
+  async withdrawSpotlight(userId: string, locationId: string, updateId: string) {
+    const access = await this.assertFoodLocation(userId, locationId);
+    const [row] = await this.db
+      .select({ id: providerDailyUpdates.id, status: providerDailyUpdates.status })
+      .from(providerDailyUpdates)
+      .where(
+        and(
+          eq(providerDailyUpdates.id, updateId),
+          eq(providerDailyUpdates.providerLocationId, locationId),
+        ),
+      )
+      .limit(1);
+    if (!row || (row.status !== "PENDING_REVIEW" && row.status !== "ACTIVE")) {
+      throw new PickiError("CONFLICT", "Chỉ gỡ được bài đang chờ duyệt hoặc đang hiện");
+    }
+    void access;
+    await this.db
+      .update(providerDailyUpdates)
+      .set({ status: "HIDDEN", updatedAt: new Date() })
+      .where(eq(providerDailyUpdates.id, updateId));
+    return this.board(userId, locationId);
   }
 
   async listCategories(userId: string, locationId: string) {
@@ -294,7 +535,8 @@ export class FoodBoardService {
   async listProducts(userId: string, locationId: string) {
     const access = await this.assertFoodLocation(userId, locationId);
     const rows = (await this.productRows(access.providerId)).filter((row) =>
-      access.commerceModel === "FOOD_SERVICE" ? true : row.status === "ACTIVE",
+      row.status !== "DELETED" &&
+      (access.commerceModel === "FOOD_SERVICE" || row.status === "ACTIVE"),
     );
     const priceByOffering = await this.priceMap(
       locationId,
@@ -313,9 +555,12 @@ export class FoodBoardService {
         categoryId: row.categoryId,
         categoryName: row.categoryId ? (categories.get(row.categoryId) ?? null) : null,
         active: row.status === "ACTIVE",
+        reviewStatus: row.status,
         priceVnd: priceByOffering.get(row.id) ?? 0,
         onBreakfastMenu: breakfastIds.has(row.id),
+        alcoholRestricted: row.alcoholRestricted,
       })),
+      draftBeer: await this.draftBeerState(access.providerId),
     };
   }
 
@@ -333,6 +578,12 @@ export class FoodBoardService {
     input: ProductInput,
   ) {
     const access = await this.assertFoodLocation(userId, locationId);
+    if (input.name.trim() === DRAFT_BEER_OFFERING_NAME) {
+      throw new PickiError(
+        "VALIDATION_ERROR",
+        "Bia hơi tạo ở mục riêng sau khi Ops bật",
+      );
+    }
     await this.assertCatalogCap(access.providerId, access.providerType);
     await this.assertGoodsCategory(access.commerceModel, input.categoryId);
     this.assertMarketPrice(access.commerceModel, input.priceVnd);
@@ -364,6 +615,48 @@ export class FoodBoardService {
     return { id: created!.id };
   }
 
+  async deleteProduct(userId: string, locationId: string, offeringId: string) {
+    const access = await this.assertFoodLocation(userId, locationId);
+    await this.assertOffering(access.providerId, offeringId);
+    const [existing] = await this.db
+      .select({ status: offerings.status })
+      .from(offerings)
+      .where(eq(offerings.id, offeringId))
+      .limit(1);
+    if (!existing || existing.status === "DELETED") {
+      throw new PickiError("NOT_FOUND", "Không thấy món");
+    }
+    const previousStatus = existing.status === "ARCHIVED" ? "ARCHIVED" : "ACTIVE";
+    await this.db
+      .update(offerings)
+      .set({ status: "DELETED", updatedAt: new Date() })
+      .where(eq(offerings.id, offeringId));
+    return { ok: true, previousStatus };
+  }
+
+  async restoreProduct(
+    userId: string,
+    locationId: string,
+    offeringId: string,
+    previousStatus: "ACTIVE" | "ARCHIVED",
+  ) {
+    const access = await this.assertFoodLocation(userId, locationId);
+    await this.assertOffering(access.providerId, offeringId);
+    const [existing] = await this.db
+      .select({ status: offerings.status })
+      .from(offerings)
+      .where(eq(offerings.id, offeringId))
+      .limit(1);
+    if (existing?.status !== "DELETED") {
+      throw new PickiError("CONFLICT", "Món này không còn trong mục vừa xóa");
+    }
+    await this.db
+      .update(offerings)
+      .set({ status: previousStatus, updatedAt: new Date() })
+      .where(eq(offerings.id, offeringId));
+    return { ok: true };
+  }
+
   async updateProduct(
     userId: string,
     locationId: string,
@@ -372,6 +665,17 @@ export class FoodBoardService {
   ) {
     const access = await this.assertFoodLocation(userId, locationId);
     await this.assertOffering(access.providerId, offeringId);
+    const [existing] = await this.db
+      .select({ alcoholRestricted: offerings.alcoholRestricted })
+      .from(offerings)
+      .where(eq(offerings.id, offeringId))
+      .limit(1);
+    if (existing?.alcoholRestricted) {
+      throw new PickiError("VALIDATION_ERROR", "Bia hơi sửa ở mục riêng");
+    }
+    if (input.name?.trim() === DRAFT_BEER_OFFERING_NAME) {
+      throw new PickiError("VALIDATION_ERROR", "Bia hơi tạo ở mục riêng sau khi Ops bật");
+    }
     if (input.categoryId) await this.assertGoodsCategory(access.commerceModel, input.categoryId);
     if (input.priceVnd !== undefined) this.assertMarketPrice(access.commerceModel, input.priceVnd);
     await this.db
@@ -497,6 +801,7 @@ export class FoodBoardService {
             .from(productDailyAvailability)
             .where(
               and(
+                eq(productDailyAvailability.providerLocationId, locationId),
                 inArray(productDailyAvailability.offeringId, offeringIds),
                 eq(productDailyAvailability.serviceDate, menu.serviceDate),
               ),
@@ -654,6 +959,7 @@ export class FoodBoardService {
         prepTimeMinutes: offerings.prepTimeMinutes,
         categoryId: offerings.categoryId,
         status: offerings.status,
+        alcoholRestricted: offerings.alcoholRestricted,
       })
       .from(offerings)
       .where(eq(offerings.providerId, providerId))
@@ -784,49 +1090,96 @@ export class FoodBoardService {
     }
   }
 
-  private async setFeatured(providerId: string, offeringId: string, featured: boolean) {
-    const today = commerceServiceDate();
-    if (featured) {
-      const [cap] = await this.db
-        .select({ enabled: providerCapabilities.enabled })
-        .from(providerCapabilities)
-        .where(
-          and(
-            eq(providerCapabilities.providerId, providerId),
-            eq(providerCapabilities.capability, "TODAY_FEATURE"),
-            eq(providerCapabilities.enabled, true),
-          ),
-        )
-        .limit(1);
-      if (!cap) throw new PickiError("FORBIDDEN", "Cửa hàng chưa bật đẩy nổi bật");
-      const [used] = await this.db
-        .select({ n: count() })
-        .from(productDailyAvailability)
-        .where(
-          and(
-            eq(productDailyAvailability.providerId, providerId),
-            eq(productDailyAvailability.serviceDate, today),
-            eq(productDailyAvailability.featured, true),
-            ne(productDailyAvailability.offeringId, offeringId),
-          ),
-        );
-      if (Number(used?.n ?? 0) >= MARKET_FEATURED_QUOTA) {
-        throw new PickiError("CONFLICT", `Chỉ đẩy ${String(MARKET_FEATURED_QUOTA)} món nổi bật mỗi ngày`);
-      }
-    }
-    await this.db
-      .insert(productDailyAvailability)
-      .values({
-        providerId,
-        offeringId,
-        serviceDate: today,
-        status: "AVAILABLE",
-        featured,
+  private async previousQtyMap(locationId: string, today: string) {
+    const rows = await this.db
+      .selectDistinctOn([productDailyAvailability.offeringId], {
+        offeringId: productDailyAvailability.offeringId,
+        availableQty: productDailyAvailability.availableQty,
       })
-      .onConflictDoUpdate({
-        target: [productDailyAvailability.offeringId, productDailyAvailability.serviceDate],
-        set: { featured, updatedAt: new Date() },
-      });
+      .from(productDailyAvailability)
+      .where(
+        and(
+          eq(productDailyAvailability.providerLocationId, locationId),
+          sql`${productDailyAvailability.serviceDate} < ${today}::date`,
+          sql`${productDailyAvailability.availableQty} IS NOT NULL`,
+        ),
+      )
+      .orderBy(productDailyAvailability.offeringId, desc(productDailyAvailability.serviceDate));
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      if (row.availableQty != null) map.set(row.offeringId, row.availableQty);
+    }
+    return map;
+  }
+
+  private async listSpotlights(locationId: string) {
+    const rows = await this.db
+      .select({
+        id: providerDailyUpdates.id,
+        updateType: providerDailyUpdates.updateType,
+        title: providerDailyUpdates.title,
+        description: providerDailyUpdates.description,
+        offeringId: providerDailyUpdates.linkedEntityId,
+        status: providerDailyUpdates.status,
+        createdAt: providerDailyUpdates.createdAt,
+        offeringName: offerings.name,
+        promoPriceVnd: providerDailyUpdates.promoPriceVnd,
+        suggestedSurface: providerDailyUpdates.suggestedSurface,
+        approvedSurface: providerDailyUpdates.approvedSurface,
+      })
+      .from(providerDailyUpdates)
+      .leftJoin(offerings, eq(offerings.id, providerDailyUpdates.linkedEntityId))
+      .where(
+        and(
+          eq(providerDailyUpdates.providerLocationId, locationId),
+          eq(providerDailyUpdates.linkedEntityType, "OFFERING"),
+          inArray(providerDailyUpdates.status, ["PENDING_REVIEW", "ACTIVE", "REJECTED"]),
+          sql`${providerDailyUpdates.expiresAt} > now()`,
+        ),
+      )
+      .orderBy(desc(providerDailyUpdates.createdAt));
+    return rows.map((row) => ({
+      id: row.id,
+      updateType: row.updateType,
+      title: row.title,
+      description: row.description,
+      offeringId: row.offeringId,
+      offeringName: row.offeringName,
+      promoPriceVnd: row.promoPriceVnd,
+      suggestedSurface: row.suggestedSurface,
+      approvedSurface: row.approvedSurface,
+      status: row.status,
+      createdAt: row.createdAt.toISOString(),
+    }));
+  }
+
+  private async listPriceVnd(locationId: string, offeringId: string) {
+    const rows = await this.db
+      .select({
+        amountVnd: offeringPrices.amountVnd,
+        locationId: offeringPrices.providerLocationId,
+      })
+      .from(offeringPrices)
+      .where(eq(offeringPrices.offeringId, offeringId));
+    const atLocation = rows.find((row) => row.locationId === locationId);
+    const master = rows.find((row) => row.locationId == null);
+    return atLocation?.amountVnd ?? master?.amountVnd ?? 0;
+  }
+
+  private async countActiveSurface(providerId: string, surface: string) {
+    const [row] = await this.db
+      .select({ n: count() })
+      .from(providerDailyUpdates)
+      .innerJoin(providerLocations, eq(providerLocations.id, providerDailyUpdates.providerLocationId))
+      .where(
+        and(
+          eq(providerLocations.providerId, providerId),
+          eq(providerDailyUpdates.status, "ACTIVE"),
+          eq(providerDailyUpdates.approvedSurface, surface),
+          sql`${providerDailyUpdates.expiresAt} > now()`,
+        ),
+      );
+    return Number(row?.n ?? 0);
   }
 
   private async upsertLocationPrice(locationId: string, offeringId: string, priceVnd: number) {
@@ -865,6 +1218,139 @@ export class FoodBoardService {
     return map;
   }
 
+  async draftBeer(userId: string, locationId: string) {
+    const access = await this.assertFoodLocation(userId, locationId);
+    const state = await this.draftBeerState(access.providerId);
+    if (!state.offeringId) return { ...state, prices: null, description: null, active: false };
+    const groups = await this.optionGroupsFor(state.offeringId);
+    const volume = groups.find((group) => group.name === "Dung tích");
+    const [row] = await this.db
+      .select({
+        description: offerings.description,
+        status: offerings.status,
+      })
+      .from(offerings)
+      .where(eq(offerings.id, state.offeringId))
+      .limit(1);
+    const prices = await this.priceMap(locationId, [state.offeringId]);
+    const base = prices.get(state.offeringId) ?? 0;
+    const byVolume: Record<string, number> = {};
+    for (const volumeName of DRAFT_BEER_VOLUMES) {
+      const option = volume?.options.find((item) => item.name === volumeName);
+      byVolume[volumeName] = base + (option?.priceDeltaVnd ?? 0);
+    }
+    return {
+      ...state,
+      prices: byVolume,
+      description: row?.description ?? null,
+      active: row?.status === "ACTIVE",
+    };
+  }
+
+  async upsertDraftBeer(
+    userId: string,
+    locationId: string,
+    input: {
+      prices: Record<DraftBeerVolume, number>;
+      description?: string | null;
+      active?: boolean;
+    },
+  ) {
+    const access = await this.assertFoodLocation(userId, locationId);
+    if (access.commerceModel !== "FOOD_SERVICE") {
+      throw new PickiError("VALIDATION_ERROR", "Chỉ quán ăn mới bán bia hơi");
+    }
+    const caps = await this.capabilityMap(access.providerId);
+    if (!caps[DRAFT_BEER_CAPABILITY]) {
+      throw new PickiError("FORBIDDEN", "Ops chưa bật bia hơi cho quán");
+    }
+    const base = input.prices[DRAFT_BEER_BASE_VOLUME];
+    for (const volume of DRAFT_BEER_VOLUMES) {
+      const price = input.prices[volume];
+      if (!Number.isInteger(price) || price < 1) {
+        throw new PickiError("VALIDATION_ERROR", `Giá ${volume} phải lớn hơn 0`);
+      }
+      if (price < base) {
+        throw new PickiError("VALIDATION_ERROR", "Giá dung tích phải từ mức 500ml trở lên");
+      }
+    }
+    const description =
+      input.description?.trim() ||
+      "Rót tại quán sau khi thanh toán. Đựng chai thực phẩm, đậy nắp kín, không rò. Không bán cốc mở hay túi nilon.";
+    const [existing] = await this.db
+      .select({ id: offerings.id })
+      .from(offerings)
+      .where(and(eq(offerings.providerId, access.providerId), eq(offerings.alcoholRestricted, true)))
+      .limit(1);
+    const offeringId = existing
+      ? existing.id
+      : (
+          await this.db
+            .insert(offerings)
+            .values({
+              providerId: access.providerId,
+              slug: await this.uniqueSlug(access.providerId, "bia-hoi"),
+              name: DRAFT_BEER_OFFERING_NAME,
+              description,
+              unit: "chai",
+              status: input.active === false ? "INACTIVE" : "ACTIVE",
+              alcoholRestricted: true,
+              paymentPolicy: "PREPAY_REQUIRED",
+            })
+            .returning({ id: offerings.id })
+        )[0]?.id;
+    if (!offeringId) throw new PickiError("CONFLICT", "Không tạo được bia hơi");
+    await this.db
+      .update(offerings)
+      .set({
+        name: DRAFT_BEER_OFFERING_NAME,
+        description,
+        unit: "chai",
+        status: input.active === false ? "INACTIVE" : "ACTIVE",
+        alcoholRestricted: true,
+        paymentPolicy: "PREPAY_REQUIRED",
+        updatedAt: new Date(),
+      })
+      .where(eq(offerings.id, offeringId));
+    const [price] = await this.db
+      .select({ id: offeringPrices.id })
+      .from(offeringPrices)
+      .where(
+        and(eq(offeringPrices.offeringId, offeringId), eq(offeringPrices.providerLocationId, locationId)),
+      )
+      .limit(1);
+    if (price) {
+      await this.db.update(offeringPrices).set({ amountVnd: base }).where(eq(offeringPrices.id, price.id));
+    } else {
+      await this.db.insert(offeringPrices).values({
+        offeringId,
+        providerLocationId: locationId,
+        amountVnd: base,
+      });
+    }
+    await this.replaceOptionGroups(offeringId, [
+      {
+        name: "Dung tích",
+        kind: "SINGLE",
+        options: DRAFT_BEER_VOLUMES.map((volume) => ({
+          name: volume,
+          priceDeltaVnd: input.prices[volume] - base,
+        })),
+      },
+    ]);
+    return this.draftBeer(userId, locationId);
+  }
+
+  private async draftBeerState(providerId: string) {
+    const caps = await this.capabilityMap(providerId);
+    const [row] = await this.db
+      .select({ id: offerings.id })
+      .from(offerings)
+      .where(and(eq(offerings.providerId, providerId), eq(offerings.alcoholRestricted, true)))
+      .limit(1);
+    return { allowed: Boolean(caps[DRAFT_BEER_CAPABILITY]), offeringId: row?.id ?? null };
+  }
+
   private async capabilityMap(providerId: string) {
     const rows = await this.db
       .select({ capability: providerCapabilities.capability, enabled: providerCapabilities.enabled })
@@ -897,6 +1383,81 @@ export class FoodBoardService {
     return `${base}-${Date.now().toString(36)}`;
   }
 
+  private async morningShelf(providerId: string, locationId: string) {
+    const serviceDate = tomorrowDate(new Date());
+    const [settings] = await this.db
+      .select()
+      .from(scheduledFulfillmentSettings)
+      .where(
+        and(
+          eq(scheduledFulfillmentSettings.providerLocationId, locationId),
+          eq(scheduledFulfillmentSettings.purpose, MARKET_MORNING_PURPOSE),
+        ),
+      )
+      .limit(1);
+    if (settings?.enabled) {
+      await ensureScheduledWindows(this.db, {
+        providerLocationId: locationId,
+        serviceDate,
+        purpose: MARKET_MORNING_PURPOSE,
+        slots: settings.slots,
+      });
+    }
+    const productRows = await this.db
+      .select({
+        id: offerings.id,
+        name: offerings.name,
+        unit: offerings.unit,
+        availableQty: productDailyAvailability.availableQty,
+        reservedQty: productDailyAvailability.reservedQty,
+        soldQty: productDailyAvailability.soldQty,
+        dayStatus: productDailyAvailability.status,
+        priceOverrideVnd: productDailyAvailability.priceOverrideVnd,
+      })
+      .from(offerings)
+      .leftJoin(
+        productDailyAvailability,
+        and(
+          eq(productDailyAvailability.providerLocationId, locationId),
+          eq(productDailyAvailability.offeringId, offerings.id),
+          eq(productDailyAvailability.serviceDate, serviceDate),
+        ),
+      )
+      .where(and(eq(offerings.providerId, providerId), eq(offerings.status, "ACTIVE")))
+      .orderBy(offerings.sortOrder, offerings.name);
+    const priceByOffering = await this.priceMap(
+      locationId,
+      productRows.map((row) => row.id),
+    );
+    return {
+      serviceDate,
+      enabled: settings?.enabled ?? false,
+      cutoffTime: settings ? String(settings.cutoffTime).slice(0, 5) : null,
+      prepareLeadMinutes: settings?.prepareLeadMinutes ?? null,
+      slots: settings?.slots ?? [],
+      items: productRows.map((row) => {
+        const day = remainingOf(
+          row.dayStatus
+            ? {
+                availableQty: row.availableQty,
+                reservedQty: row.reservedQty ?? 0,
+                soldQty: row.soldQty ?? 0,
+                status: row.dayStatus,
+              }
+            : undefined,
+        );
+        return {
+          offeringId: row.id,
+          name: row.name,
+          unit: row.unit,
+          priceVnd: priceByOffering.get(row.id) ?? 0,
+          status: day.status,
+          remaining: day.remaining,
+        };
+      }),
+    };
+  }
+
   private async assertFoodLocation(userId: string, locationId: string) {
     const [location] = await this.db
       .select({
@@ -916,12 +1477,9 @@ export class FoodBoardService {
     ) {
       throw new PickiError("FORBIDDEN", "Màn này dành cho quán ăn hoặc cửa hàng đi chợ");
     }
-    const members = await this.db
-      .select()
-      .from(providerMembers)
-      .where(and(eq(providerMembers.userId, userId), eq(providerMembers.providerId, location.providerId)));
-    const allowed = members.some((m) => !m.providerLocationId || m.providerLocationId === locationId);
-    if (!allowed) throw new PickiError("FORBIDDEN", "Not a staff member for this location");
+    if (!(await userCoversLocation(this.db, userId, locationId))) {
+      throw new PickiError("FORBIDDEN", "Not a staff member for this location");
+    }
     return location;
   }
 }

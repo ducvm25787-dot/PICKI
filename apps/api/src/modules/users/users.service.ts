@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { userIdentities, userRoles, users, type PickiDb } from "@picki/db";
 import {
+  isAtLeast18,
   PickiError,
   type AuthUserDto,
   type IdentityProviderKind,
@@ -67,7 +68,11 @@ export class UsersService {
     return {
       id: user.id,
       displayName: user.displayName,
+      avatarUrl: user.avatarUrl,
       activeZoneId: user.activeZoneId,
+      draftBeerAllowed: Boolean(
+        user.ageDeclaredAt && user.declaredDateOfBirth && isAtLeast18(user.declaredDateOfBirth),
+      ),
       roles,
       identities,
     };
@@ -109,12 +114,17 @@ export class UsersService {
 
   async updateProfile(
     userId: string,
-    patch: { displayName?: string | null; activeZoneId?: string | null },
+    patch: {
+      displayName?: string | null;
+      avatarUrl?: string | null;
+      activeZoneId?: string | null;
+    },
   ): Promise<UserRecord> {
     const [updated] = await this.db
       .update(users)
       .set({
         ...(patch.displayName !== undefined ? { displayName: patch.displayName } : {}),
+        ...(patch.avatarUrl !== undefined ? { avatarUrl: patch.avatarUrl } : {}),
         ...(patch.activeZoneId !== undefined
           ? { activeZoneId: patch.activeZoneId }
           : {}),
@@ -126,6 +136,33 @@ export class UsersService {
     if (!updated) {
       throw new PickiError("NOT_FOUND", "User not found");
     }
+    return updated;
+  }
+
+  async declareDraftBeerAge(
+    userId: string,
+    input: { fullName: string; dateOfBirth: string },
+  ): Promise<UserRecord> {
+    const fullName = input.fullName.trim();
+    if (fullName.length < 2) {
+      throw new PickiError("VALIDATION_ERROR", "Nhập họ tên");
+    }
+    if (!isAtLeast18(input.dateOfBirth)) {
+      throw new PickiError("FORBIDDEN", "Chưa đủ 18 tuổi");
+    }
+    const current = await this.findById(userId);
+    if (!current) throw new PickiError("NOT_FOUND", "User not found");
+    const [updated] = await this.db
+      .update(users)
+      .set({
+        declaredFullName: fullName,
+        declaredDateOfBirth: input.dateOfBirth,
+        ageDeclaredAt: current.ageDeclaredAt ?? new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    if (!updated) throw new PickiError("NOT_FOUND", "User not found");
     return updated;
   }
 }

@@ -69,6 +69,8 @@ describe.skipIf(!databaseUrl)("verified location QR", () => {
       providerId: provider!.id,
       providerLocationId: location!.id,
       role: "OWNER",
+      scopeType: "LOCATION",
+      scopeId: location!.id,
     });
     adminId = admin!.id;
     customerId = customer!.id;

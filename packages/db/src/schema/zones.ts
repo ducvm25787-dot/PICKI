@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { createdAt, updatedAt } from "./helpers.js";
 import { multiPolygon4326 } from "../geometry.js";
+import { experienceCities } from "./experiences.js";
 import { users } from "./identity.js";
 
 export const zoneCandidates = pgTable("zone_candidates", {
@@ -32,6 +33,9 @@ export const zones = pgTable("zones", {
   name: text("name").notNull(),
   displayName: text("display_name").notNull(),
   status: text("status").notNull().default("DRAFT"),
+  cityId: uuid("city_id")
+    .notNull()
+    .references(() => experienceCities.id),
   anchorLng: doublePrecision("anchor_lng").notNull(),
   anchorLat: doublePrecision("anchor_lat").notNull(),
   candidateId: uuid("candidate_id").references(() => zoneCandidates.id, {

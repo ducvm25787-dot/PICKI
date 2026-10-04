@@ -4,7 +4,7 @@ import {
   canServiceRequestTransition,
   offerings,
   providerLocations,
-  providerMembers,
+  userCoversLocation,
   providers,
   serviceRequestActionToStatus,
   serviceRequests,
@@ -414,17 +414,7 @@ export class ServiceRequestsService {
       throw new PickiError("NOT_FOUND", "Location not found");
     }
 
-    const member = await this.db
-      .select({ id: providerMembers.id })
-      .from(providerMembers)
-      .where(
-        and(
-          eq(providerMembers.userId, userId),
-          eq(providerMembers.providerId, location[0].providerId),
-        ),
-      )
-      .limit(1);
-    if (!member[0]) {
+    if (!(await userCoversLocation(this.db, userId, locationId))) {
       throw new PickiError("FORBIDDEN", "No access to this location");
     }
   }

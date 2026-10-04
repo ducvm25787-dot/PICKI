@@ -16,7 +16,7 @@ type VisitIntent = {
   expiresAt: string;
   createdAt: string;
   shopWaitingAt: string | null;
-  customer: { displayName: string; phone: string | null };
+  customer: { displayName: string | null; avatarUrl?: string | null; phone: string | null };
 };
 
 type VisitListResponse = {
@@ -148,8 +148,19 @@ export default function ProviderIncomingPage() {
             const rejecting = rejectingId === intent.id;
             return (
               <article key={intent.id} className="provider-card">
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <strong>{intent.customer.displayName}</strong>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+                  <OrderPhoneLinks
+                    contacts={{
+                      customer: {
+                        phone: intent.customer.phone,
+                        displayName: intent.customer.displayName,
+                        avatarUrl: intent.customer.avatarUrl,
+                      },
+                      provider: { phone: null },
+                    }}
+                    showOnly="customer"
+                    compact
+                  />
                   <span className="badge" style={{ fontSize: 11 }}>
                     #{String(index + 1)}
                   </span>
@@ -164,21 +175,6 @@ export default function ProviderIncomingPage() {
                   expiresAt={intent.expiresAt}
                   onExpired={() => void load()}
                 />
-                {intent.customer.phone ? (
-                  <div style={{ marginTop: 10 }}>
-                    <OrderPhoneLinks
-                      contacts={{
-                        customer: {
-                          phone: intent.customer.phone,
-                          displayName: intent.customer.displayName,
-                        },
-                        provider: { phone: null },
-                      }}
-                      showOnly="customer"
-                      compact
-                    />
-                  </div>
-                ) : null}
                 {intent.shopWaitingAt ? (
                   <p className="stat" style={{ margin: "8px 0 0", fontSize: 13, color: "#2d6a4f" }}>
                     ✓ Đã báo khách: tiệm đang chờ (

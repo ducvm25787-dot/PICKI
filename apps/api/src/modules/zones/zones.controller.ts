@@ -60,6 +60,12 @@ export class ZonesController {
     return this.addressesService.listZoneAddresses(userId, zoneId);
   }
 
+  @Get(":zoneId/places")
+  @UseGuards(SessionAuthGuard)
+  async listPlaces(@CurrentUserId() userId: string, @Param("zoneId") zoneId: string) {
+    return this.zonesService.listPlaces(userId, zoneId);
+  }
+
   @Post(":zoneId/addresses")
   @UseGuards(SessionAuthGuard)
   @HttpCode(200)

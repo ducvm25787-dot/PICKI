@@ -11,6 +11,8 @@ import {
 import { api } from "../../../../lib/api";
 import { getCurrentPositionOnce } from "../../../../lib/geolocation";
 import { PickeeMap } from "../../../components/pickee-map";
+import { isFoodBreakfastVertical } from "../../../../lib/providers";
+import { LiveStatusCard } from "../live/live-status-card";
 import { ProviderOpeningForm } from "./opening-form";
 import { VerifiedQrImage } from "../../../components/verified-qr-image";
 
@@ -168,12 +170,12 @@ export default function ProviderSettingsPage() {
 
   async function locateShop() {
     const geo = await getCurrentPositionOnce({ timeoutMs: 10000 });
-    setPin(geo.position);
     if (geo.source !== "gps") {
-      setError(geo.error ?? "GPS không sẵn — đang dùng vị trí tạm");
-    } else {
-      setError(null);
+      setError(geo.error ?? "Không lấy được GPS. Giữ nguyên vị trí quán, không ghi điểm tạm.");
+      return;
     }
+    setPin(geo.position);
+    setError(null);
   }
 
   async function logout() {
@@ -182,8 +184,11 @@ export default function ProviderSettingsPage() {
     router.replace("/provider/login");
   }
 
+  const foodShop = isFoodBreakfastVertical(activeLocation?.providerType);
+
   return (
-    <ProviderPageShell title="Cài đặt">
+    <ProviderPageShell title={foodShop ? "Cài đặt gian hàng" : "Cài đặt"}>
+      {foodShop ? <LiveStatusCard /> : null}
       <div className="card" style={{ marginBottom: 16 }}>
         <p className="section-title">Chi nhánh</p>
         {locations.length <= 1 ? (
@@ -431,11 +436,8 @@ export default function ProviderSettingsPage() {
       <div className="card" style={{ marginBottom: 16 }}>
         <p className="section-title">Habit-First</p>
         <p className="stat" style={{ marginTop: 0 }}>
-          Đăng nhanh &quot;Hôm nay có&quot; cho khách trong Zone · nhãn khách quen trên đơn.
+          Món đặc biệt chọn trong mục Hôm nay, từ kho Sản phẩm. Nhãn khách quen gắn trên đơn.
         </p>
-        <Link href="/provider/today" className="btn" style={{ display: "block", marginBottom: 8, textAlign: "center" }}>
-          Hôm nay có →
-        </Link>
         <Link
           href="/provider/loyalty"
           className="btn btn-secondary"

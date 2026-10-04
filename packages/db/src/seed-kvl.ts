@@ -53,13 +53,14 @@ async function seed() {
 
       const [zone] = await tx<{ id: string }[]>`
         INSERT INTO zones (
-          slug, name, display_name, status,
+          slug, name, display_name, status, city_id,
           anchor_lng, anchor_lat, candidate_id
         ) VALUES (
           ${KVL_SLUG},
           ${"Kim Văn – Kim Lũ"},
           ${"PICKI · KIM VĂN KIM LŨ"},
           ${"ACTIVE"},
+          (SELECT id FROM experience_cities WHERE code = 'Hanoi'),
           ${ANCHOR.lng},
           ${ANCHOR.lat},
           ${candidate.id}::uuid

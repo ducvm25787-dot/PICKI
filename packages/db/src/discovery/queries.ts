@@ -78,7 +78,7 @@ export async function listDiscoveryProviders(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
           AND (o.food_moment = ANY(${foodMoments}) OR o.food_moment IS NULL)
         ORDER BY o.sort_order
         LIMIT 1
@@ -100,7 +100,7 @@ export async function listDiscoveryProviders(
       AND (
         EXISTS (
           SELECT 1 FROM offerings o
-          WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+          WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
             AND o.food_moment = ANY(${foodMoments})
         )
       )
@@ -207,7 +207,7 @@ export async function listBreakfastPreorderProvidersEnabled(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order
         LIMIT 1
       ) AS sample_offering,
@@ -266,7 +266,7 @@ export async function listLateNightProvidersEnabled(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order
         LIMIT 1
       ) AS sample_offering,
@@ -326,7 +326,7 @@ export async function listHomeServiceProviders(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order
         LIMIT 1
       ) AS sample_offering
@@ -374,7 +374,7 @@ export async function listBeautyProviders(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order
         LIMIT 1
       ) AS sample_offering
@@ -430,7 +430,7 @@ export async function listPetProviders(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order
         LIMIT 1
       ) AS sample_offering
@@ -486,7 +486,7 @@ export async function listSportsProviders(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order
         LIMIT 1
       ) AS sample_offering
@@ -534,7 +534,7 @@ export async function listAutoProviders(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order
         LIMIT 1
       ) AS sample_offering
@@ -593,7 +593,7 @@ export async function listHealthProviders(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order
         LIMIT 1
       ) AS sample_offering
@@ -654,7 +654,7 @@ export async function listPharmacyProviders(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order
         LIMIT 1
       ) AS sample_offering
@@ -711,7 +711,7 @@ export async function listTransportProviders(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order
         LIMIT 1
       ) AS sample_offering
@@ -767,7 +767,7 @@ export async function listMarketProviders(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order
         LIMIT 1
       ) AS sample_offering
@@ -831,7 +831,7 @@ export async function listMarketShelf(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order
         LIMIT 1
       ) AS sample_offering
@@ -908,7 +908,7 @@ export async function listEducationProviders(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order
         LIMIT 1
       ) AS sample_offering
@@ -956,7 +956,7 @@ export async function listLaundryProviders(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order
         LIMIT 1
       ) AS sample_offering,
@@ -975,7 +975,84 @@ export async function listLaundryProviders(
   `;
 }
 
-export type ExploreChip = "new" | "open" | "near" | "popular";
+export type ExploreChip = "new" | "open" | "near" | "popular" | "bia-hoi";
+
+/** Shops Ops enabled for draft beer, with an active sealed-pour offering. */
+export async function listDraftBeerProviders(
+  sql: PickiSql,
+  zoneId: string,
+  opts?: { limit?: number },
+): Promise<DiscoveryProviderRow[]> {
+  const limit = opts?.limit ?? 8;
+  return sql<DiscoveryProviderRow[]>`
+    SELECT
+      pl.id AS location_id,
+      p.id AS provider_id,
+      p.brand_name,
+      pl.display_name,
+      p.provider_type,
+      COALESCE(
+        (
+          SELECT 'Bia hơi từ ' || COALESCE(op.amount_vnd, opm.amount_vnd)::text || 'đ'
+          FROM offerings beer
+          LEFT JOIN offering_prices op ON op.offering_id = beer.id AND op.provider_location_id = pl.id
+          LEFT JOIN offering_prices opm ON opm.offering_id = beer.id AND opm.provider_location_id IS NULL
+          WHERE beer.provider_id = p.id
+            AND beer.alcohol_restricted = true
+            AND beer.status = 'ACTIVE'
+          LIMIT 1
+        ),
+        pp.tagline
+      ) AS tagline,
+      COALESCE(pls.status, 'OFFLINE') AS live_status,
+      pls.prep_minutes,
+      pls.eta_minutes,
+      pls.estimated_wait_minutes,
+      pl.address_line,
+      pl.lat,
+      pl.lng,
+      (
+        SELECT ROUND(AVG(lr.rating)::numeric, 1)::text
+        FROM location_reviews lr
+        WHERE lr.provider_location_id = pl.id
+      ) AS avg_rating,
+      (
+        SELECT COUNT(*)::text FROM location_reviews lr
+        WHERE lr.provider_location_id = pl.id
+      ) AS review_count,
+      (
+        SELECT o.name FROM offerings o
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
+        ORDER BY o.sort_order LIMIT 1
+      ) AS sample_offering,
+      pp.logo_url
+    FROM provider_zone_memberships pzm
+    INNER JOIN provider_locations pl ON pl.id = pzm.provider_location_id
+    INNER JOIN providers p ON p.id = pl.provider_id
+    INNER JOIN provider_capabilities pc
+      ON pc.provider_id = p.id AND pc.capability = 'DRAFT_BEER_SALES' AND pc.enabled = true
+    LEFT JOIN provider_profiles pp ON pp.provider_id = p.id
+    LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
+    WHERE pzm.zone_id = ${zoneId}::uuid
+      AND pzm.status = 'ACTIVE'
+      AND pl.status = 'ACTIVE'
+      AND p.status = 'ACTIVE'
+      AND COALESCE(pls.status, 'OFFLINE') IN ('OPEN', 'BUSY')
+      AND EXISTS (
+        SELECT 1 FROM offerings beer
+        LEFT JOIN product_daily_availability day
+          ON day.offering_id = beer.id
+          AND day.provider_location_id = pl.id
+          AND day.service_date = (timezone('Asia/Ho_Chi_Minh', now()))::date
+        WHERE beer.provider_id = p.id
+          AND beer.alcohol_restricted = true
+          AND beer.status = 'ACTIVE'
+          AND (day.status IS NULL OR day.status NOT IN ('HIDDEN', 'SOLD_OUT'))
+      )
+    ORDER BY p.brand_name
+    LIMIT ${limit}
+  `;
+}
 
 /**
  * Home «Khám phá» chips — zone-scoped, no meter distance.
@@ -1018,7 +1095,7 @@ export async function listExploreProviders(
         ) AS review_count,
         (
           SELECT o.name FROM offerings o
-          WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+          WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
           ORDER BY o.sort_order LIMIT 1
         ) AS sample_offering,
         pp.logo_url
@@ -1069,7 +1146,7 @@ export async function listExploreProviders(
         ) AS review_count,
         (
           SELECT o.name FROM offerings o
-          WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+          WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
           ORDER BY o.sort_order LIMIT 1
         ) AS sample_offering,
         pp.logo_url
@@ -1123,7 +1200,7 @@ export async function listExploreProviders(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order LIMIT 1
       ) AS sample_offering,
       pp.logo_url
@@ -1186,7 +1263,7 @@ export async function listProvidersByTypes(
       ) AS review_count,
       (
         SELECT o.name FROM offerings o
-        WHERE o.provider_id = p.id AND o.status = 'ACTIVE'
+        WHERE o.provider_id = p.id AND o.status = 'ACTIVE' AND o.alcohol_restricted = false
         ORDER BY o.sort_order
         LIMIT 1
       ) AS sample_offering,

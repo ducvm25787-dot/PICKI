@@ -5,34 +5,40 @@ import {
   Inject,
   Injectable,
 } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { userRoles, type PickiDb } from "@picki/db";
+import { resolveAdminAccess, type AdminAccess } from "@picki/shared";
 import { PICKI_DB } from "../../shared/tokens.js";
 import type { AuthenticatedRequest } from "./session-auth.guard.js";
 
-const ADMIN_ROLES = ["ZONE_ADMIN", "SUPER_ADMIN", "SUPPORT"] as const;
+export type AdminRequest = AuthenticatedRequest & { adminAccess: AdminAccess };
 
 @Injectable()
 export class AdminRoleGuard implements CanActivate {
   constructor(@Inject(PICKI_DB) private readonly db: PickiDb) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const req = context.switchToHttp().getRequest<AdminRequest>();
     const userId = req.userId;
     if (!userId) {
       throw new ForbiddenException("Admin access required");
     }
 
     const rows = await this.db
-      .select()
+      .select({
+        role: userRoles.role,
+        scopeType: userRoles.scopeType,
+        scopeId: userRoles.scopeId,
+      })
       .from(userRoles)
-      .where(and(eq(userRoles.userId, userId), inArray(userRoles.role, [...ADMIN_ROLES])))
-      .limit(1);
+      .where(eq(userRoles.userId, userId));
 
-    if (rows.length === 0) {
+    const access = resolveAdminAccess(rows);
+    if (!access) {
       throw new ForbiddenException("Admin access required");
     }
 
+    req.adminAccess = access;
     return true;
   }
 }

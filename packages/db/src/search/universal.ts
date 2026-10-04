@@ -53,6 +53,7 @@ export async function searchZoneUniversal(
     zoneId: string;
     query: string;
     familiarLocationIds?: string[];
+    includeDraftBeer?: boolean;
   },
 ): Promise<SearchGroup[]> {
   const q = opts.query.trim();
@@ -128,6 +129,7 @@ export async function searchZoneUniversal(
       WHERE pzm.zone_id = ${opts.zoneId}::uuid
         AND pzm.status = 'ACTIVE' AND pl.status = 'ACTIVE' AND p.status = 'ACTIVE'
         AND o.status = 'ACTIVE'
+        AND (${opts.includeDraftBeer === true} OR o.alcohol_restricted = false)
         AND EXISTS (
           SELECT 1 FROM terms t
           WHERE o.name ILIKE t.pat
@@ -165,6 +167,10 @@ export async function searchZoneUniversal(
         AND fdm.service_date >= (CURRENT_DATE - 1)
         AND fdm.service_date <= (CURRENT_DATE + 1)
         AND fi.status IN ('ACTIVE', 'SOLD_OUT')
+        AND (
+          ${opts.includeDraftBeer === true}
+          OR (fi.name <> 'Bia hơi' AND fi.name NOT ILIKE 'Bia hơi %')
+        )
         AND EXISTS (
           SELECT 1 FROM terms t
           WHERE fi.name ILIKE t.pat
@@ -203,6 +209,10 @@ export async function searchZoneUniversal(
         AND bdm.service_date >= CURRENT_DATE
         AND bdm.service_date <= (CURRENT_DATE + 2)
         AND bi.status IN ('ACTIVE', 'SOLD_OUT')
+        AND (
+          ${opts.includeDraftBeer === true}
+          OR (bi.name <> 'Bia hơi' AND bi.name NOT ILIKE 'Bia hơi %')
+        )
         AND EXISTS (
           SELECT 1 FROM terms t
           WHERE bi.name ILIKE t.pat

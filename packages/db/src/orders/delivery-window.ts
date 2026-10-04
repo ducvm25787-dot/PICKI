@@ -3,6 +3,7 @@ import { isDaypartMenuOrder } from "@picki/shared";
 import {
   breakfastPreorderDeliveryWindows,
   familyDinnerDeliveryWindows,
+  scheduledDeliveryWindows,
 } from "../schema/index.js";
 import type { PickiDb } from "../client.js";
 
@@ -25,8 +26,25 @@ export async function loadOrderDeliveryWindow(
     orderKind?: string | null;
     deliveryWindowId?: string | null;
     breakfastDeliveryWindowId?: string | null;
+    scheduledDeliveryWindowId?: string | null;
   },
 ): Promise<OrderDeliveryWindowSnap | null> {
+  if (order.scheduledDeliveryWindowId) {
+    const rows = await db
+      .select({
+        startsAt: scheduledDeliveryWindows.startsAt,
+        endsAt: scheduledDeliveryWindows.endsAt,
+      })
+      .from(scheduledDeliveryWindows)
+      .where(eq(scheduledDeliveryWindows.id, order.scheduledDeliveryWindowId))
+      .limit(1);
+    const w = rows[0];
+    if (!w) return null;
+    const startsAt = hhMm(w.startsAt);
+    const endsAt = hhMm(w.endsAt);
+    return { startsAt, endsAt, label: `${startsAt}–${endsAt}` };
+  }
+
   if (isDaypartMenuOrder(order.orderKind) && order.breakfastDeliveryWindowId) {
     const rows = await db
       .select({

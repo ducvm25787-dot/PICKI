@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createPickiDb } from "../client.js";
 import { migrate } from "../migrator.js";
 import { offerings, productDailyAvailability } from "../schema/catalog.js";
+import { experienceCities } from "../schema/experiences.js";
 import { orders } from "../schema/orders.js";
 import { providerLocations, providers } from "../schema/providers.js";
 import { users } from "../schema/identity.js";
@@ -32,12 +33,18 @@ describe.skipIf(!databaseUrl)("offering daily stock", () => {
   beforeAll(async () => {
     await migrate({ databaseUrl });
     const [user] = await db.insert(users).values({ displayName: slug }).returning();
+    const [city] = await db
+      .select({ id: experienceCities.id })
+      .from(experienceCities)
+      .where(eq(experienceCities.code, "Hanoi"))
+      .limit(1);
     const [zone] = await db
       .insert(zones)
       .values({
         slug,
         name: slug,
         displayName: slug,
+        cityId: city!.id,
         anchorLng: 105.84,
         anchorLat: 20.98,
       })
@@ -97,6 +104,7 @@ describe.skipIf(!databaseUrl)("offering daily stock", () => {
 
     await db.insert(productDailyAvailability).values({
       providerId,
+      providerLocationId: locationId,
       offeringId,
       serviceDate,
       status: "AVAILABLE",
@@ -119,6 +127,7 @@ describe.skipIf(!databaseUrl)("offering daily stock", () => {
       db.transaction((tx) =>
         reserveOfferingStock(tx, {
           orderId: orderA,
+          providerLocationId: locationId,
           serviceDate,
           lines: [{ offeringId, quantity: 1, name: "Chim câu" }],
         }),
@@ -126,6 +135,7 @@ describe.skipIf(!databaseUrl)("offering daily stock", () => {
       db.transaction((tx) =>
         reserveOfferingStock(tx, {
           orderId: orderB,
+          providerLocationId: locationId,
           serviceDate,
           lines: [{ offeringId, quantity: 1, name: "Chim câu" }],
         }),
@@ -155,12 +165,13 @@ describe.skipIf(!databaseUrl)("offering daily stock", () => {
     await db.transaction((tx) =>
       reserveOfferingStock(tx, {
         orderId: orderA,
+        providerLocationId: locationId,
         serviceDate,
         lines: [{ offeringId, quantity: 1, name: "Chim câu" }],
       }),
     );
     await db.transaction((tx) =>
-      addDailySellableQty(tx, { offeringId, serviceDate, quantity: 5 }),
+      addDailySellableQty(tx, { providerLocationId: locationId, offeringId, serviceDate, quantity: 5 }),
     );
     const [restocked] = await db
       .select()
@@ -190,6 +201,7 @@ describe.skipIf(!databaseUrl)("offering daily stock", () => {
       .returning();
     await db.transaction((tx) =>
       applyDailyStockAction(tx, {
+        providerLocationId: locationId,
         offeringId: hidden!.id,
         serviceDate,
         action: "hide",
@@ -199,6 +211,7 @@ describe.skipIf(!databaseUrl)("offering daily stock", () => {
       db.transaction((tx) =>
         reserveOfferingStock(tx, {
           orderId: order!.id,
+          providerLocationId: locationId,
           serviceDate,
           lines: [{ offeringId: hidden!.id, quantity: 1, name: "Món ẩn" }],
         }),

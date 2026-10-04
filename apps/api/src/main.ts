@@ -15,8 +15,8 @@ async function bootstrap() {
     bodyParser: false,
   });
 
-  app.use(expressJson({ limit: "1mb" }));
-  app.use(expressUrlencoded({ extended: true, limit: "1mb" }));
+  app.use(expressJson({ limit: "2mb" }));
+  app.use(expressUrlencoded({ extended: true, limit: "2mb" }));
 
   app.useStaticAssets(path.join(process.cwd(), "storage", "uploads"), {
     prefix: "/v1/uploads/",

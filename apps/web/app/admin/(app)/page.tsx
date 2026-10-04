@@ -2,82 +2,103 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { AdminPageShell } from "../../components/admin-session-context";
+import { useRouter } from "next/navigation";
+import { AdminPageShell, useAdminSession } from "../../components/admin-session-context";
 import { api } from "../../../lib/api";
 
 type Dashboard = {
-  orders: { total: number; active: number; byStatus: { status: string; count: number }[] };
+  orders: { total: number; active: number };
   members: number;
   providerLocations: number;
   activeRunners: number;
 };
 
-type AnalyticsSummary = {
-  days: number;
-  counts: { eventName: string; count: number }[];
+type ZoneRow = {
+  id: string;
+  slug: string;
+  displayName: string;
+  status: string;
+  memberCount: number;
+  providerLocationCount: number;
+  runnerCount: number;
+  orderCount: number;
 };
 
 export default function AdminDashboardPage() {
+  const router = useRouter();
+  const { session } = useAdminSession();
   const [data, setData] = useState<Dashboard | null>(null);
-  const [habit, setHabit] = useState<AnalyticsSummary | null>(null);
+  const [zones, setZones] = useState<ZoneRow[]>([]);
 
   useEffect(() => {
+    if (!session) return;
+    if (!session.superAdmin && !session.supportReadOnlyGlobal) {
+      if (session.zones.length === 1 && session.cities.length === 0) {
+        router.replace(`/admin/zones/${session.zones[0]!.slug}/overview`);
+      }
+      return;
+    }
     void api<Dashboard>("/admin/dashboard").then(setData);
-    void api<AnalyticsSummary>("/analytics/summary?days=7")
-      .then(setHabit)
-      .catch(() => setHabit(null));
-  }, []);
+    void api<{ zones: ZoneRow[] }>("/admin/zones").then((res) => setZones(res.zones));
+  }, [router, session]);
+
+  if (session && !session.superAdmin && !session.supportReadOnlyGlobal) {
+    return (
+      <AdminPageShell title={session.cities.length > 0 && session.zones.length === 0 ? "Thành phố" : "Chọn phạm vi"}>
+        <div className="card">
+          {session.cities.map((city) => (
+            <p key={city.id}>
+              {city.label}
+              {" · "}
+              <Link href="/admin/experiences">Trải nghiệm</Link>
+              {" · "}
+              <Link href="/admin/settings">Banner</Link>
+            </p>
+          ))}
+          {session.zones.map((zone) => (
+            <p key={zone.id}>
+              <Link href={`/admin/zones/${zone.slug}/overview`}>{zone.displayName}</Link>
+            </p>
+          ))}
+          {session.cities.length === 0 && session.zones.length === 0 ? (
+            <p className="stat">Tài chính theo khu sẽ mở sau khi phạm vi vận hành đã khóa.</p>
+          ) : null}
+        </div>
+      </AdminPageShell>
+    );
+  }
 
   return (
-    <AdminPageShell title="Dashboard pilot KVL">
+    <AdminPageShell title="Tất cả khu vực">
       <div className="card" style={{ marginBottom: 16 }}>
         <p className="section-title">Tổng quan</p>
         {data ? (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Stat label="Đơn (tổng)" value={String(data.orders.total)} />
-            <Stat label="Đơn active" value={String(data.orders.active)} />
-            <Stat label="Members" value={String(data.members)} />
-            <Stat label="Quán" value={String(data.providerLocations)} />
-            <Stat label="Runners" value={String(data.activeRunners)} />
+            <Stat label="Khu vực" value={String(zones.length)} />
+            <Stat label="Đang hoạt động" value={String(zones.filter((zone) => zone.status === "ACTIVE" || zone.status === "PILOT").length)} />
+            <Stat label="Tài khoản" value={String(data.members)} />
+            <Stat label="Cơ sở" value={String(data.providerLocations)} />
+            <Stat label="Đơn" value={String(data.orders.total)} />
+            <Stat label="Tài xế đang chạy" value={String(data.activeRunners)} />
           </div>
         ) : (
           <p className="stat">Đang tải…</p>
         )}
       </div>
-      {data && data.orders.byStatus.length > 0 ? (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <p className="section-title">Đơn theo trạng thái</p>
-          {data.orders.byStatus.map((s) => (
-            <p key={s.status} className="stat" style={{ margin: "4px 0" }}>
-              {s.status}: <strong>{s.count}</strong>
-            </p>
-          ))}
-        </div>
-      ) : null}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <p className="section-title">Quán</p>
-        <p className="stat">Xác minh cơ sở và in QR dán tại cửa.</p>
-        <Link href="/admin/shops" className="btn" style={{ width: "auto", marginTop: 8 }}>
-          Mở danh sách quán
-        </Link>
-      </div>
       <div className="card">
-        <p className="section-title">Habit analytics (7 ngày)</p>
-        {!habit ? (
-          <p className="stat" style={{ margin: 0 }}>
-            Chưa có dữ liệu / không tải được.
-          </p>
-        ) : habit.counts.length === 0 ? (
-          <p className="stat" style={{ margin: 0 }}>
-            Chưa ghi event — mở Home / tìm kiếm / đặt lại để sinh số liệu.
-          </p>
-        ) : (
-          habit.counts.map((c) => (
-            <p key={c.eventName} className="stat" style={{ margin: "4px 0" }}>
-              {c.eventName}: <strong>{c.count}</strong>
+        <p className="section-title">Khu vực</p>
+        {zones.map((zone) => (
+          <article key={zone.id} className="provider-card" style={{ marginBottom: 12 }}>
+            <strong>{zone.displayName}</strong>
+            <p className="stat">
+              {zone.status} · {zone.memberCount} tài khoản · {zone.providerLocationCount} quán · {zone.runnerCount} tài xế · {zone.orderCount} đơn
             </p>
-          ))
-        )}
+            <Link href={`/admin/zones/${zone.slug}/overview`}>Vào khu vực</Link>
+          </article>
+        ))}
+        <p className="stat" style={{ marginTop: 8 }}>
+          <Link href="/admin/zones">Quản lý khu vực</Link>
+        </p>
       </div>
     </AdminPageShell>
   );
@@ -85,11 +106,9 @@ export default function AdminDashboardPage() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ padding: 12, background: "#f1f5f9", borderRadius: 10 }}>
-      <p className="stat" style={{ margin: "0 0 4px" }}>
-        {label}
-      </p>
-      <p style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{value}</p>
+    <div>
+      <p className="stat" style={{ margin: 0 }}>{label}</p>
+      <strong>{value}</strong>
     </div>
   );
 }

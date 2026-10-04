@@ -6,9 +6,10 @@ import {
   conversations,
   messages,
   orders,
+  membersCoveringLocation,
   providerLocations,
-  providerMembers,
   providers,
+  userCoversLocation,
   runners,
   type PickiDb,
 } from "@picki/db";
@@ -305,10 +306,7 @@ export class MessagingService {
       throw new PickiError("NOT_FOUND", "Nhà thuốc không tìm thấy");
     }
 
-    const staff = await this.db
-      .select({ userId: providerMembers.userId, role: providerMembers.role })
-      .from(providerMembers)
-      .where(eq(providerMembers.providerId, loc.providerId));
+    const staff = await membersCoveringLocation(this.db, loc.id);
 
     const pharmacyUserIds = staff.map((s) => s.userId);
     if (pharmacyUserIds.includes(userId)) {
@@ -393,10 +391,7 @@ export class MessagingService {
       throw new PickiError("NOT_FOUND", "Cửa hàng không tìm thấy");
     }
 
-    const staff = await this.db
-      .select({ userId: providerMembers.userId, role: providerMembers.role })
-      .from(providerMembers)
-      .where(eq(providerMembers.providerId, loc.providerId));
+    const staff = await membersCoveringLocation(this.db, loc.id);
 
     const shopUserIds = staff.map((s) => s.userId);
     if (shopUserIds.includes(userId)) {
@@ -480,10 +475,7 @@ export class MessagingService {
       throw new PickiError("NOT_FOUND", "Nhà xe không tìm thấy");
     }
 
-    const staff = await this.db
-      .select({ userId: providerMembers.userId, role: providerMembers.role })
-      .from(providerMembers)
-      .where(eq(providerMembers.providerId, loc.providerId));
+    const staff = await membersCoveringLocation(this.db, loc.id);
 
     const shopUserIds = staff.map((s) => s.userId);
     if (shopUserIds.includes(userId)) {
@@ -736,19 +728,8 @@ export class MessagingService {
   private async orderParticipantIds(order: typeof orders.$inferSelect): Promise<string[]> {
     const ids = new Set<string>([order.customerUserId]);
 
-    const location = await this.db
-      .select({ providerId: providerLocations.providerId })
-      .from(providerLocations)
-      .where(eq(providerLocations.id, order.providerLocationId))
-      .limit(1);
-
-    if (location[0]) {
-      const staff = await this.db
-        .select({ userId: providerMembers.userId })
-        .from(providerMembers)
-        .where(eq(providerMembers.providerId, location[0].providerId));
-      staff.forEach((s) => ids.add(s.userId));
-    }
+    const staff = await membersCoveringLocation(this.db, order.providerLocationId);
+    staff.forEach((s) => ids.add(s.userId));
 
     if (order.runnerUserId) {
       ids.add(order.runnerUserId);
@@ -760,18 +741,7 @@ export class MessagingService {
   private async assertOrderAccess(userId: string, order: typeof orders.$inferSelect) {
     if (order.customerUserId === userId) return;
 
-    const staff = await this.db
-      .select({ id: providerMembers.id })
-      .from(providerMembers)
-      .innerJoin(providerLocations, eq(providerMembers.providerId, providerLocations.providerId))
-      .where(
-        and(
-          eq(providerMembers.userId, userId),
-          eq(providerLocations.id, order.providerLocationId),
-        ),
-      )
-      .limit(1);
-    if (staff[0]) return;
+    if (await userCoversLocation(this.db, userId, order.providerLocationId)) return;
 
     if (order.runnerUserId === userId) return;
 

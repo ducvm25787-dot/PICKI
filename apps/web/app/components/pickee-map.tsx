@@ -192,6 +192,7 @@ export function PickeeMap({
 }: Props) {
   const [liveZoom, setLiveZoom] = useState(zoom);
   const fittedKeyRef = useRef<string>("");
+  const viewLockRef = useRef({ userAdjusted: false, ignoreZoomEnd: false, zoomProp: zoom });
   const domId = useId().replace(/:/g, "");
   const mapRef = useRef<LeafletMap | null>(null);
   const markersRef = useRef<Marker[]>([]);
@@ -258,6 +259,14 @@ export function PickeeMap({
         });
         map.on("zoomend", () => {
           setLiveZoom(map.getZoom());
+          if (viewLockRef.current.ignoreZoomEnd) {
+            viewLockRef.current.ignoreZoomEnd = false;
+            return;
+          }
+          viewLockRef.current.userAdjusted = true;
+        });
+        map.on("dragend", () => {
+          viewLockRef.current.userAdjusted = true;
         });
 
         mapRef.current = map;
@@ -267,20 +276,25 @@ export function PickeeMap({
           setTimeout(() => map.invalidateSize(), 100);
           setTimeout(() => map.invalidateSize(), 400);
         });
-      } else if (!draggingRef.current && !compactMarkers) {
-        if (followCenter) {
-          mapRef.current.setView([center.lat, center.lng], mapRef.current.getZoom(), {
-            animate: true,
+      } else if (!draggingRef.current) {
+        const zoomPropChanged = viewLockRef.current.zoomProp !== zoom;
+        if (zoomPropChanged) {
+          viewLockRef.current.zoomProp = zoom;
+          viewLockRef.current.userAdjusted = false;
+        }
+        if (followCenter || (zoomPropChanged && !compactMarkers)) {
+          const nextZoom = zoomPropChanged ? zoom : mapRef.current.getZoom();
+          const before = mapRef.current.getZoom();
+          viewLockRef.current.ignoreZoomEnd = true;
+          mapRef.current.setView([center.lat, center.lng], nextZoom, {
+            animate: followCenter,
           });
-        } else {
-          mapRef.current.setView([center.lat, center.lng], zoom);
+          if (mapRef.current.getZoom() === before && nextZoom === before) {
+            viewLockRef.current.ignoreZoomEnd = false;
+          }
         }
         requestAnimationFrame(() => {
           mapRef.current?.invalidateSize();
-        });
-      } else if (!draggingRef.current && compactMarkers && followCenter) {
-        mapRef.current.setView([center.lat, center.lng], mapRef.current.getZoom(), {
-          animate: true,
         });
       }
 
@@ -397,11 +411,13 @@ export function PickeeMap({
         latLngs.push([m.lat, m.lng]);
       }
 
-      if (!followCenter) {
-        const fitKey = `${markersKey}|${polygonKey}|${focusId ?? ""}`;
+      if (!followCenter && !viewLockRef.current.userAdjusted) {
+        const fitKey = `${markersKey}|${polygonKey}|${routeKey}|${focusId ?? ""}`;
         const alreadyFitted = fittedKeyRef.current === fitKey;
         if (!alreadyFitted) {
           fittedKeyRef.current = fitKey;
+          const beforeFit = map.getZoom();
+          viewLockRef.current.ignoreZoomEnd = true;
           if (polygonRef.current && latLngs.length === 0) {
             try {
               map.fitBounds(polygonRef.current.getBounds(), { padding: [28, 28], maxZoom: 16 });
@@ -413,10 +429,14 @@ export function PickeeMap({
           } else if (fitMarkers && latLngs.length === 1) {
             map.setView(latLngs[0]!, Math.max(zoom, 16));
           }
+          if (map.getZoom() === beforeFit) {
+            viewLockRef.current.ignoreZoomEnd = false;
+          }
 
           if (focusId) {
             const focused = markers.find((m) => m.id === focusId);
             if (focused) {
+              viewLockRef.current.ignoreZoomEnd = true;
               map.setView([focused.lat, focused.lng], Math.max(zoom, 17));
             }
           }

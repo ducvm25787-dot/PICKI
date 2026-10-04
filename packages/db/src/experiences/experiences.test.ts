@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { findPossibleDuplicate } from "./duplicate.js";
 import { foldText } from "./fold.js";
-import { selectHomeExperiences } from "./home.js";
+import { HOME_EXPERIENCE_ROTATE_MS, selectHomeExperiences } from "./home.js";
 import { parseExperienceImport } from "./validate.js";
-import { homeContext, occurrenceInWindow, filterWindow } from "./windows.js";
+import { homeContext, occurrenceInWindow, occurrenceStillListed, filterWindow } from "./windows.js";
 import type { ExperienceImport } from "./validate.js";
 
 const base = {
@@ -123,17 +123,30 @@ test("a show three weeks out stays in upcoming and out of this weekend", () => {
   assert.equal(occurrenceInWindow(show, filterWindow("weekend", now), now), false);
 });
 
-test("home prefers featured inside the window, then falls back", () => {
-  const start = new Date("2026-09-26T19:00:00+07:00");
-  const featured = selectHomeExperiences([
-    { id: "plain", featuredRank: null, startAt: start },
-    { id: "lead", featuredRank: 1, startAt: start },
-  ]);
-  assert.equal(featured.source, "featured");
-  assert.deepEqual(featured.items.map((item) => item.id), ["lead"]);
+test("a show comes down once its Vietnam calendar day has passed", () => {
+  const fridayNight = new Date("2026-10-02T20:00:00+07:00");
+  const saturdayMorning = new Date("2026-10-03T11:46:00+07:00");
+  const saturdayNight = new Date("2026-10-03T20:00:00+07:00");
+  assert.equal(occurrenceStillListed(fridayNight, saturdayMorning), false);
+  assert.equal(occurrenceStillListed(saturdayNight, saturdayMorning), true);
+  assert.equal(occurrenceStillListed(fridayNight, new Date("2026-10-02T23:30:00+07:00")), true);
+});
 
-  const fallback = selectHomeExperiences([{ id: "plain", featuredRank: null, startAt: start }]);
-  assert.equal(fallback.source, "fallback");
-  assert.equal(fallback.items[0]?.id, "plain");
+test("home rotates every live show equally", () => {
+  const start = new Date("2026-10-03T20:00:00+07:00");
+  const fitting = [
+    { id: "c", featuredRank: 1, startAt: start },
+    { id: "a", featuredRank: null, startAt: start },
+    { id: "b", featuredRank: 9, startAt: new Date(start.getTime() + 60_000) },
+  ];
+  const seen = new Set<string>();
+  for (let step = 0; step < fitting.length; step += 1) {
+    const now = new Date(step * HOME_EXPERIENCE_ROTATE_MS);
+    const selected = selectHomeExperiences(fitting, now);
+    assert.equal(selected.source, "rotation");
+    assert.equal(selected.items.length, 3);
+    seen.add(selected.items[0]!.id);
+  }
+  assert.deepEqual([...seen].sort(), ["a", "b", "c"]);
   assert.equal(selectHomeExperiences([]).source, "empty");
 });

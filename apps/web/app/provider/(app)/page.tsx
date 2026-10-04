@@ -44,14 +44,22 @@ type ProviderOrder = {
   runnerUserId: string | null;
   runner: { displayName: string } | null;
   deliveryWindow?: { startsAt: string; endsAt: string; label: string } | null;
-  delivery: { building: string | null; apartment: string | null };
+  scheduledPrepareOpen?: boolean | null;
+  delivery: {
+    building: string | null;
+    apartment: string | null;
+    accessNote?: string | null;
+    runnerWaitMinutes?: number;
+    runnerWaitFeeVnd?: number;
+  };
   customerNote?: string | null;
   contacts?: {
-    customer: { phone: string | null; displayName?: string | null };
+    customer: { phone: string | null; displayName?: string | null; avatarUrl?: string | null };
     provider: { phone: string | null; label?: string };
     runner?: { phone: string | null; displayName?: string | null } | null;
   };
   customerLoyalty?: { label: string; completedInteractions: number };
+  containsAlcohol?: boolean;
   items: { name: string; quantity: number; familyDinnerCategory?: string | null }[];
 };
 
@@ -72,11 +80,6 @@ function patchOrder(prev: ProviderOrder, patch: Partial<ProviderOrder>): Provide
 }
 
 const PICKUP_PIPELINE = new Set(["RUNNER_ASSIGNED", "PREPARING", "READY"]);
-
-const REJECT_PRESETS = [
-  "Tiệm đang quá tải, mong quý khách thông cảm",
-  "Tiệm đang sửa chữa, mong quý khách thông cảm",
-] as const;
 
 type HandoffBatch = {
   runnerUserId: string;
@@ -131,7 +134,6 @@ export default function ProviderOrdersPage() {
   const [actingId, setActingId] = useState<string | null>(null);
   const [runnerStats, setRunnerStats] = useState<DailyRunnerStats | null>(null);
   const [rejectOrderId, setRejectOrderId] = useState<string | null>(null);
-  const [rejectPreset, setRejectPreset] = useState<string>(REJECT_PRESETS[0]);
   const [rejectCustom, setRejectCustom] = useState("");
   const [fdCutoffTime, setFdCutoffTime] = useState<string | null>(null);
   const [bfCutoffTime, setBfCutoffTime] = useState<string | null>(null);
@@ -260,19 +262,14 @@ export default function ProviderOrdersPage() {
 
   function openReject(orderId: string) {
     setRejectOrderId(orderId);
-    setRejectPreset(REJECT_PRESETS[0]);
     setRejectCustom("");
     setActionError(null);
   }
 
   async function confirmReject() {
     if (!rejectOrderId) return;
-    const reason = rejectCustom.trim() || rejectPreset;
-    if (!reason) {
-      setActionError("Vui lòng chọn hoặc nhập lý do từ chối");
-      return;
-    }
-    await action(rejectOrderId, "reject", { rejectReason: reason });
+    const reason = rejectCustom.trim();
+    await action(rejectOrderId, "reject", reason ? { rejectReason: reason } : undefined);
     setRejectOrderId(null);
   }
 
@@ -294,28 +291,9 @@ export default function ProviderOrdersPage() {
           }}
         >
           <p className="section-title">Lý do từ chối đơn</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
-            {REJECT_PRESETS.map((preset) => (
-              <label
-                key={preset}
-                style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 14, cursor: "pointer" }}
-              >
-                <input
-                  type="radio"
-                  name="reject-preset"
-                  checked={rejectPreset === preset && !rejectCustom.trim()}
-                  onChange={() => {
-                    setRejectPreset(preset);
-                    setRejectCustom("");
-                  }}
-                />
-                {preset}
-              </label>
-            ))}
-          </div>
-          <label className="stat" style={{ display: "block", marginBottom: 6 }}>
-            Hoặc nhập lý do khác
-          </label>
+          <p className="stat" style={{ marginTop: 0 }}>
+            Có thể để trống. Khách nhận thông báo “Đơn hàng bị từ chối”.
+          </p>
           <input
             type="text"
             value={rejectCustom}
@@ -636,12 +614,17 @@ export default function ProviderOrdersPage() {
                     Đang chờ runner nhận chặng giao về.
                   </p>
                 ) : null}
-                {o.contacts?.customer.phone ? (
+                {o.contacts ? (
                   <OrderPhoneLinks contacts={o.contacts} showOnly="customer" compact />
                 ) : null}
                 {batch ? (
                   <p className="stat" style={{ margin: "8px 0", fontSize: 13, color: "#b45309" }}>
                     Batch: {handoffBatchMessage(batch)}
+                  </p>
+                ) : null}
+                {o.containsAlcohol ? (
+                  <p style={{ margin: "4px 0 8px", fontWeight: 700 }}>
+                    18+ · Có đồ uống có cồn. Rót sau khi thanh toán, đậy nắp kín, không giao cốc mở hay túi nilon.
                   </p>
                 ) : null}
                 <p style={{ fontSize: 14, margin: "4px 0 8px" }}>
@@ -655,6 +638,7 @@ export default function ProviderOrdersPage() {
                 </p>
                 {o.deliveryWindow?.label || o.serviceDate ? (
                   <p className="stat" style={{ marginBottom: 4 }}>
+                    {o.orderKind === "STANDARD" && o.serviceDate ? "Sáng mai giao · " : null}
                     {o.deliveryWindow?.label
                       ? `Khung giao: ${o.deliveryWindow.label}`
                       : null}
@@ -665,6 +649,14 @@ export default function ProviderOrdersPage() {
                 <p className="stat" style={{ marginBottom: 8 }}>
                   Giao: {o.delivery.building}-{o.delivery.apartment}
                 </p>
+                {o.delivery.accessNote ? (
+                  <p className="stat" style={{ margin: "0 0 8px", fontSize: 13 }}>
+                    {o.delivery.accessNote}
+                    {(o.delivery.runnerWaitFeeVnd ?? 0) > 0
+                      ? ` · Phí chờ ${formatVnd(o.delivery.runnerWaitFeeVnd ?? 0)} (quán trả, cộng vào phí runner)`
+                      : ""}
+                  </p>
+                ) : null}
                 {o.customerNote ? (
                   <p style={{ margin: "0 0 8px", fontSize: 14 }}>
                     Khách nhắn: {o.customerNote}
@@ -880,10 +872,10 @@ export default function ProviderOrdersPage() {
                       type="button"
                       className="btn provider-btn"
                       style={{ width: "auto", padding: "8px 12px" }}
-                      disabled={busy}
+                      disabled={busy || o.scheduledPrepareOpen === false}
                       onClick={() => void action(o.id, "ready")}
                     >
-                      {busy ? "…" : "Sẵn sàng giao"}
+                      {busy ? "…" : o.scheduledPrepareOpen === false ? "Chưa tới giờ chuẩn bị" : "Sẵn sàng giao"}
                     </button>
                   ) : null}
                   {o.serviceVertical !== "LAUNDRY" &&
@@ -1012,12 +1004,14 @@ export default function ProviderOrdersPage() {
                         type="button"
                         className="btn provider-btn"
                         style={{ width: "auto", padding: "8px 12px" }}
-                        disabled={busy}
+                        disabled={busy || o.scheduledPrepareOpen === false}
                         onClick={() => void action(o.id, "find_runner")}
                       >
                         {busy
                           ? "…"
-                          : `Tìm runner${(o.runnerFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? 0)}` : ""}`}
+                          : o.scheduledPrepareOpen === false
+                            ? "Chưa tới giờ tìm runner"
+                            : `Tìm runner${(o.runnerFeeVnd ?? 0) > 0 ? ` · ${formatVnd(o.runnerFeeVnd ?? 0)}` : ""}`}
                       </button>
                       {cookFirst ? (
                         <>

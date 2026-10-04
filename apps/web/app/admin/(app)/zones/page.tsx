@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { AdminPageShell } from "../../../components/admin-session-context";
+import { AdminPageShell, useAdminSession } from "../../../components/admin-session-context";
 import { api } from "../../../../lib/api";
 
 type AdminZone = {
@@ -15,6 +15,7 @@ type AdminZone = {
 };
 
 export default function AdminZonesPage() {
+  const { session } = useAdminSession();
   const [zones, setZones] = useState<AdminZone[]>([]);
 
   useEffect(() => {
@@ -22,9 +23,9 @@ export default function AdminZonesPage() {
   }, []);
 
   return (
-    <AdminPageShell title="Zones">
+    <AdminPageShell title="Khu vực">
       <p className="stat" style={{ marginBottom: 12 }}>
-        Setup quan trọng: chỉnh polygon, vùng lõi, neo GPS, xác nhận vị trí shop — mở từng Zone.
+        Tạo và sửa ranh giới khu vực. Vận hành đơn, quán, tài xế nằm trong từng khu.
       </p>
       <div className="card">
         {zones.length === 0 ? (
@@ -40,12 +41,21 @@ export default function AdminZonesPage() {
                 {z.memberCount} members · {z.providerLocationCount} quán
               </p>
               <Link
-                href={`/admin/zones/${z.id}`}
+                href={`/admin/zones/${z.slug}/overview`}
                 className="order-phone-link"
                 style={{ marginTop: 8, display: "inline-flex" }}
               >
-                Setup bản đồ (polygon · GPS · shop)
+                Vào vận hành
               </Link>
+              {session?.superAdmin ? (
+                <Link
+                  href={`/admin/zones/${z.slug}/map`}
+                  className="order-phone-link"
+                  style={{ marginTop: 8, marginLeft: 12, display: "inline-flex" }}
+                >
+                  Bản đồ
+                </Link>
+              ) : null}
             </article>
           ))
         )}

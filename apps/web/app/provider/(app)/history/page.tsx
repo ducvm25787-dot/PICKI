@@ -29,7 +29,7 @@ type VisitHistoryIntent = {
   etaMinutes: number;
   expectedAt: string;
   arrivedAt: string | null;
-  customer: { displayName: string; phone: string | null };
+  customer: { displayName: string | null; avatarUrl?: string | null; phone: string | null };
 };
 
 function formatDateTime(iso: string): string {
@@ -75,7 +75,18 @@ function BeautyVisitHistory() {
       ) : (
         intents.map((intent) => (
           <article key={intent.id} className="provider-card" style={{ marginBottom: 12 }}>
-            <strong>{intent.customer.displayName}</strong>
+            <OrderPhoneLinks
+              contacts={{
+                customer: {
+                  phone: intent.customer.phone,
+                  displayName: intent.customer.displayName,
+                  avatarUrl: intent.customer.avatarUrl,
+                },
+                provider: { phone: null },
+              }}
+              showOnly="customer"
+              compact
+            />
             <p className="stat" style={{ margin: "6px 0" }}>
               {intent.offeringName ?? "Dịch vụ"}
               {" · "}
@@ -89,19 +100,6 @@ function BeautyVisitHistory() {
               <p className="stat" style={{ margin: "0 0 8px", fontSize: 13 }}>
                 Đã tới lúc {formatDateTime(intent.arrivedAt)}
               </p>
-            ) : null}
-            {intent.customer.phone ? (
-              <OrderPhoneLinks
-                contacts={{
-                  customer: {
-                    phone: intent.customer.phone,
-                    displayName: intent.customer.displayName,
-                  },
-                  provider: { phone: null },
-                }}
-                showOnly="customer"
-                compact
-              />
             ) : null}
           </article>
         ))

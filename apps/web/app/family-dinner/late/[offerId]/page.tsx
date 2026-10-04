@@ -12,6 +12,7 @@ import {
   type DeliveryHandoffMode,
 } from "../../components/delivery-handoff-choice";
 import type { SavedAddress } from "../../../lib/addresses";
+import { HomeDeliveryConfirm, useOrderPresence } from "../../../components/order-presence";
 
 type LateOffer = {
   id: string;
@@ -33,6 +34,8 @@ export default function LateDinnerCheckoutPage() {
   const router = useRouter();
   const offerId = String(params.offerId);
   const zoneId = search.get("zoneId") ?? "";
+  const presence = useOrderPresence(zoneId);
+  const [confirmHome, setConfirmHome] = useState(false);
   const locationId = search.get("locationId") ?? "";
 
   const [offer, setOffer] = useState<LateOffer | null>(null);
@@ -100,6 +103,18 @@ export default function LateDinnerCheckoutPage() {
 
   async function checkout() {
     if (!offer || !zoneId || !locationId || !addressId) return;
+    if (presence.status === "checking") {
+      setError("Đang đọc vị trí…");
+      return;
+    }
+    if (presence.needsHomeConfirm && !confirmHome) {
+      setError(
+        presence.status === "outside"
+          ? "Bạn đang ở ngoài Zone. Xác nhận giao về địa chỉ nhà, không giao tại vị trí hiện tại."
+          : "Chưa đọc được vị trí. Xác nhận giao về địa chỉ nhà đã lưu, không giao tại vị trí hiện tại.",
+      );
+      return;
+    }
     if (offer.remainingCapacity < qty) {
       setError("Không đủ suất còn lại");
       await reloadOffer();
@@ -119,6 +134,7 @@ export default function LateDinnerCheckoutPage() {
           deliveryHandoffMode: handoff,
           paymentMode: "PAY_ON_PICKI",
           items: [{ quantity: qty }],
+          ...presence.orderPresenceBody(confirmHome),
         }),
       });
       // Suất đã giữ chỗ khi tạo đơn; thanh toán trên trang đơn.
@@ -207,11 +223,18 @@ export default function LateDinnerCheckoutPage() {
           <p className="muted" style={{ fontSize: 12 }}>
             Đặt xong sẽ giữ suất; thanh toán xong suất trừ khỏi app. Hủy trước khi thanh toán hoàn suất.
           </p>
+          <HomeDeliveryConfirm status={presence.status} checked={confirmHome} onChange={setConfirmHome} />
           <button
             type="button"
             className="btn"
             style={{ marginTop: 16 }}
-            disabled={submitting || !addressId || offer.remainingCapacity < 1}
+            disabled={
+              submitting ||
+              !addressId ||
+              offer.remainingCapacity < 1 ||
+              presence.status === "checking" ||
+              (presence.needsHomeConfirm && !confirmHome)
+            }
             onClick={() => void checkout()}
           >
             {submitting

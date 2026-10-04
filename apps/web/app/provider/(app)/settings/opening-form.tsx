@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../../../../lib/api";
 
 const KINDS = [
-  { id: "OPENING", label: "Khai trương" },
   { id: "GIFT", label: "Tặng món" },
   { id: "DISCOUNT", label: "Giảm giá" },
   { id: "NEW_ITEM", label: "Món mới" },
@@ -24,8 +23,7 @@ type Promotion = {
 };
 
 export function ProviderOpeningForm({ locationId }: { locationId: string }) {
-  const [opensAt, setOpensAt] = useState("");
-  const [kind, setKind] = useState<(typeof KINDS)[number]["id"]>("OPENING");
+  const [kind, setKind] = useState<(typeof KINDS)[number]["id"]>("GIFT");
   const [title, setTitle] = useState("");
   const [detail, setDetail] = useState("");
   const [startsAt, setStartsAt] = useState("");
@@ -35,8 +33,6 @@ export function ProviderOpeningForm({ locationId }: { locationId: string }) {
   const [note, setNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const profile = await api<{ opensAt: string | null }>(`/provider/locations/${locationId}/profile`);
-    setOpensAt(profile.opensAt ? profile.opensAt.slice(0, 10) : "");
     const list = await api<{ promotions: Promotion[] }>(
       `/provider/locations/${locationId}/promotions`,
     );
@@ -44,38 +40,16 @@ export function ProviderOpeningForm({ locationId }: { locationId: string }) {
   }, [locationId]);
 
   useEffect(() => {
-    void load().catch(() => setNote("Chưa tải được khai trương / khuyến mại"));
+    void load().catch(() => setNote("Chưa tải được khuyến mại"));
   }, [load]);
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
-      <p className="section-title">Sắp khai trương và khuyến mại</p>
+      <p className="section-title">Khuyến mại</p>
       <p className="stat">
-        Ngày mở cửa hiện badge 14 ngày rồi tự mất. Khuyến mại hết hạn thì ẩn. Spotlight có nhãn Tài
-        trợ, không tính vào Chỗ quen.
+        Chỉ tạo chương trình khuyến mại. Hết hạn thì ẩn. Spotlight có nhãn Tài trợ, không tính vào
+        Chỗ quen. Tin khai trương do admin đăng.
       </p>
-      <div className="field">
-        <label htmlFor="opensAt">Ngày khai trương</label>
-        <input
-          id="opensAt"
-          type="date"
-          value={opensAt}
-          onChange={(e) => setOpensAt(e.target.value)}
-        />
-      </div>
-      <button
-        type="button"
-        className="btn btn-secondary"
-        onClick={() => {
-          const value = opensAt ? new Date(`${opensAt}T08:00:00+07:00`).toISOString() : null;
-          void api(`/provider/locations/${locationId}/opens-at`, {
-            method: "PATCH",
-            body: JSON.stringify({ opensAt: value }),
-          }).then(() => setNote(value ? "Đã lưu ngày mở cửa" : "Đã bỏ ngày mở cửa"));
-        }}
-      >
-        Lưu ngày mở cửa
-      </button>
 
       <div className="field" style={{ marginTop: 16 }}>
         <label htmlFor="promoKind">Loại khuyến mại</label>

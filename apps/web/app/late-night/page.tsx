@@ -73,7 +73,7 @@ export default function LateNightPage() {
         <div className="card">
           <p style={{ margin: 0 }}>Chưa có quán bán khuya trong khung giờ này.</p>
           <p className="stat" style={{ marginTop: 8 }}>
-            Quán bật «Bán khuya» trên tab Trạng thái và đang mở cửa mới hiện ở đây.
+            Quán bật «Bán khuya» và đang mở cửa mới hiện ở đây.
           </p>
           <Link href="/" className="stat" style={{ display: "inline-block", marginTop: 12 }}>
             ← Về trang chủ

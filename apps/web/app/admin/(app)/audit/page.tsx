@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AdminPageShell } from "../../../components/admin-session-context";
+import { useRouter } from "next/navigation";
+import { AdminPageShell, useAdminSession } from "../../../components/admin-session-context";
 import { api } from "../../../../lib/api";
 
 type AuditLog = {
@@ -15,16 +16,25 @@ type AuditLog = {
 };
 
 export default function AdminAuditPage() {
+  const router = useRouter();
+  const { session } = useAdminSession();
   const [logs, setLogs] = useState<AuditLog[]>([]);
 
   useEffect(() => {
+    if (!session) return;
+    if (!session.superAdmin && !session.supportReadOnlyGlobal) {
+      if (session.zones.length === 1) router.replace(`/admin/zones/${session.zones[0]!.slug}/logs`);
+      else router.replace("/admin");
+      return;
+    }
     void api<{ logs: AuditLog[] }>("/admin/audit-logs?limit=50").then((res) => setLogs(res.logs));
-  }, []);
+  }, [router, session]);
 
   return (
-    <AdminPageShell title="Audit log">
+    <AdminPageShell title="Nhật ký toàn hệ thống">
       <div className="card">
-        <p className="section-title">Hoạt động Ops gần đây</p>
+        <p className="section-title">Toàn hệ thống</p>
+        <p className="stat">Zone admin chỉ thấy nhật ký có gắn khu vực, trong mục Nhật ký của khu đó.</p>
         {logs.length === 0 ? (
           <p className="stat">Chưa có bản ghi.</p>
         ) : (

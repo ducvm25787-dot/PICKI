@@ -13,6 +13,7 @@ import {
   type FdPrepMode,
 } from "../../../lib/family-dinner";
 import { FdCutoffCountdown } from "../../components/fd-cutoff-countdown";
+import { HomeDeliveryConfirm, useOrderPresence } from "../../components/order-presence";
 import { NotificationBell } from "../../components/notification-bell";
 import {
   DeliveryHandoffChoice,
@@ -64,6 +65,8 @@ export default function FamilyDinnerBuilderPage() {
   const router = useRouter();
   const locationId = String(params.locationId);
   const [zoneId, setZoneId] = useState(search.get("zoneId") ?? "");
+  const presence = useOrderPresence(zoneId);
+  const [confirmHome, setConfirmHome] = useState(false);
 
   const [menu, setMenu] = useState<MenuResponse | null>(null);
   /** Nhiều món / nhóm — danh sách id đã chọn */
@@ -200,6 +203,18 @@ export default function FamilyDinnerBuilderPage() {
 
   async function placeOrder() {
     if (!zoneId || !windowId || !addressId || !menu || !checkoutReady) return;
+    if (presence.status === "checking") {
+      setError("Đang đọc vị trí…");
+      return;
+    }
+    if (presence.needsHomeConfirm && !confirmHome) {
+      setError(
+        presence.status === "outside"
+          ? "Bạn đang ở ngoài Zone. Xác nhận giao về địa chỉ nhà, không giao tại vị trí hiện tại."
+          : "Chưa đọc được vị trí. Xác nhận giao về địa chỉ nhà đã lưu, không giao tại vị trí hiện tại.",
+      );
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -220,6 +235,7 @@ export default function FamilyDinnerBuilderPage() {
             prepMode: l.prepMode,
           })),
           idempotencyKey: `fd-${locationId}-${Date.now()}`,
+          ...presence.orderPresenceBody(confirmHome),
         }),
       });
       router.push(`/orders/${order.id}?pay=1`);
@@ -301,7 +317,9 @@ export default function FamilyDinnerBuilderPage() {
     !windowId ||
     !addressId ||
     !zoneId ||
-    !checkoutReady;
+    !checkoutReady ||
+    presence.status === "checking" ||
+    (presence.needsHomeConfirm && !confirmHome);
 
   const payHint = !menu.acceptingPreorder
     ? "Đã hết giờ nhận đơn."
@@ -776,6 +794,7 @@ export default function FamilyDinnerBuilderPage() {
               </p>
             ) : null}
             {error ? <p className="error">{error}</p> : null}
+            <HomeDeliveryConfirm status={presence.status} checked={confirmHome} onChange={setConfirmHome} />
             {payHint ? (
               <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
                 {payHint}

@@ -94,7 +94,7 @@ export function canCustomerCancel(
   return canTransition(from, "CUSTOMER_CANCELLED", vertical, laundryPickupMode);
 }
 
-const TERMINAL_ORDER_STATUSES = [
+export const TERMINAL_ORDER_STATUSES = [
   "DELIVERED",
   "COMPLETED",
   "CUSTOMER_CANCELLED",

@@ -1,12 +1,14 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, eq, ne, notInArray, sql } from "drizzle-orm";
 import {
   addressVerifications,
   addresses,
   discoverZonesAtPoint,
   getAddressLatLng,
+  orders,
   type PickiDb,
   type PickiSql,
+  TERMINAL_ORDER_STATUSES,
   userAddresses,
   userZoneMemberships,
   users,
@@ -43,27 +45,51 @@ export class AddressesService {
     }
 
     const inside = await discoverZonesAtPoint(this.sql, gps);
-    let joinGps = gps;
     if (!inside.some((z) => z.zone_id === zoneId)) {
-      // Pilot / local demo: partner often joins off-site or GPS denied.
-      // Fall back to Zone anchor (must itself be inside boundary).
-      const anchor = {
-        lat: Number(zone[0].anchorLat),
-        lng: Number(zone[0].anchorLng),
-      };
-      const anchorInside = await discoverZonesAtPoint(this.sql, anchor);
-      if (
-        zone[0].status === "PILOT" &&
-        process.env.NODE_ENV !== "production" &&
-        anchorInside.some((z) => z.zone_id === zoneId)
-      ) {
-        joinGps = anchor;
-      } else {
-        throw new PickiError("FORBIDDEN", "GPS must be inside Zone to join");
-      }
+      throw new PickiError("FORBIDDEN", "GPS phải nằm trong Zone mới tham gia được");
     }
+    const joinGps = gps;
 
     return this.db.transaction(async (tx) => {
+      const others = await tx
+        .select({ id: userZoneMemberships.id })
+        .from(userZoneMemberships)
+        .where(
+          and(
+            eq(userZoneMemberships.userId, userId),
+            ne(userZoneMemberships.zoneId, zoneId),
+            ne(userZoneMemberships.status, "LEFT"),
+          ),
+        );
+      if (others.length > 0) {
+        const open = await tx
+          .select({ id: orders.id })
+          .from(orders)
+          .where(
+            and(
+              eq(orders.customerUserId, userId),
+              notInArray(orders.status, [...TERMINAL_ORDER_STATUSES]),
+            ),
+          )
+          .limit(1);
+        if (open[0]) {
+          throw new PickiError(
+            "CONFLICT",
+            "Đang có đơn chưa xong. Hoàn tất hoặc hủy đơn rồi mới chuyển Zone.",
+          );
+        }
+        await tx
+          .update(userZoneMemberships)
+          .set({ status: "LEFT", leftAt: new Date(), updatedAt: new Date() })
+          .where(
+            and(
+              eq(userZoneMemberships.userId, userId),
+              ne(userZoneMemberships.zoneId, zoneId),
+              ne(userZoneMemberships.status, "LEFT"),
+            ),
+          );
+      }
+
       const [address] = await tx
         .insert(addresses)
         .values({
@@ -216,6 +242,14 @@ export class AddressesService {
   ) {
     await this.assertZoneMember(userId, zoneId);
     await this.assertUserAddress(userId, zoneId, addressId);
+
+    const inside = await discoverZonesAtPoint(this.sql, gps);
+    if (!inside.some((z) => z.zone_id === zoneId)) {
+      throw new PickiError(
+        "VALIDATION_ERROR",
+        "Bạn đang ở ngoài Zone. Không ghi vị trí hiện tại lên địa chỉ nhà.",
+      );
+    }
 
     await this.sql`
       UPDATE addresses SET

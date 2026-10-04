@@ -6,7 +6,7 @@ import {
   isVisitIntentActive,
   offerings,
   providerLocations,
-  providerMembers,
+  userCoversLocation,
   providers,
   users,
   visitIntentProviderActionToStatus,
@@ -343,7 +343,7 @@ export class VisitIntentsService {
     }
 
     const customer = await this.db
-      .select({ displayName: users.displayName })
+      .select({ displayName: users.displayName, avatarUrl: users.avatarUrl })
       .from(users)
       .where(eq(users.id, intent.customerUserId))
       .limit(1);
@@ -364,7 +364,8 @@ export class VisitIntentsService {
       expiresAt: expiresAt.toISOString(),
       shopWaitingAt: intent.shopWaitingAt?.toISOString() ?? null,
       customer: {
-        displayName: customer[0]?.displayName ?? "Khách",
+        displayName: customer[0]?.displayName ?? null,
+        avatarUrl: customer[0]?.avatarUrl ?? null,
         phone: customerPhone,
       },
       createdAt: intent.createdAt.toISOString(),
@@ -402,17 +403,7 @@ export class VisitIntentsService {
       throw new PickiError("NOT_FOUND", "Location not found");
     }
 
-    const member = await this.db
-      .select({ id: providerMembers.id })
-      .from(providerMembers)
-      .where(
-        and(
-          eq(providerMembers.userId, userId),
-          eq(providerMembers.providerId, location[0].providerId),
-        ),
-      )
-      .limit(1);
-    if (!member[0]) {
+    if (!(await userCoversLocation(this.db, userId, locationId))) {
       throw new PickiError("FORBIDDEN", "No access to this location");
     }
   }

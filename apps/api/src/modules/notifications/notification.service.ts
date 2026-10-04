@@ -5,9 +5,10 @@ import {
   experienceInterests,
   experiences,
   notifications,
+  orders,
   openingReminders,
+  memberUserIdsForLocation,
   providerLocations,
-  providerMembers,
   providers,
   pushSubscriptions,
   runners,
@@ -186,7 +187,22 @@ export class NotificationService implements OnModuleInit {
 
     const excludeActor = payload.actorUserId ?? null;
 
-    const customerCopy = this.customerNotificationCopy(payload.toStatus, payload.orderNumber, label);
+    let rejectReason: string | null = null;
+    if (payload.toStatus === "PROVIDER_REJECTED") {
+      const [row] = await this.db
+        .select({ cancelReason: orders.cancelReason })
+        .from(orders)
+        .where(eq(orders.id, payload.orderId))
+        .limit(1);
+      rejectReason = row?.cancelReason?.trim() || null;
+    }
+
+    const customerCopy = this.customerNotificationCopy(
+      payload.toStatus,
+      payload.orderNumber,
+      label,
+      rejectReason,
+    );
     if (customerCopy) {
       await this.deliver(
         [payload.customerUserId],
@@ -239,6 +255,7 @@ export class NotificationService implements OnModuleInit {
     toStatus: string,
     orderNumber: string,
     label: string,
+    rejectReason: string | null = null,
   ): { title: string; body: string } | null {
     switch (toStatus) {
       case "CREATED":
@@ -261,8 +278,8 @@ export class NotificationService implements OnModuleInit {
         };
       case "PROVIDER_REJECTED":
         return {
-          title: `${orderNumber}: Tiệm từ chối đơn`,
-          body: "Tiệm đã từ chối đơn — xem chi tiết đơn hàng.",
+          title: "Đơn hàng bị từ chối",
+          body: rejectReason ? `Đơn hàng bị từ chối. ${rejectReason}` : "Đơn hàng bị từ chối",
         };
       case "PREPARING":
         return {
@@ -1050,26 +1067,7 @@ export class NotificationService implements OnModuleInit {
   }
 
   private async providerStaffForLocation(locationId: string): Promise<string[]> {
-    const location = await this.db
-      .select({ providerId: providerLocations.providerId })
-      .from(providerLocations)
-      .where(eq(providerLocations.id, locationId))
-      .limit(1);
-    if (!location[0]) return [];
-
-    const rows = await this.db
-      .select({ userId: providerMembers.userId })
-      .from(providerMembers)
-      .where(
-        and(
-          eq(providerMembers.providerId, location[0].providerId),
-          or(
-            eq(providerMembers.providerLocationId, locationId),
-            isNull(providerMembers.providerLocationId),
-          ),
-        ),
-      );
-    return rows.map((r) => r.userId);
+    return memberUserIdsForLocation(this.db, locationId);
   }
 
   private async userIsRunner(userId: string): Promise<boolean> {

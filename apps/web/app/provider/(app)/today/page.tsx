@@ -7,17 +7,25 @@ import {
 } from "../../../components/classified-photo-picker";
 import { ProviderPageShell, useProviderLocation } from "../../../components/provider-location-context";
 import { api } from "../../../../lib/api";
+import { isFoodBreakfastVertical, isMarketVertical } from "../../../../lib/providers";
 
-const UPDATE_TYPES = [
-  { value: "TODAY_AVAILABLE", label: "Hôm nay có" },
+const GOODS_TYPES = [
   { value: "DAILY_SPECIAL", label: "Món đặc biệt" },
-  { value: "NEW_ITEM", label: "Món / dịch vụ mới" },
-  { value: "OPEN_SLOT", label: "Còn slot" },
+  { value: "TODAY_AVAILABLE", label: "Hôm nay có" },
+  { value: "NEW_ITEM", label: "Món mới" },
   { value: "LOW_STOCK", label: "Sắp hết" },
   { value: "LATE_DINNER", label: "Bữa tối muộn" },
   { value: "PROMOTION", label: "Ưu đãi" },
-  { value: "NEW_SERVICE", label: "Dịch vụ mới" },
 ] as const;
+
+const SERVICE_TYPES = [
+  { value: "OPEN_SLOT", label: "Còn slot" },
+  { value: "NEW_SERVICE", label: "Dịch vụ mới" },
+  { value: "TODAY_AVAILABLE", label: "Hôm nay có" },
+  { value: "PROMOTION", label: "Ưu đãi" },
+] as const;
+
+const UPDATE_TYPES = [...GOODS_TYPES, ...SERVICE_TYPES];
 
 type DailyUpdate = {
   id: string;
@@ -42,7 +50,12 @@ function statusLabel(s: string): string {
 }
 
 export default function ProviderTodayPage() {
-  const { locationId } = useProviderLocation();
+  const { locationId, activeLocation } = useProviderLocation();
+  const goods =
+    isFoodBreakfastVertical(activeLocation?.providerType) || isMarketVertical(activeLocation?.providerType);
+  const typeOptions = (goods ? GOODS_TYPES : SERVICE_TYPES).filter(
+    (item) => goods && isFoodBreakfastVertical(activeLocation?.providerType) || item.value !== "LATE_DINNER",
+  );
   const [updates, setUpdates] = useState<DailyUpdate[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [updateType, setUpdateType] = useState<string>("TODAY_AVAILABLE");
@@ -158,7 +171,7 @@ export default function ProviderTodayPage() {
         <label className="field">
           <span>Loại</span>
           <select value={updateType} onChange={(e) => setUpdateType(e.target.value)}>
-            {UPDATE_TYPES.map((t) => (
+            {typeOptions.map((t) => (
               <option key={t.value} value={t.value}>
                 {t.label}
               </option>

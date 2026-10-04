@@ -2,24 +2,47 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { AdminPageShell } from "../../../components/admin-session-context";
+import { useRouter } from "next/navigation";
+import { AdminPageShell, canSeeCityContent, useAdminSession } from "../../../components/admin-session-context";
 import { api } from "../../../../lib/api";
 import { formatOccurrence, priceLabel, type ExperienceCard } from "../../../../lib/experiences";
 
 export default function AdminExperiencesPage() {
+  const router = useRouter();
+  const { session } = useAdminSession();
   const [rows, setRows] = useState<ExperienceCard[]>([]);
   const [status, setStatus] = useState("");
   const [tick, setTick] = useState(0);
   const [publishing, setPublishing] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!session) return;
+    if (!canSeeCityContent(session)) {
+      if (session.zones.length === 1) router.replace(`/admin/zones/${session.zones[0]!.slug}/overview`);
+      else router.replace("/admin");
+      return;
+    }
     const query = status ? `?status=${status}` : "";
     void api<{ experiences: ExperienceCard[] }>(`/admin/experiences${query}`).then((res) =>
       setRows(res.experiences),
     );
-  }, [status, tick]);
+  }, [router, session, status, tick]);
 
+  async function remove(row: ExperienceCard) {
+    if (!window.confirm(`Xóa “${row.title}” khỏi danh sách? Tổ chức không còn thấy bài này.`)) return;
+    setRemoving(row.id);
+    setNotice(null);
+    try {
+      await api(`/admin/experiences/${row.id}`, { method: "DELETE" });
+      setTick((value) => value + 1);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Không xóa được");
+    } finally {
+      setRemoving(null);
+    }
+  }
   async function publish(id: string) {
     setPublishing(id);
     setNotice(null);
@@ -78,6 +101,16 @@ export default function AdminExperiencesPage() {
               ) : null}
               <div className="experience-import-actions">
                 <Link href={`/admin/experiences/${row.id}`}>Xem và duyệt</Link>
+                {row.status === "REJECTED" ? (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={removing === row.id}
+                    onClick={() => void remove(row)}
+                  >
+                    Xóa
+                  </button>
+                ) : null}
                 {row.status === "DRAFT" || row.status === "PENDING" ? (
                   <button
                     type="button"

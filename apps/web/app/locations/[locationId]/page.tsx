@@ -48,6 +48,15 @@ import {
   orderButtonLabel,
 } from "../../../lib/providers";
 
+type MorningShelf = {
+  enabled: boolean;
+  orderingOpen: boolean;
+  serviceDate: string | null;
+  cutoffTime: string | null;
+  windows: { id: string; startsAt: string; endsAt: string; label: string }[];
+  items: MenuResponse["items"];
+};
+
 type MenuResponse = {
   location: {
     id: string;
@@ -79,6 +88,7 @@ type MenuResponse = {
     name: string;
     description: string | null;
     amountVnd: number;
+    listAmountVnd?: number;
     fulfillmentMode?: string | null;
     educationSubject?: string | null;
     educationGrade?: string | null;
@@ -91,6 +101,7 @@ type MenuResponse = {
     categoryName?: string | null;
     todayStatus?: "UNSET" | "AVAILABLE" | "SOLD_OUT";
     todayRemaining?: number | null;
+    alcoholRestricted?: boolean;
     optionGroups?: {
       id: string;
       name: string;
@@ -132,7 +143,7 @@ const VISIT_ETA_PRESETS = [15, 30, 45, 60] as const;
  * FIXED, amount is above 0, and today has a published quantity.
  */
 function marketOnShelf(item: MenuResponse["items"][number]) {
-  return item.pricingKind === "FIXED" && item.amountVnd > 0 && item.todayStatus === "AVAILABLE";
+  return item.amountVnd > 0 && item.pricingKind !== "QUOTE_REQUIRED" && item.todayStatus !== "SOLD_OUT";
 }
 
 function groupMenu(items: MenuResponse["items"]) {
@@ -155,6 +166,7 @@ export default function LocationMenuPage() {
   const router = useRouter();
   const search = useSearchParams();
   const wantRepeat = search.get("repeat") === "1";
+  const offerId = search.get("offer");
   const [menu, setMenu] = useState<MenuResponse | null>(null);
   const [zoneId, setZoneId] = useState<string | null>(null);
   const [cart, setCart] = useState<Cart | null>(null);
@@ -182,6 +194,9 @@ export default function LocationMenuPage() {
   const [transportDraft, setTransportDraft] = useState<string | null>(null);
   const [transportDraftKey, setTransportDraftKey] = useState(0);
   const [tab, setTab] = useState<"menu" | "intro">("menu");
+  const [detailQty, setDetailQty] = useState(1);
+  const [morning, setMorning] = useState<MorningShelf | null>(null);
+  const [windowId, setWindowId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!requestItem && !visitItem) return;
@@ -225,7 +240,7 @@ export default function LocationMenuPage() {
           api<ReviewsResponse>(`/locations/${params.locationId}/reviews`),
         ]);
         const zid = mine.zones[0]?.zoneId ?? null;
-        if (data.familyDinner?.enabled) {
+        if (data.familyDinner?.enabled && !offerId) {
           const date = data.familyDinner.serviceDate ?? "";
           const q = new URLSearchParams();
           if (zid) q.set("zoneId", zid);
@@ -234,6 +249,8 @@ export default function LocationMenuPage() {
           return; // keep loading until navigation; skip empty menu flash
         }
         setMenu(data);
+        const shelf = await api<MorningShelf>(`/locations/${params.locationId}/morning`).catch(() => null);
+        setMorning(shelf);
         setReviews(rev);
         setZoneId(zid);
         setCart(readCart());
@@ -255,6 +272,11 @@ export default function LocationMenuPage() {
           setRepeatHint(hint);
         }
         setLoading(false);
+        if (offerId) {
+          requestAnimationFrame(() => {
+            document.getElementById(`offer-${offerId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+          });
+        }
       } catch (e) {
         if (e instanceof Error && e.message !== "auth") {
           setError(e.message);
@@ -263,10 +285,25 @@ export default function LocationMenuPage() {
       }
     }
     void load();
-  }, [params.locationId, router, wantRepeat]);
+  }, [params.locationId, router, wantRepeat, offerId]);
 
   const [optionItem, setOptionItem] = useState<MenuResponse["items"][0] | null>(null);
   const [optionPicks, setOptionPicks] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    setDetailQty(1);
+    const item = menu?.items.find((row) => row.id === offerId);
+    if (!item?.optionGroups?.length) {
+      setOptionItem(null);
+      return;
+    }
+    const picks: Record<string, string[]> = {};
+    for (const group of item.optionGroups) {
+      if (group.selection === "SINGLE" && group.options[0]) picks[group.id] = [group.options[0].id];
+    }
+    setOptionPicks(picks);
+    setOptionItem(item);
+  }, [offerId, menu]);
 
   function startAdd(item: MenuResponse["items"][0]) {
     if (item.optionGroups && item.optionGroups.length > 0) {
@@ -302,11 +339,22 @@ export default function LocationMenuPage() {
     handleAdd(
       { ...optionItem, name: labels.length ? `${optionItem.name} · ${labels.join(", ")}` : optionItem.name, amountVnd: optionItem.amountVnd + extra },
       optionIds,
+      detailQty,
     );
     setOptionItem(null);
   }
 
-  function handleAdd(item: MenuResponse["items"][0], optionIds?: string[]) {
+  function handleAdd(item: MenuResponse["items"][0], optionIds?: string[], quantity = 1) {
+    if (search.get("when") === "morning") {
+      if (!morning?.orderingOpen) {
+        setToast(morning?.cutoffTime ? `Đã qua giờ chốt ${morning.cutoffTime}` : "Quán chưa mở Sáng mai giao");
+        return;
+      }
+      if (!windowId) {
+        setToast("Chọn khung giờ sáng");
+        return;
+      }
+    }
     if (!menu || !zoneId) {
       setToast(isLaundryVertical(menu?.location.providerType) ? "Tham gia Zone trước khi đặt hàng" : "Tham gia Zone trước khi đặt món");
       return;
@@ -318,6 +366,12 @@ export default function LocationMenuPage() {
           zoneId,
           brandName: menu.location.brandName,
           providerType: menu.location.providerType,
+          serviceDate: search.get("when") === "morning" ? morning?.serviceDate ?? null : null,
+          scheduledDeliveryWindowId: search.get("when") === "morning" ? windowId : null,
+          scheduledWindowLabel:
+            search.get("when") === "morning"
+              ? morning?.windows.find((window) => window.id === windowId)?.label ?? null
+              : null,
         },
         {
           offeringId: item.id,
@@ -326,8 +380,10 @@ export default function LocationMenuPage() {
           fulfillmentMode: item.fulfillmentMode,
           estimatedDays: item.estimatedDays,
           pricingKind: item.pricingKind,
+          alcoholRestricted: item.alcoholRestricted === true,
           ...(optionIds?.length ? { optionIds } : {}),
         },
+        quantity,
       );
       setCart(next);
       setToast(`Đã thêm ${item.name}`);
@@ -444,6 +500,8 @@ export default function LocationMenuPage() {
   }
 
   const { location, items, dailySpecials } = menu;
+  const morningMode = search.get("when") === "morning";
+  const catalogItems = morningMode ? (morning?.enabled ? morning.items : []) : items;
   const isLaundry = isLaundryVertical(location.providerType);
   const isFood = isFoodBreakfastVertical(location.providerType);
   const isHomeService = isHomeServiceVertical(location.providerType);
@@ -454,8 +512,8 @@ export default function LocationMenuPage() {
   const isPharmacy = isPharmacyVertical(location.providerType);
   const isMarket = isMarketVertical(location.providerType);
   const marketSell = isMarket && location.sellNow === true;
-  const shelfItems = marketSell ? items.filter(marketOnShelf) : items;
-  const askItems = marketSell ? items.filter((item) => !marketOnShelf(item)) : [];
+  const shelfItems = morningMode ? catalogItems : marketSell ? items.filter(marketOnShelf) : items;
+  const askItems = morningMode || !marketSell ? [] : items.filter((item) => !marketOnShelf(item));
   const menuGroups =
     (marketSell || isFood) && shelfItems.some((item) => item.categoryName)
       ? groupMenu(shelfItems)
@@ -464,8 +522,16 @@ export default function LocationMenuPage() {
   const isCustomerVisit = isCustomerVisitVertical(location.providerType);
   const isEducation = isEducationVertical(location.providerType);
   const isSports = isSportsVertical(location.providerType);
-  const count = cartItemCount(cart);
-  const total = cartTotalVnd(cart);
+  const goodsShop = isFood || isMarket;
+  const shopCart = cart?.providerLocationId === location.id ? cart : null;
+  const count = cartItemCount(shopCart);
+  const total = cartTotalVnd(shopCart);
+  const focused = offerId ? catalogItems.find((item) => item.id === offerId) ?? null : null;
+  const otherGoods = goodsShop
+    ? (marketSell || isFood ? shelfItems : items).filter(
+        (item) => item.id !== focused?.id && item.todayStatus !== "SOLD_OUT" && item.amountVnd > 0,
+      )
+    : [];
 
   return (
     <div className="container" style={count > 0 ? { paddingBottom: 96 } : undefined}>
@@ -542,6 +608,7 @@ export default function LocationMenuPage() {
         </div>
       ) : null}
 
+      {!goodsShop ? (
       <div className="card" style={{ marginBottom: 16 }}>
         <OpeningInterest locationId={location.id} />
         <h1 style={{ margin: "8px 0 4px", fontSize: 24 }}>
@@ -673,6 +740,28 @@ export default function LocationMenuPage() {
           </p>
         )}
       </div>
+      ) : null}
+
+      {isMarket ? (
+        <div className="location-tabs" role="tablist" aria-label="Cách đặt">
+          <button
+            type="button"
+            className="location-tab"
+            aria-selected={!morningMode}
+            onClick={() => router.replace(`/locations/${location.id}`)}
+          >
+            Đi chợ ngay
+          </button>
+          <button
+            type="button"
+            className="location-tab"
+            aria-selected={morningMode}
+            onClick={() => router.replace(`/locations/${location.id}?when=morning`)}
+          >
+            Sáng mai giao
+          </button>
+        </div>
+      ) : null}
 
       <div className="location-tabs" role="tablist" aria-label="Nội dung quán">
         <button
@@ -715,11 +804,45 @@ export default function LocationMenuPage() {
           providerPhone={location.contacts?.provider?.phone ?? null}
           averageRating={reviews?.averageRating ?? null}
           reviewCount={reviews?.count ?? 0}
+          saveLocationId={goodsShop ? location.id : null}
+          liveLabel={
+            goodsShop
+              ? liveStatusLabel(location.liveStatus, location.providerType, location.estimatedWaitMinutes)
+              : null
+          }
+          liveClassName={goodsShop ? liveStatusClass(location.liveStatus) : null}
         />
       ) : null}
 
       {tab === "menu" ? (
       <>
+      {morningMode ? (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <p className="section-title">Sáng mai giao</p>
+          {!morning?.enabled ? (
+            <p className="stat">Quán chưa mở bán cho sáng mai.</p>
+          ) : !morning.orderingOpen ? (
+            <p className="stat">Đã qua giờ chốt {morning.cutoffTime}. Chọn lại vào tối mai.</p>
+          ) : (
+            <>
+              <p className="stat">Giao {morning.serviceDate}. Chọn khung giờ rồi chọn hàng.</p>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {morning.windows.map((window) => (
+                  <button
+                    key={window.id}
+                    type="button"
+                    className={windowId === window.id ? "btn" : "btn btn-secondary"}
+                    style={{ width: "auto" }}
+                    onClick={() => setWindowId(window.id)}
+                  >
+                    {window.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
       {isCustomerVisit && activeVisit ? (
         <div
           className="card"
@@ -851,6 +974,164 @@ export default function LocationMenuPage() {
         <PharmacyInquiry locationId={location.id} />
       ) : isMarket && !marketSell ? (
         <MarketInquiry locationId={location.id} />
+      ) : goodsShop ? (
+        <>
+          {focused ? (
+            <article id={`offer-${focused.id}`} className="card" style={{ marginBottom: 16 }}>
+              {focused.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={focused.imageUrl}
+                  alt=""
+                  style={{ width: "100%", height: 220, objectFit: "cover", borderRadius: 12, display: "block" }}
+                />
+              ) : (
+                <div className="today-hero-ph" style={{ height: 160, borderRadius: 12 }}>
+                  {focused.name.trim().charAt(0).toUpperCase() || "•"}
+                </div>
+              )}
+              <h2 style={{ margin: "12px 0 4px", fontSize: 22 }}>{focused.name}</h2>
+              <p className="stat" style={{ margin: "0 0 8px" }}>
+                {[focused.categoryName, focused.unit].filter(Boolean).join(" · ")}
+              </p>
+              {focused.description ? <p style={{ margin: "0 0 8px" }}>{focused.description}</p> : null}
+              <p style={{ margin: "0 0 8px" }}>
+                {focused.listAmountVnd && focused.listAmountVnd > focused.amountVnd ? (
+                  <>
+                    <s style={{ color: "var(--muted)", fontWeight: 500, marginRight: 6 }}>
+                      {formatVnd(focused.listAmountVnd)}
+                    </s>
+                    <strong>{formatVnd(focused.amountVnd)}</strong>
+                  </>
+                ) : (
+                  <strong>{formatVnd(focused.amountVnd)}</strong>
+                )}
+                {focused.unit ? <span className="stat"> / {focused.unit}</span> : null}
+              </p>
+              {focused.todayStatus === "SOLD_OUT" ? (
+                <p className="stat">{morningMode ? "Hết sáng mai" : "Hết hôm nay"}</p>
+              ) : focused.todayRemaining != null ? (
+                <p className="stat">Còn {focused.todayRemaining}</p>
+              ) : null}
+              {focused.optionGroups?.map((group) => (
+                <div key={group.id} style={{ marginTop: 10 }}>
+                  <p style={{ margin: "0 0 6px", fontWeight: 700 }}>
+                    {group.name}
+                    {group.selection === "SINGLE" ? " · chọn một" : " · thêm nếu muốn"}
+                  </p>
+                  {group.options.map((option) => {
+                    const selected = (optionPicks[group.id] ?? []).includes(option.id);
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={selected ? "btn" : "btn btn-secondary"}
+                        style={{ width: "100%", marginBottom: 6, textAlign: "left" }}
+                        onClick={() =>
+                          setOptionPicks((prev) => {
+                            const current = prev[group.id] ?? [];
+                            if (group.selection === "SINGLE") return { ...prev, [group.id]: [option.id] };
+                            const next = selected
+                              ? current.filter((id) => id !== option.id)
+                              : [...current, option.id];
+                            return { ...prev, [group.id]: next };
+                          })
+                        }
+                      >
+                        {option.name}
+                        {option.priceDeltaVnd > 0 ? ` · +${formatVnd(option.priceDeltaVnd)}` : ""}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+              <div className="board-row" style={{ alignItems: "center", marginTop: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ width: "auto" }}
+                  onClick={() => setDetailQty((qty) => Math.max(1, qty - 1))}
+                >
+                  −
+                </button>
+                <strong>{detailQty}</strong>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ width: "auto" }}
+                  onClick={() =>
+                    setDetailQty((qty) =>
+                      focused.todayRemaining != null ? Math.min(focused.todayRemaining, qty + 1) : qty + 1,
+                    )
+                  }
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ width: "auto", marginLeft: "auto" }}
+                  disabled={focused.todayStatus === "SOLD_OUT" || focused.amountVnd <= 0}
+                  onClick={() =>
+                    focused.optionGroups?.length ? confirmOptions() : handleAdd(focused, undefined, detailQty)
+                  }
+                >
+                  Thêm vào giỏ
+                </button>
+              </div>
+            </article>
+          ) : (
+            <p className="tagline">Chọn một sản phẩm để xem giá và số lượng.</p>
+          )}
+          <p className="section-title">
+            {morningMode
+              ? focused
+                ? "Hàng khác sáng mai"
+                : "Hàng sáng mai"
+              : focused
+                ? "Sản phẩm khác hôm nay"
+                : "Đang bán hôm nay"}
+          </p>
+          {otherGoods.length === 0 ? (
+            <p className="stat">
+              {morningMode ? "Quán chưa mở hàng cho sáng mai." : "Chưa có sản phẩm khác đang bán."}
+            </p>
+          ) : (
+            <div className="today-hero-grid" style={{ marginBottom: 16 }}>
+              {otherGoods.map((item) => (
+                <Link
+                  key={item.id}
+                  href={`/locations/${location.id}?offer=${item.id}${morningMode ? "&when=morning" : ""}`}
+                  className="today-hero-card"
+                >
+                  <span className="today-hero-media">
+                    {item.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={item.imageUrl} alt="" />
+                    ) : (
+                      <span className="today-hero-ph" aria-hidden>
+                        {item.name.trim().charAt(0).toUpperCase() || "•"}
+                      </span>
+                    )}
+                    {item.categoryName ? <span className="today-hero-badge">{item.categoryName}</span> : null}
+                  </span>
+                  <strong className="today-hero-title">{item.name}</strong>
+                  <span className="today-hero-price">
+                    {item.listAmountVnd && item.listAmountVnd > item.amountVnd ? (
+                      <>
+                        <s>{formatVnd(item.listAmountVnd)}</s>
+                        <strong>{formatVnd(item.amountVnd)}</strong>
+                      </>
+                    ) : (
+                      <strong>{formatVnd(item.amountVnd)}</strong>
+                    )}
+                    {item.unit ? <span className="stat">/{item.unit}</span> : null}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </>
       ) : (
       <div className="card">
         <p className="section-title">
@@ -923,7 +1204,12 @@ export default function LocationMenuPage() {
                   </p>
                 ) : null}
                 {group.items.map((item) => (
-              <article key={item.id} className="provider-card">
+              <article
+                key={item.id}
+                id={`offer-${item.id}`}
+                className="provider-card"
+                style={offerId === item.id ? { outline: "2px solid #2d6a4f" } : undefined}
+              >
                 <div
                   style={{
                     display: "flex",
@@ -1010,7 +1296,16 @@ export default function LocationMenuPage() {
                     ) : (
                       <>
                         <strong>
-                          {formatVnd(item.amountVnd)}
+                          {item.listAmountVnd && item.listAmountVnd > item.amountVnd ? (
+                            <>
+                              <s style={{ color: "var(--muted)", fontWeight: 500, marginRight: 6 }}>
+                                {formatVnd(item.listAmountVnd)}
+                              </s>
+                              {formatVnd(item.amountVnd)}
+                            </>
+                          ) : (
+                            formatVnd(item.amountVnd)
+                          )}
                           {(isFood || marketSell) && item.unit ? ` / ${item.unit}` : ""}
                         </strong>
                         {isFood && item.prepTimeMinutes ? (
@@ -1114,6 +1409,14 @@ export default function LocationMenuPage() {
               <span>
                 <strong>{item.name}</strong>
                 {item.categoryName ? <span className="stat"> · {item.categoryName}</span> : null}
+                {item.amountVnd > 0 ? (
+                  <span className="stat">
+                    {" "}
+                    · {formatVnd(item.amountVnd)}
+                    {item.unit ? `/${item.unit}` : ""}
+                    {item.todayStatus === "SOLD_OUT" ? " · Hết hôm nay" : ""}
+                  </span>
+                ) : null}
               </span>
               <button
                 type="button"
@@ -1330,7 +1633,7 @@ export default function LocationMenuPage() {
             <Link href="/checkout" className="btn" style={{ textAlign: "center" }}>
               {isLaundry
                 ? `Giỏ · ${String(count)} dịch vụ · ${orderButtonLabel(location.providerType)}`
-                : `Giỏ hàng · ${count} món · ${formatVnd(total)}`}
+                : `Giỏ hàng · ${count} món · ${formatVnd(total)}${shopCart?.scheduledWindowLabel ? ` · ${shopCart.scheduledWindowLabel}` : ""}`}
             </Link>
           </div>
         </div>

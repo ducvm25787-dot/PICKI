@@ -1,8 +1,8 @@
 import { and, eq, isNull, or } from "drizzle-orm";
 import {
+  memberUserIdsForLocation,
   orders,
   providerLocations,
-  providerMembers,
   providers,
   userIdentities,
   users,
@@ -32,28 +32,9 @@ export async function loadProviderContactPhone(
   db: PickiDb,
   providerLocationId: string,
 ): Promise<string | null> {
-  const location = await db
-    .select({ providerId: providerLocations.providerId })
-    .from(providerLocations)
-    .where(eq(providerLocations.id, providerLocationId))
-    .limit(1);
-  if (!location[0]) return null;
-
-  const staff = await db
-    .select({ userId: providerMembers.userId })
-    .from(providerMembers)
-    .where(
-      and(
-        eq(providerMembers.providerId, location[0].providerId),
-        or(
-          eq(providerMembers.providerLocationId, providerLocationId),
-          isNull(providerMembers.providerLocationId),
-        ),
-      ),
-    )
-    .limit(1);
+  const staff = await memberUserIdsForLocation(db, providerLocationId);
   if (!staff[0]) return null;
-  return loadUserPhone(db, staff[0].userId);
+  return loadUserPhone(db, staff[0]);
 }
 
 export async function loadRunnerSummary(db: PickiDb, runnerUserId: string | null) {
@@ -71,7 +52,7 @@ export async function loadRunnerSummary(db: PickiDb, runnerUserId: string | null
 }
 
 export type OrderContacts = {
-  customer: { phone: string | null; displayName: string | null };
+  customer: { phone: string | null; displayName: string | null; avatarUrl: string | null };
   provider: { phone: string | null; label: string };
   runner: { phone: string | null; displayName: string | null } | null;
 };
@@ -87,7 +68,7 @@ export async function loadServiceRequestContacts(
   ]);
 
   const customerRow = await db
-    .select({ displayName: users.displayName })
+    .select({ displayName: users.displayName, avatarUrl: users.avatarUrl })
     .from(users)
     .where(eq(users.id, request.customerUserId))
     .limit(1);
@@ -96,6 +77,7 @@ export async function loadServiceRequestContacts(
     customer: {
       phone: customerPhone,
       displayName: customerRow[0]?.displayName ?? null,
+      avatarUrl: customerRow[0]?.avatarUrl ?? null,
     },
     provider: {
       phone: providerPhone,
@@ -118,7 +100,7 @@ export async function loadOrderContacts(
   ]);
 
   const customerRow = await db
-    .select({ displayName: users.displayName })
+    .select({ displayName: users.displayName, avatarUrl: users.avatarUrl })
     .from(users)
     .where(eq(users.id, order.customerUserId))
     .limit(1);
@@ -127,6 +109,7 @@ export async function loadOrderContacts(
     customer: {
       phone: customerPhone,
       displayName: customerRow[0]?.displayName ?? null,
+      avatarUrl: customerRow[0]?.avatarUrl ?? null,
     },
     provider: {
       phone: providerPhone,

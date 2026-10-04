@@ -21,6 +21,7 @@ const orderCheckoutFields = {
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
   deliveryWindowId: z.string().uuid().optional(),
+  scheduledDeliveryWindowId: z.string().uuid().optional(),
   lateDinnerOfferId: z.string().uuid().optional(),
 };
 
@@ -29,6 +30,7 @@ function refineOrderCheckout(
     orderKind: "STANDARD" | "FAMILY_DINNER" | "LATE_DINNER" | "BREAKFAST_PREORDER" | "LUNCH";
     items: { offeringId?: string; menuItemId?: string }[];
     lateDinnerOfferId?: string;
+    scheduledDeliveryWindowId?: string;
   },
   ctx: z.RefinementCtx,
 ) {
@@ -54,6 +56,13 @@ function refineOrderCheckout(
       }
     }
   }
+  if (v.scheduledDeliveryWindowId && v.orderKind !== "STANDARD") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Sáng mai giao dùng đơn thường",
+      path: ["orderKind"],
+    });
+  }
   if (v.orderKind === "LATE_DINNER" && !v.lateDinnerOfferId) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -73,5 +82,10 @@ export const createOrderSchema = z
     paymentMode: z.enum(["COD", "PAY_ON_PICKI", "PAY_ON_COMPLETION"]).default("COD"),
     customerNote: z.string().trim().max(300).optional(),
     idempotencyKey: z.string().min(8).max(128).optional(),
+    presenceLat: z.number().min(-90).max(90).optional(),
+    presenceLng: z.number().min(-180).max(180).optional(),
+    confirmHomeDelivery: z.boolean().optional(),
+    recipientName: z.string().trim().min(2).max(80).optional(),
+    recipientAgeConfirmed: z.boolean().optional(),
   })
   .superRefine(refineOrderCheckout);

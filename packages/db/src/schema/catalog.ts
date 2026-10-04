@@ -51,6 +51,8 @@ export const offerings = pgTable("offerings", {
   educationSubject: text("education_subject"),
   educationGrade: text("education_grade"),
   paymentPolicy: text("payment_policy"),
+  /** True only for draft beer poured at the shop. Default false for every other offering. */
+  alcoholRestricted: boolean("alcohol_restricted").notNull().default(false),
   estimatedDays: integer("estimated_days"),
   categoryId: uuid("category_id").references(() => productCategories.id, { onDelete: "set null" }),
   imageUrl: text("image_url"),
@@ -99,6 +101,9 @@ export const productDailyAvailability = pgTable(
     providerId: uuid("provider_id")
       .notNull()
       .references(() => providers.id, { onDelete: "cascade" }),
+    providerLocationId: uuid("provider_location_id")
+      .notNull()
+      .references(() => providerLocations.id, { onDelete: "cascade" }),
     offeringId: uuid("offering_id")
       .notNull()
       .references(() => offerings.id, { onDelete: "cascade" }),
@@ -114,7 +119,13 @@ export const productDailyAvailability = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [unique("product_daily_availability_offering_date_uidx").on(t.offeringId, t.serviceDate)],
+  (t) => [
+    unique("product_daily_availability_location_offering_date_uidx").on(
+      t.providerLocationId,
+      t.offeringId,
+      t.serviceDate,
+    ),
+  ],
 );
 
 export const offeringStockReservations = pgTable(
@@ -122,6 +133,9 @@ export const offeringStockReservations = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     orderId: uuid("order_id").notNull(),
+    providerLocationId: uuid("provider_location_id")
+      .notNull()
+      .references(() => providerLocations.id, { onDelete: "cascade" }),
     offeringId: uuid("offering_id")
       .notNull()
       .references(() => offerings.id, { onDelete: "cascade" }),

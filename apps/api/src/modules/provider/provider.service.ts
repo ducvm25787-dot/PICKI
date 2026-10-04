@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
 import {
   decideCancelFindRunner,
+  discoverZonesAtPoint,
   deliveryPromotions,
   deliveryPromotionRedemptions,
   fundingFromOrder,
@@ -15,8 +16,12 @@ import {
   familyDinnerProviderSettings,
   getLoyaltyProgram,
   listLocationDailyUpdates,
+  locationsCoveredByUser,
+  userCoversLocation,
   listLoyaltyBenefits,
   loadOrderDeliveryWindow,
+  scheduledPrepareState,
+  shouldAutoSeekRunner,
   orderItems,
   orders,
   providerActionToStatus,
@@ -28,7 +33,6 @@ import {
   providerLoyaltyBenefits,
   providerLoyaltyPrograms,
   providerCapabilities,
-  providerMembers,
   providerProfiles,
   providers,
   resolveCustomerLoyaltyLabel,
@@ -84,16 +88,15 @@ export class ProviderService {
   ) {}
 
   async listMyLocations(userId: string) {
-    const rows = await this.db
-      .select({
-        member: providerMembers,
-        location: providerLocations,
-        provider: providers,
-      })
-      .from(providerMembers)
-      .innerJoin(providers, eq(providerMembers.providerId, providers.id))
-      .leftJoin(providerLocations, eq(providerMembers.providerLocationId, providerLocations.id))
-      .where(eq(providerMembers.userId, userId));
+    const covered = await locationsCoveredByUser(this.db, userId);
+    const rows = covered.length
+      ? await this.db
+          .select({ location: providerLocations, provider: providers })
+          .from(providerLocations)
+          .innerJoin(providers, eq(providers.id, providerLocations.providerId))
+          .where(inArray(providerLocations.id, covered.map((row) => row.locationId)))
+      : [];
+    const roleByLocation = new Map(covered.map((row) => [row.locationId, row.role]));
 
     const locations: Array<{
       providerId: string;
@@ -104,42 +107,22 @@ export class ProviderService {
       locationName: string;
       role: string;
       sellNowEnabled: boolean;
+      locationStatus: string;
     }> = [];
 
     for (const r of rows) {
-      if (r.location?.id) {
-        locations.push({
-          providerId: r.provider.id,
-          providerSlug: r.provider.slug,
-          brandName: r.provider.brandName,
-          providerType: r.provider.providerType,
-          locationId: r.location.id,
-          locationName: r.location.displayName,
-          role: r.member.role,
-          sellNowEnabled: false,
-        });
-        continue;
-      }
-
-      // Provider-wide member — all active locations of the brand.
-      const allLocations = await this.db
-        .select()
-        .from(providerLocations)
-        .where(
-          and(eq(providerLocations.providerId, r.provider.id), eq(providerLocations.status, "ACTIVE")),
-        );
-      for (const loc of allLocations) {
-        locations.push({
-          providerId: r.provider.id,
-          providerSlug: r.provider.slug,
-          brandName: r.provider.brandName,
-          providerType: r.provider.providerType,
-          locationId: loc.id,
-          locationName: loc.displayName,
-          role: r.member.role,
-          sellNowEnabled: false,
-        });
-      }
+      if (r.location.status !== "ACTIVE" && r.location.status !== "PAUSED") continue;
+      locations.push({
+        providerId: r.provider.id,
+        providerSlug: r.provider.slug,
+        brandName: r.provider.brandName,
+        providerType: r.provider.providerType,
+        locationId: r.location.id,
+        locationName: r.location.displayName,
+        role: roleByLocation.get(r.location.id) ?? "STAFF",
+        sellNowEnabled: false,
+        locationStatus: r.location.status,
+      });
     }
 
     const providerIds = [...new Set(locations.map((l) => l.providerId))];
@@ -242,10 +225,15 @@ export class ProviderService {
           runnerFeeVnd: this.runnerDispatch.runnerFeeVnd(o, runnerLeg, zoneRow),
           totalVnd: o.totalVnd,
           paymentMode: o.paymentMode,
+          containsAlcohol: o.containsAlcohol,
           deliveryWindow: await loadOrderDeliveryWindow(this.db, o),
+          scheduledPrepareOpen: await this.scheduledPrepareOpen(o),
           delivery: {
             building: o.deliveryBuilding,
             apartment: o.deliveryApartment,
+            accessNote: o.deliveryAccessNote,
+            runnerWaitMinutes: o.runnerWaitMinutes,
+            runnerWaitFeeVnd: o.runnerWaitFeeVnd,
           },
           customerNote: o.customerNote,
           createdAt: o.createdAt.toISOString(),
@@ -417,6 +405,9 @@ export class ProviderService {
     }
 
     if (input.action === "accept") {
+      if (order[0].containsAlcohol && order[0].status !== "PAID") {
+        throw new PickiError("FORBIDDEN", "Chỉ rót bia hơi sau khi thanh toán thành công");
+      }
       if (order[0].paymentMode === "PAY_ON_PICKI" && order[0].status === "CREATED") {
         throw new PickiError("FORBIDDEN", "Order awaiting online payment");
       }
@@ -520,6 +511,7 @@ export class ProviderService {
     }
 
     if (input.action === "ready") {
+      await this.assertMorningPrepareOpen(order[0]);
       if (isDaypartMenuOrder(order[0].orderKind)) {
         if (order[0].status !== "PROVIDER_ACCEPTED" && order[0].status !== "PREPARING") {
           throw new PickiError("FORBIDDEN", "Nhận đơn trước khi đánh dấu sẵn sàng");
@@ -568,16 +560,21 @@ export class ProviderService {
       throw new PickiError("VALIDATION_ERROR", "Invalid provider action");
     }
 
-    if (input.action === "reject" && !input.rejectReason?.trim()) {
-      throw new PickiError("VALIDATION_ERROR", "Vui lòng chọn hoặc nhập lý do từ chối");
-    }
-
+    const rejectReason = input.action === "reject" ? input.rejectReason?.trim() || "" : "";
     const note =
       input.action === "reject"
-        ? `Provider rejected: ${input.rejectReason!.trim()}`
+        ? rejectReason
+          ? `Provider rejected: ${rejectReason}`
+          : "Provider rejected"
         : `Provider: ${input.action}`;
 
-    const result = await this.transitions.transition(orderId, toStatus, userId, note);
+    const result = await this.transitions.transition(
+      orderId,
+      toStatus,
+      userId,
+      note,
+      input.action === "reject" ? { cancelReason: rejectReason || null } : undefined,
+    );
 
     const etaPatch = providerEtaPatch(input.action);
     if (etaPatch) {
@@ -725,10 +722,6 @@ export class ProviderService {
       }
     }
 
-    if (input.action === "reject" && !input.rejectReason?.trim()) {
-      throw new PickiError("VALIDATION_ERROR", "Vui lòng chọn hoặc nhập lý do từ chối");
-    }
-
     if (input.action === "processing") {
       if (order.laundryPickupMode === "ON_SITE") {
         if (order.status !== "PROVIDER_ACCEPTED") {
@@ -748,12 +741,21 @@ export class ProviderService {
       throw new PickiError("VALIDATION_ERROR", "Invalid laundry action");
     }
 
+    const rejectReason = input.action === "reject" ? input.rejectReason?.trim() || "" : "";
     const note =
       input.action === "reject"
-        ? `Provider rejected: ${input.rejectReason!.trim()}`
+        ? rejectReason
+          ? `Provider rejected: ${rejectReason}`
+          : "Provider rejected"
         : `Laundry: ${input.action}`;
 
-    const result = await this.transitions.transition(order.id, toStatus, userId, note);
+    const result = await this.transitions.transition(
+      order.id,
+      toStatus,
+      userId,
+      note,
+      input.action === "reject" ? { cancelReason: rejectReason || null } : undefined,
+    );
     const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
     return this.laundryOrderDto(refreshed[0] ?? result.order);
   }
@@ -804,6 +806,7 @@ export class ProviderService {
   }
 
   private async providerFindRunner(userId: string, order: typeof orders.$inferSelect) {
+    await this.assertMorningPrepareOpen(order);
     const cookFirst = isCookFirstFoodOrder(order);
     const marketPack = await this.isMarketPackLocation(order.providerLocationId);
     if (cookFirst || marketPack) {
@@ -1164,6 +1167,23 @@ export class ProviderService {
       input.lat !== undefined ||
       input.lng !== undefined
     ) {
+      if (input.lat !== undefined && input.lng !== undefined) {
+        const memberships = await this.db
+          .select({ zoneId: providerZoneMemberships.zoneId })
+          .from(providerZoneMemberships)
+          .where(eq(providerZoneMemberships.providerLocationId, locationId));
+        const inside = await discoverZonesAtPoint(this.sql, {
+          lat: input.lat,
+          lng: input.lng,
+        });
+        const zoneIds = new Set(memberships.map((m) => m.zoneId));
+        if (!inside.some((z) => zoneIds.has(z.zone_id))) {
+          throw new PickiError(
+            "VALIDATION_ERROR",
+            "Vị trí GPS phải nằm trong Zone của quán. Không lưu điểm ngoài khu.",
+          );
+        }
+      }
       await this.db
         .update(providerLocations)
         .set({
@@ -1217,6 +1237,32 @@ export class ProviderService {
     input: z.infer<typeof createDailyUpdateSchema>,
   ) {
     await this.assertLocationAccess(userId, locationId);
+    const [shop] = await this.db
+      .select({ model: providers.commerceModel })
+      .from(providerLocations)
+      .innerJoin(providers, eq(providers.id, providerLocations.providerId))
+      .where(eq(providerLocations.id, locationId))
+      .limit(1);
+    const goods =
+      shop?.model === "FOOD_SERVICE" || shop?.model === "FRESH_MARKET" || shop?.model === "RETAIL_STORE";
+    const goodsTypes = new Set([
+      "TODAY_AVAILABLE",
+      "DAILY_SPECIAL",
+      "NEW_ITEM",
+      "LOW_STOCK",
+      "LATE_DINNER",
+      "PROMOTION",
+    ]);
+    const serviceTypes = new Set(["OPEN_SLOT", "NEW_SERVICE", "TODAY_AVAILABLE", "PROMOTION"]);
+    if (goods && !goodsTypes.has(input.updateType)) {
+      throw new PickiError("VALIDATION_ERROR", "Chương trình này không dành cho quán bán hàng");
+    }
+    if (input.updateType === "LATE_DINNER" && shop?.model !== "FOOD_SERVICE") {
+      throw new PickiError("VALIDATION_ERROR", "Bữa tối muộn chỉ dành cho quán ăn");
+    }
+    if (!goods && !serviceTypes.has(input.updateType)) {
+      throw new PickiError("VALIDATION_ERROR", "Chương trình này không dành cho dịch vụ");
+    }
     const expiresAt = input.expiresAt ? new Date(input.expiresAt) : endOfVnDay();
     if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
       throw new PickiError("VALIDATION_ERROR", "expiresAt must be in the future");
@@ -1376,17 +1422,9 @@ export class ProviderService {
   }
 
   /** Pilot food STANDARD: đơn đã nhận nhưng chưa tìm runner → tự bổ sung khi load list.
-   * Family Dinner / Late Dinner: nấu trước — không auto tìm runner. */
+   * Family Dinner / Late Dinner / Sáng mai giao: không auto tìm runner. */
   private async ensureRunnerSought(order: typeof orders.$inferSelect) {
-    if (order.serviceVertical === "LAUNDRY" || isCookFirstFoodOrder(order)) {
-      return order;
-    }
-    if (
-      order.status !== "PROVIDER_ACCEPTED" ||
-      order.runnerUserId ||
-      order.runnerSoughtAt ||
-      order.runnerSearchCancelledAt
-    ) {
+    if (!shouldAutoSeekRunner(order)) {
       return order;
     }
 
@@ -1398,6 +1436,18 @@ export class ProviderService {
 
     const refreshed = await this.db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
     return refreshed[0] ?? order;
+  }
+
+  private async scheduledPrepareOpen(order: typeof orders.$inferSelect) {
+    const gate = await scheduledPrepareState(this.db, order);
+    return gate.scheduled ? gate.open : null;
+  }
+
+  private async assertMorningPrepareOpen(order: typeof orders.$inferSelect) {
+    const gate = await scheduledPrepareState(this.db, order);
+    if (gate.scheduled && !gate.open) {
+      throw new PickiError("FORBIDDEN", gate.message);
+    }
   }
 
   private async assertLocationAccess(userId: string, locationId: string) {
@@ -1423,20 +1473,7 @@ export class ProviderService {
       throw new PickiError("NOT_FOUND", "Location not found");
     }
 
-    const members = await this.db
-      .select()
-      .from(providerMembers)
-      .where(
-        and(
-          eq(providerMembers.userId, userId),
-          eq(providerMembers.providerId, location[0].providerId),
-        ),
-      );
-
-    const allowed = members.some(
-      (m) => !m.providerLocationId || m.providerLocationId === locationId,
-    );
-    if (!allowed) {
+    if (!(await userCoversLocation(this.db, userId, locationId))) {
       throw new PickiError("FORBIDDEN", "Not a staff member for this location");
     }
 

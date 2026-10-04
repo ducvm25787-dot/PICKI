@@ -6,11 +6,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AdminZoneMapEditor,
   type AdminLatLng,
-} from "../../../../components/admin-zone-map";
-import { AdminPageShell } from "../../../../components/admin-session-context";
-import { api } from "../../../../../lib/api";
+} from "../../../../../components/admin-zone-map";
+import { AdminPageShell } from "../../../../../components/admin-session-context";
+import { AdminZonePlaces } from "../../../../../components/admin-zone-places";
+import { api } from "../../../../../../lib/api";
 
-type TabId = "boundary" | "core" | "extended" | "anchor" | "shops";
+type TabId = "boundary" | "core" | "extended" | "anchor" | "shops" | "places";
 
 type ZoneGeo = {
   zone: {
@@ -52,11 +53,12 @@ const TABS: { id: TabId; label: string; hint: string }[] = [
   { id: "extended", label: "Vùng giao thoa", hint: "EXTENDED service" },
   { id: "anchor", label: "Neo GPS", hint: "Fallback center" },
   { id: "shops", label: "Vị trí shop", hint: "Pin thủ công" },
+  { id: "places", label: "Tòa & khu", hint: "Thang, thẻ, sảnh" },
 ];
 
 export default function AdminZoneSetupPage() {
-  const params = useParams<{ zoneId: string }>();
-  const zoneId = params.zoneId;
+  const params = useParams<{ zoneSlug: string }>();
+  const zoneId = params.zoneSlug;
 
   const [data, setData] = useState<ZoneGeo | null>(null);
   const [tab, setTab] = useState<TabId>("boundary");
@@ -353,6 +355,8 @@ export default function AdminZoneSetupPage() {
           <p className="stat" style={{ marginBottom: 12 }}>
             {mapEditMode
               ? "Click map thêm đỉnh · Kéo đỉnh · Double-click xóa đỉnh · Publish tạo version mới."
+              : tab === "places"
+                ? "Ghi cách vào tòa: thang máy, thẻ, bảo vệ, gọi lên căn. Phút chờ ra phí runner."
               : tab === "anchor"
                 ? "Kéo pin xanh hoặc nhập lat/lng — điểm fallback GPS."
                 : "Chọn shop → kéo pin đúng vị trí thực tế → Xác nhận."}
@@ -565,7 +569,10 @@ export default function AdminZoneSetupPage() {
         </div>
       </aside>
 
-      <section className="admin-workspace-map" aria-label="Bản đồ Zone">
+      <section className="admin-workspace-map" aria-label={tab === "places" ? "Tòa và khu" : "Bản đồ Zone"}>
+        {tab === "places" ? (
+          <AdminZonePlaces zoneId={zoneId} />
+        ) : (
         <AdminZoneMapEditor
           key={`${tab}-${selectedShop ?? "none"}`}
           center={tab === "shops" && shopPin ? shopPin : center}
@@ -579,6 +586,7 @@ export default function AdminZoneSetupPage() {
           fill
           editMode={mapEditMode}
         />
+        )}
       </section>
     </AdminPageShell>
   );

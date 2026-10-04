@@ -77,7 +77,10 @@ export function homePathForApp(app: PickiAppRole): string {
 export type AuthUserDto = {
   id: string;
   displayName: string | null;
+  avatarUrl: string | null;
   activeZoneId: string | null;
   roles: string[];
   identities: { provider: string; externalUserId: string }[];
+  /** True only after a stored declaration whose date of birth is at least 18. */
+  draftBeerAllowed: boolean;
 };

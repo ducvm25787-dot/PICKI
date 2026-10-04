@@ -74,10 +74,12 @@ export function ProviderCardCompact({
   provider: p,
   favorite,
   onToggleFavorite,
+  hrefQuery,
 }: {
   provider: ProviderListing;
   favorite?: boolean;
   onToggleFavorite?: (locationId: string) => void;
+  hrefQuery?: string;
 }) {
   const status = statusLine(p);
   const offer = p.sampleOffering?.trim() || null;
@@ -85,7 +87,7 @@ export function ProviderCardCompact({
   return (
     <article className="provider-card provider-card--compact">
       <div className="provider-card-compact-row">
-        <Link href={`/locations/${p.locationId}`} className="provider-card-compact-main">
+        <Link href={`/locations/${p.locationId}${hrefQuery ?? ""}`} className="provider-card-compact-main">
           <ProviderAvatar brandName={p.brandName} logoUrl={p.logoUrl} />
           <div className="provider-card-compact-body">
             <h3 className="provider-card-compact-title">
@@ -120,7 +122,7 @@ export function ProviderCardCompact({
               {favorite ? "♥" : "♡"}
             </button>
           ) : null}
-          <Link href={`/locations/${p.locationId}`} className="provider-card-compact-cta">
+          <Link href={`/locations/${p.locationId}${hrefQuery ?? ""}`} className="provider-card-compact-cta">
             Mở →
           </Link>
         </div>

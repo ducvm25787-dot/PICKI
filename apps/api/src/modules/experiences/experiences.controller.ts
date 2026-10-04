@@ -82,6 +82,17 @@ export class ExperiencesController {
     return this.experiences.updateSubmission(userId, city, id, parsed.data);
   }
 
+  @Delete("submissions/:id")
+  @UseGuards(SessionAuthGuard)
+  async removeSubmission(
+    @CurrentUserId() userId: string,
+    @Param("citySlug") citySlug: string,
+    @Param("id") id: string,
+  ) {
+    const city = await this.experiences.requireOpenCity(citySlug);
+    return this.experiences.removeOwnRejected(userId, city, id);
+  }
+
   @Get("home-card")
   async homeCard(@Param("citySlug") citySlug: string) {
     const city = await this.experiences.requireOpenCity(citySlug);

@@ -18,7 +18,7 @@ import {
   offerings,
   orders,
   providerLocations,
-  providerMembers,
+  userCoversLocation,
   providerRecipes,
   providerRecipeVersions,
   providers,
@@ -1772,19 +1772,7 @@ export class FamilyDinnerService {
       .limit(1);
     if (!loc[0]) throw new PickiError("NOT_FOUND", "Location not found");
 
-    const members = await this.db
-      .select()
-      .from(providerMembers)
-      .where(
-        and(
-          eq(providerMembers.userId, userId),
-          eq(providerMembers.providerId, loc[0].providerId),
-        ),
-      );
-    const allowed = members.some(
-      (m) => !m.providerLocationId || m.providerLocationId === locationId,
-    );
-    if (!allowed) {
+    if (!(await userCoversLocation(this.db, userId, locationId))) {
       throw new PickiError("FORBIDDEN", "Chỉ nhân viên bếp mới thao tác");
     }
     return loc[0].providerId;

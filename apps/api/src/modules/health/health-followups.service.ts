@@ -8,7 +8,7 @@ import {
   isHealthFollowupPending,
   remindAtFromDays,
   providerLocations,
-  providerMembers,
+  userCoversLocation,
   providers,
   users,
   type PickiDb,
@@ -332,12 +332,7 @@ export class HealthFollowupsService {
       throw new PickiError("FORBIDDEN", "Chỉ phòng khám dùng được nhắc tái khám");
     }
 
-    const member = await this.db
-      .select({ id: providerMembers.id })
-      .from(providerMembers)
-      .where(and(eq(providerMembers.userId, userId), eq(providerMembers.providerId, row.providerId)))
-      .limit(1);
-    if (!member[0]) {
+    if (!(await userCoversLocation(this.db, userId, locationId))) {
       throw new PickiError("FORBIDDEN", "No access to this location");
     }
   }

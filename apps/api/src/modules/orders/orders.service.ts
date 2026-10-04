@@ -7,6 +7,10 @@ import {
   previewFoodDeliveryFunding,
   reserveFoodDeliveryFunding,
   snapshotLaundryCheckout,
+  applyRunnerWaitFee,
+  normalizePlaceCode,
+  placeAccessNote,
+  placeWaitForHandoff,
   canCustomerCancel,
   breakfastPreorderDailyMenus,
   breakfastPreorderDeliveryWindows,
@@ -24,6 +28,7 @@ import {
   lobbyHandoffs,
   orderItems,
   orders,
+  users,
   orderStatusHistory,
   offerings,
   pickiPoints,
@@ -44,15 +49,20 @@ import {
   listOptionGroupsForOfferings,
   resolveOptionSelection,
   resolveTodayOffer,
+  resolveScheduledOffer,
+  scheduledDeliveryWindows,
+  scheduledFulfillmentSettings,
   zoneFulfillmentSettings,
+  zonePlaces,
   commerceServiceDate,
+  discoverZonesAtPoint,
   DaypartCapacityError,
   releaseDaypartMenuCapacity,
   reserveDaypartMenuCapacity,
   reserveOfferingStock,
   StockConflictError,
 } from "@picki/db";
-import { PickiError } from "@picki/shared";
+import { isAtLeast18, MARKET_MORNING_PURPOSE, morningOrderingOpen, PickiError, tomorrowDate } from "@picki/shared";
 import {
   breakfastSellPhase,
   foodDaypartForOrderKind,
@@ -219,6 +229,21 @@ export class OrdersService {
     }
 
     await this.assertZoneMember(userId, input.zoneId);
+    const hasPresence = input.presenceLat != null && input.presenceLng != null;
+    const presenceInside = hasPresence
+      ? (
+          await discoverZonesAtPoint(this.sql, {
+            lat: input.presenceLat!,
+            lng: input.presenceLng!,
+          })
+        ).some((z) => z.zone_id === input.zoneId)
+      : false;
+    if (!presenceInside && input.confirmHomeDelivery !== true) {
+      throw new PickiError(
+        "VALIDATION_ERROR",
+        "Bạn đang ở ngoài Zone. Xác nhận giao về địa chỉ nhà, không giao tại vị trí hiện tại.",
+      );
+    }
     const { serviceVertical, location } = await this.resolveLocation(
       input.providerLocationId,
       input.zoneId,
@@ -275,6 +300,8 @@ export class OrdersService {
     const deliveryLng: number | null = coords?.lng ?? null;
 
     let paymentMode = input.paymentMode;
+    let containsAlcohol = false;
+    let recipientName: string | null = null;
     let deliveryFeeVnd = 0;
     let totalVnd = 0;
     let subtotalVnd = 0;
@@ -289,6 +316,7 @@ export class OrdersService {
     let fulfillmentModes = new Set<string>();
     let serviceDate: string | null = null;
     let deliveryWindowId: string | null = null;
+    let scheduledDeliveryWindowId: string | null = null;
     let breakfastDeliveryWindowId: string | null = null;
     let lateDinnerOfferId: string | null = null;
 
@@ -324,6 +352,24 @@ export class OrdersService {
       paymentMode = "PAY_ON_PICKI";
       deliveryFeeVnd = await this.resolveDeliveryFeeVnd(input.zoneId, "FOOD", handoffMode);
       totalVnd = subtotalVnd + deliveryFeeVnd;
+    } else if (input.scheduledDeliveryWindowId) {
+      const morning = await this.assertMorningCheckout(input);
+      const built = await this.buildLineItems(
+        input.providerLocationId,
+        input.items,
+        morning.serviceDate,
+      );
+      lineItemsStandard = built.lineItems;
+      subtotalVnd = built.subtotalVnd;
+      fulfillmentModes = built.fulfillmentModes;
+      serviceDate = morning.serviceDate;
+      scheduledDeliveryWindowId = morning.windowId;
+      if (input.paymentMode !== "COD") {
+        throw new PickiError("VALIDATION_ERROR", "Sáng mai giao thanh toán khi nhận");
+      }
+      paymentMode = "COD";
+      deliveryFeeVnd = await this.resolveDeliveryFeeVnd(input.zoneId, "FOOD", handoffMode);
+      totalVnd = subtotalVnd + deliveryFeeVnd;
     } else {
       const built = await this.buildLineItems(input.providerLocationId, input.items);
       lineItemsStandard = built.lineItems;
@@ -346,6 +392,14 @@ export class OrdersService {
         deliveryFeeVnd = 0;
         totalVnd = 0;
       } else {
+        if (built.containsAlcohol && paymentMode !== "PAY_ON_PICKI") {
+          throw new PickiError("VALIDATION_ERROR", "Bia hơi chỉ thanh toán trước");
+        }
+        if (built.containsAlcohol) {
+          containsAlcohol = true;
+          paymentMode = "PAY_ON_PICKI";
+          recipientName = await this.assertDraftBeerBuyer(userId, input);
+        }
         deliveryFeeVnd = await this.resolveDeliveryFeeVnd(
           input.zoneId,
           serviceVertical as "FOOD" | "LAUNDRY",
@@ -354,6 +408,14 @@ export class OrdersService {
         totalVnd = subtotalVnd + deliveryFeeVnd;
       }
     }
+
+    const isLaundryOrder =
+      serviceVertical === "LAUNDRY" && !isFamilyDinner && !isLateDinner && !isDaypart;
+    const placeAccess = await this.resolveDeliveryPlace(
+      input.zoneId,
+      isLaundryOrder ? null : deliveryBuilding,
+      handoffMode,
+    );
 
     return this.db.transaction(async (tx) => {
       if (isFamilyDinner && deliveryWindowId) {
@@ -366,8 +428,6 @@ export class OrdersService {
         await this.reserveLateDinnerCapacity(tx, lateQuote);
       }
 
-      const isLaundryOrder =
-        serviceVertical === "LAUNDRY" && !isFamilyDinner && !isLateDinner && !isDaypart;
       const funding = isLaundryOrder
         ? { snapshot: snapshotLaundryCheckout(), promotionId: null as string | null }
         : await reserveFoodDeliveryFunding(tx, {
@@ -377,6 +437,9 @@ export class OrdersService {
             subtotalVnd,
             baseVnd: deliveryFeeVnd,
           });
+      const fundedSnapshot = placeAccess
+        ? applyRunnerWaitFee(funding.snapshot, placeAccess.runnerWaitFeeVnd)
+        : funding.snapshot;
       const chargedTotal = isLaundryOrder
         ? 0
         : subtotalVnd + funding.snapshot.customerDeliveryFee;
@@ -403,14 +466,21 @@ export class OrdersService {
           serviceDate,
           deliveryWindowId,
           breakfastDeliveryWindowId,
+          scheduledDeliveryWindowId,
           lateDinnerOfferId,
           laundryPickupMode,
           paymentMode,
+          containsAlcohol,
+          recipientName,
+          recipientAgeConfirmed: containsAlcohol,
           subtotalVnd:
             serviceVertical === "LAUNDRY" && !isFamilyDinner && !isLateDinner && !isDaypart
               ? 0
               : subtotalVnd,
-          ...funding.snapshot,
+          ...fundedSnapshot,
+          runnerWaitMinutes: placeAccess?.waitMinutes ?? 0,
+          runnerWaitFeeVnd: placeAccess?.runnerWaitFeeVnd ?? 0,
+          deliveryAccessNote: placeAccess?.note ?? null,
           deliveryPromotionId: funding.promotionId,
           totalVnd: chargedTotal,
           deliveryAddressId: addr.id,
@@ -516,7 +586,9 @@ export class OrdersService {
         try {
           await reserveOfferingStock(tx, {
             orderId: order.id,
+            providerLocationId: input.providerLocationId,
             serviceDate: stockDate,
+            requirePublished: Boolean(scheduledDeliveryWindowId),
             lines: stockLines.map((item) => ({
               offeringId: item.offeringId,
               quantity: item.quantity,
@@ -736,6 +808,19 @@ export class OrdersService {
 
   async customerCancel(userId: string, orderIdOrNumber: string) {
     const order = await this.resolveCustomerOrder(userId, orderIdOrNumber);
+    // TECHNICAL NOTE: Sáng mai giao may be cancelled until the shop marks READY.
+    // That status check is temporary. A later scheduled-order cancellation cutoff
+    // should read scheduledDeliveryWindowId plus the location settings in this
+    // method. Do not add a column for the cutoff.
+    if (order.scheduledDeliveryWindowId) {
+      const openForCancel = ["CREATED", "PAYMENT_PENDING", "PAID", "PROVIDER_ACCEPTED", "PREPARING"];
+      if (!openForCancel.includes(order.status)) {
+        throw new PickiError(
+          "FORBIDDEN",
+          "Đơn sáng mai đã sẵn sàng giao — liên hệ cửa hàng nếu cần hủy",
+        );
+      }
+    }
     if (order.productionLockedAt) {
       throw new PickiError(
         "FORBIDDEN",
@@ -960,6 +1045,40 @@ export class OrdersService {
     }
 
     return { location: location[0], serviceVertical };
+  }
+
+  private async resolveDeliveryPlace(
+    zoneId: string,
+    building: string | null | undefined,
+    handoffMode: "LOBBY_PICKUP" | "DOOR_DELIVERY",
+  ) {
+    const code = building ? normalizePlaceCode(building) : "";
+    if (!code) return null;
+    const rows = await this.db
+      .select()
+      .from(zonePlaces)
+      .where(
+        and(
+          eq(zonePlaces.zoneId, zoneId),
+          eq(zonePlaces.code, code),
+          eq(zonePlaces.status, "ACTIVE"),
+        ),
+      )
+      .limit(1);
+    const place = rows[0];
+    if (!place) return null;
+    if (handoffMode === "DOOR_DELIVERY" && !place.doorDeliveryAllowed) {
+      throw new PickiError(
+        "VALIDATION_ERROR",
+        `${place.displayName} chỉ giao tại sảnh — không lên căn hộ`,
+      );
+    }
+    const wait = placeWaitForHandoff(place, handoffMode);
+    return {
+      waitMinutes: wait.waitMinutes,
+      runnerWaitFeeVnd: wait.runnerWaitFeeVnd,
+      note: placeAccessNote(place, handoffMode, wait.waitMinutes),
+    };
   }
 
   private async loadZoneDeliveryFees(zoneId: string) {
@@ -1507,9 +1626,90 @@ export class OrdersService {
     }
   }
 
+  private async assertDraftBeerBuyer(
+    userId: string,
+    input: { recipientName?: string; recipientAgeConfirmed?: boolean },
+  ) {
+    if (input.recipientAgeConfirmed !== true) {
+      throw new PickiError("VALIDATION_ERROR", "Xác nhận người nhận đủ 18 tuổi");
+    }
+    const [buyer] = await this.db
+      .select({
+        declaredFullName: users.declaredFullName,
+        declaredDateOfBirth: users.declaredDateOfBirth,
+        ageDeclaredAt: users.ageDeclaredAt,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (
+      !buyer?.ageDeclaredAt ||
+      !buyer.declaredDateOfBirth ||
+      !isAtLeast18(buyer.declaredDateOfBirth) ||
+      !buyer.declaredFullName?.trim()
+    ) {
+      throw new PickiError("FORBIDDEN", "Khai họ tên và ngày sinh đủ 18 tuổi trước khi đặt bia hơi");
+    }
+    return input.recipientName?.trim() || buyer.declaredFullName.trim();
+  }
+
+  private async assertMorningCheckout(input: OrderCheckoutInput) {
+    if (!input.scheduledDeliveryWindowId) {
+      throw new PickiError("VALIDATION_ERROR", "Chọn khung giờ sáng");
+    }
+    const [window] = await this.db
+      .select()
+      .from(scheduledDeliveryWindows)
+      .where(eq(scheduledDeliveryWindows.id, input.scheduledDeliveryWindowId))
+      .limit(1);
+    if (
+      !window ||
+      window.providerLocationId !== input.providerLocationId ||
+      window.purpose !== MARKET_MORNING_PURPOSE ||
+      window.status !== "OPEN"
+    ) {
+      throw new PickiError("VALIDATION_ERROR", "Khung giờ không còn mở");
+    }
+    const tomorrow = tomorrowDate(new Date());
+    if (window.serviceDate !== tomorrow) {
+      throw new PickiError("VALIDATION_ERROR", "Chỉ đặt hàng cho sáng mai");
+    }
+    if (input.serviceDate && input.serviceDate !== window.serviceDate) {
+      throw new PickiError("VALIDATION_ERROR", "Ngày giao không khớp khung giờ");
+    }
+    const [settings] = await this.db
+      .select()
+      .from(scheduledFulfillmentSettings)
+      .where(
+        and(
+          eq(scheduledFulfillmentSettings.providerLocationId, input.providerLocationId),
+          eq(scheduledFulfillmentSettings.purpose, MARKET_MORNING_PURPOSE),
+        ),
+      )
+      .limit(1);
+    if (!settings?.enabled) {
+      throw new PickiError("FORBIDDEN", "Cửa hàng chưa mở Sáng mai giao");
+    }
+    const cutoffTime = String(settings.cutoffTime).slice(0, 5);
+    if (!morningOrderingOpen({ now: new Date(), serviceDate: window.serviceDate, cutoffTime })) {
+      throw new PickiError("FORBIDDEN", `Đã qua giờ chốt đặt sáng mai (${cutoffTime})`);
+    }
+    const [shop] = await this.db
+      .select({ model: providers.commerceModel })
+      .from(providerLocations)
+      .innerJoin(providers, eq(providers.id, providerLocations.providerId))
+      .where(eq(providerLocations.id, input.providerLocationId))
+      .limit(1);
+    if (shop?.model !== "FRESH_MARKET" && shop?.model !== "RETAIL_STORE") {
+      throw new PickiError("FORBIDDEN", "Sáng mai giao dành cho đi chợ");
+    }
+    return { serviceDate: window.serviceDate, windowId: window.id };
+  }
+
   private async buildLineItems(
     providerLocationId: string,
     items: CreateOrderInput["items"],
+    scheduledDate?: string,
   ) {
     const [shop] = await this.db
       .select({ model: providers.commerceModel })
@@ -1518,7 +1718,7 @@ export class OrdersService {
       .where(eq(providerLocations.id, providerLocationId))
       .limit(1);
     const marketCommerce = shop?.model === "FRESH_MARKET" || shop?.model === "RETAIL_STORE";
-    const menu = await listLocationMenu(this.sql, providerLocationId);
+    const menu = await listLocationMenu(this.sql, providerLocationId, scheduledDate ?? null);
     const menuById = new Map(menu.map((m) => [m.offering_id, m]));
     const optionGroups = await listOptionGroupsForOfferings(
       this.db,
@@ -1534,6 +1734,48 @@ export class OrdersService {
         throw new PickiError("VALIDATION_ERROR", "Invalid offering for this location", {
           details: { offeringId: item.offeringId },
         });
+      }
+      if (scheduledDate) {
+        const day = resolveScheduledOffer({
+          basePriceVnd: offering.amount_vnd,
+          dayStatus: offering.day_status,
+          availableQty: offering.available_qty,
+          reservedQty: offering.reserved_qty,
+          soldQty: offering.sold_qty,
+          priceOverrideVnd: offering.price_override_vnd,
+        });
+        if (!day.ok) {
+          throw new PickiError(
+            "CONFLICT",
+            day.reason === "sold_out"
+              ? `Hết sáng mai: ${offering.name}`
+              : `${offering.name} chưa mở bán sáng mai`,
+          );
+        }
+        if (day.remaining < item.quantity) {
+          throw new PickiError("CONFLICT", `Hết sáng mai: ${offering.name}`);
+        }
+        const picked = resolveOptionSelection(
+          optionGroups.get(item.offeringId) ?? [],
+          item.optionIds ?? [],
+        );
+        if (!picked.ok) {
+          throw new PickiError("VALIDATION_ERROR", `${offering.name}: ${picked.message}`);
+        }
+        const unitPriceVnd = day.amountVnd + picked.extraVnd;
+        const optionLabel = picked.snapshot.map((option) => option.name).join(", ");
+        return {
+          offeringId: item.offeringId,
+          name: optionLabel ? `${offering.name} · ${optionLabel}` : offering.name,
+          description: offering.description,
+          unitPriceVnd,
+          quantity: item.quantity,
+          lineTotalVnd: unitPriceVnd * item.quantity,
+          estimatedDays: offering.estimated_days,
+          fulfillmentMode: offering.fulfillment_mode,
+          optionSnapshot: picked.snapshot,
+          alcoholRestricted: offering.alcohol_restricted,
+        };
       }
       const today = resolveTodayOffer({
         basePriceVnd: offering.amount_vnd,
@@ -1584,6 +1826,7 @@ export class OrdersService {
         estimatedDays: offering.estimated_days,
         fulfillmentMode: offering.fulfillment_mode,
         optionSnapshot: picked.snapshot,
+        alcoholRestricted: offering.alcohol_restricted,
       };
     });
 
@@ -1591,7 +1834,12 @@ export class OrdersService {
     const fulfillmentModes = new Set(
       lineItems.map((i) => i.fulfillmentMode).filter(Boolean) as string[],
     );
-    return { lineItems, subtotalVnd, fulfillmentModes };
+    return {
+      lineItems,
+      subtotalVnd,
+      fulfillmentModes,
+      containsAlcohol: lineItems.some((item) => item.alcoholRestricted),
+    };
   }
 
   private async computeCanCancel(order: typeof orders.$inferSelect): Promise<boolean> {
@@ -1635,6 +1883,7 @@ export class OrdersService {
       zoneId: order.zoneId,
       providerLocationId: order.providerLocationId,
       status: order.status,
+      cancelReason: order.cancelReason,
       paymentMode: order.paymentMode,
       orderKind: order.orderKind ?? "STANDARD",
       serviceDate: order.serviceDate ?? null,

@@ -1,4 +1,4 @@
-import { doublePrecision, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { createdAt, updatedAt } from "./helpers.js";
 import { users } from "./identity.js";
 import { orders } from "./orders.js";
@@ -85,6 +85,32 @@ export const pickiPoints = pgTable("picki_points", {
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+export const zonePlaces = pgTable(
+  "zone_places",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    zoneId: uuid("zone_id")
+      .notNull()
+      .references(() => zones.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    code: text("code").notNull(),
+    displayName: text("display_name").notNull(),
+    elevatorNote: text("elevator_note"),
+    accessCardRequired: boolean("access_card_required").notNull().default(false),
+    securityNote: text("security_note"),
+    callUpRequired: boolean("call_up_required").notNull().default(false),
+    doorDeliveryAllowed: boolean("door_delivery_allowed").notNull().default(true),
+    lobbyWaitMinutes: integer("lobby_wait_minutes").notNull().default(0),
+    doorWaitMinutes: integer("door_wait_minutes").notNull().default(0),
+    runnerFeePerMinuteVnd: integer("runner_fee_per_minute_vnd").notNull().default(0),
+    notes: text("notes"),
+    status: text("status").notNull().default("ACTIVE"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [unique("zone_places_zone_code_uidx").on(t.zoneId, t.code)],
+);
 
 export const zoneFulfillmentSettings = pgTable("zone_fulfillment_settings", {
   zoneId: uuid("zone_id")

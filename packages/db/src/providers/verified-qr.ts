@@ -34,6 +34,7 @@ export async function setLocationVerification(
     status: LocationVerificationStatus;
     note?: string | null;
     actorUserId: string;
+    zoneId?: string | null;
   },
 ) {
   return db.transaction(async (tx) => {
@@ -65,6 +66,7 @@ export async function setLocationVerification(
       action: "LOCATION_VERIFICATION_SET",
       entityType: "provider_location",
       entityId: input.locationId,
+      zoneId: input.zoneId ?? null,
       metadata: {
         status: input.status,
         reason: input.note?.trim() || null,
@@ -78,7 +80,7 @@ export async function setLocationVerification(
 
 export async function issueLocationQr(
   db: PickiDb,
-  input: { locationId: string; actorUserId: string; reason?: string | null },
+  input: { locationId: string; actorUserId: string; reason?: string | null; zoneId?: string | null },
 ) {
   return db.transaction(async (tx) => {
     const [row] = await tx
@@ -107,6 +109,7 @@ export async function issueLocationQr(
       action: reissued ? "QR_REISSUE" : "QR_ISSUE",
       entityType: "provider_location",
       entityId: input.locationId,
+      zoneId: input.zoneId ?? null,
       metadata: { reason: input.reason?.trim() || null },
     });
 

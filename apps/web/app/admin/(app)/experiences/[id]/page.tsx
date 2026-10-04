@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AdminPageShell } from "../../../../components/admin-session-context";
 import { api } from "../../../../../lib/api";
@@ -24,6 +24,7 @@ type AdminExperience = ExperienceCard & {
 
 export default function AdminExperienceReviewPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const [row, setRow] = useState<AdminExperience | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -94,6 +95,19 @@ export default function AdminExperienceReviewPage() {
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Không xuất bản được");
     } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeRejected() {
+    if (!row) return;
+    if (!window.confirm(`Xóa “${row.title}” khỏi danh sách? Tổ chức không còn thấy bài này.`)) return;
+    setBusy(true);
+    try {
+      await api(`/admin/experiences/${row.id}`, { method: "DELETE" });
+      router.replace("/admin/experiences");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Không xóa được");
       setBusy(false);
     }
   }
@@ -425,6 +439,11 @@ export default function AdminExperienceReviewPage() {
         <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void reject()}>
           Từ chối
         </button>
+        {row.status === "REJECTED" ? (
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void removeRejected()}>
+            Xóa
+          </button>
+        ) : null}
       </div>
       {message ? <p className="stat">{message}</p> : null}
     </AdminPageShell>

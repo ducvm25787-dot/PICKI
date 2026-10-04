@@ -7,7 +7,7 @@ type Contact = {
 
 type Props = {
   contacts: {
-    customer: { phone: string | null; displayName?: string | null };
+    customer: { phone: string | null; displayName?: string | null; avatarUrl?: string | null };
     provider: { phone: string | null; label?: string };
     runner?: { phone: string | null; displayName?: string | null } | null;
   };
@@ -49,6 +49,32 @@ function PhoneIcon() {
     >
       <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
     </svg>
+  );
+}
+
+export function CustomerFace({
+  displayName,
+  avatarUrl,
+}: {
+  displayName?: string | null;
+  avatarUrl?: string | null;
+}) {
+  const name = displayName?.trim() ?? "";
+  const initial = (name || "K").slice(0, 1).toUpperCase();
+  return (
+    <div className="order-customer-face">
+      {avatarUrl ? (
+        <img src={avatarUrl} alt="" className="order-customer-avatar" />
+      ) : (
+        <span className="order-customer-avatar order-customer-avatar--empty" aria-hidden>
+          {initial}
+        </span>
+      )}
+      <span className="order-customer-face-text">
+        <strong>{name || "Chưa có tên Zalo"}</strong>
+        <span className="stat">Tên Zalo</span>
+      </span>
+    </div>
   );
 }
 
@@ -102,13 +128,24 @@ export function OrderPhoneLinks({ contacts, hideRole, showOnly, compact = false 
     }
   }
 
-  if (items.length === 0) return null;
+  const showCustomerFace = showOnly === "customer" || hideRole !== "customer";
+  if (!showCustomerFace && items.length === 0) return null;
 
   return (
-    <div className={compact ? "order-phone-links compact" : "order-phone-links"}>
-      {items.map((item) => (
-        <PhoneLink key={item.label} contact={item} />
-      ))}
+    <div>
+      {showCustomerFace ? (
+        <CustomerFace
+          displayName={contacts.customer.displayName}
+          avatarUrl={contacts.customer.avatarUrl}
+        />
+      ) : null}
+      {items.length > 0 ? (
+        <div className={compact ? "order-phone-links compact" : "order-phone-links"}>
+          {items.map((item) => (
+            <PhoneLink key={item.label} contact={item} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

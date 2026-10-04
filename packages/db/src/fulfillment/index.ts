@@ -7,6 +7,7 @@ export * from "./redeem-delivery-promotion.js";
 export * from "./fulfillment-actions.js";
 export * from "./runner-dispatch.js";
 export * from "./lobby.js";
+export * from "./place-access.js";
 export * from "./plan-laundry-inbound.js";
 export * from "./plan-laundry-return.js";
 export * from "./plan-route.js";

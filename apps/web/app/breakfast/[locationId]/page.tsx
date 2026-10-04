@@ -8,6 +8,7 @@ import { formatAddressLine, type SavedAddress } from "../../../lib/addresses";
 import { formatVnd } from "../../../lib/money";
 import { NotificationBell } from "../../components/notification-bell";
 import { LocationContactActions } from "../../components/location-contact-actions";
+import { HomeDeliveryConfirm, useOrderPresence } from "../../components/order-presence";
 import { PickeeMap } from "../../components/pickee-map";
 import {
   DeliveryHandoffChoice,
@@ -55,6 +56,8 @@ export default function BreakfastOrderPage() {
   const daypart = search.get("daypart") === "LUNCH" ? "LUNCH" : "BREAKFAST";
   const orderKind = daypart === "LUNCH" ? "LUNCH" : "BREAKFAST_PREORDER";
   const [zoneId, setZoneId] = useState(search.get("zoneId") ?? "");
+  const presence = useOrderPresence(zoneId);
+  const [confirmHome, setConfirmHome] = useState(false);
 
   const [menu, setMenu] = useState<MenuResponse | null>(null);
   const [qty, setQty] = useState<Record<string, number>>({});
@@ -155,6 +158,18 @@ export default function BreakfastOrderPage() {
 
   async function placeOrder() {
     if (!zoneId || !windowId || !addressId || !menu || !checkoutReady) return;
+    if (presence.status === "checking") {
+      setError("Đang đọc vị trí…");
+      return;
+    }
+    if (presence.needsHomeConfirm && !confirmHome) {
+      setError(
+        presence.status === "outside"
+          ? "Bạn đang ở ngoài Zone. Xác nhận giao về địa chỉ nhà, không giao tại vị trí hiện tại."
+          : "Chưa đọc được vị trí. Xác nhận giao về địa chỉ nhà đã lưu, không giao tại vị trí hiện tại.",
+      );
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -175,6 +190,7 @@ export default function BreakfastOrderPage() {
             quantity: l.quantity,
           })),
           idempotencyKey: `bf-${locationId}-${Date.now()}`,
+          ...presence.orderPresenceBody(confirmHome),
         }),
       });
       router.push(`/orders/${order.id}?pay=1`);
@@ -370,11 +386,19 @@ export default function BreakfastOrderPage() {
         </div>
       ) : null}
 
+      <HomeDeliveryConfirm status={presence.status} checked={confirmHome} onChange={setConfirmHome} />
+
       <button
         type="button"
         className="btn"
         style={{ width: "100%" }}
-        disabled={!checkoutReady || submitting || !menu.acceptingPreorder}
+        disabled={
+          !checkoutReady ||
+          submitting ||
+          !menu.acceptingPreorder ||
+          presence.status === "checking" ||
+          (presence.needsHomeConfirm && !confirmHome)
+        }
         onClick={() => void placeOrder()}
       >
         {submitting ? "Đang đặt…" : "Đặt sáng & thanh toán"}

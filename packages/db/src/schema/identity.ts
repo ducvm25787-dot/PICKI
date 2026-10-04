@@ -1,9 +1,13 @@
-import { jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { date, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { createdAt, updatedAt } from "./helpers.js";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   displayName: text("display_name"),
+  avatarUrl: text("avatar_url"),
+  declaredFullName: text("declared_full_name"),
+  declaredDateOfBirth: date("declared_date_of_birth"),
+  ageDeclaredAt: timestamp("age_declared_at", { withTimezone: true, mode: "date" }),
   activeZoneId: uuid("active_zone_id"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

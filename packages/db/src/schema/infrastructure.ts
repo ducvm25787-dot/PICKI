@@ -1,4 +1,5 @@
 import { jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { zones } from "./zones.js";
 
 /** Sensitive admin/ops actions — actor FK added when `users` lands (S2). */
 export const auditLogs = pgTable("audit_logs", {
@@ -7,6 +8,8 @@ export const auditLogs = pgTable("audit_logs", {
   action: text("action").notNull(),
   entityType: text("entity_type").notNull(),
   entityId: uuid("entity_id"),
+  /** Null = global event. Zone nhật ký only returns rows with this set. */
+  zoneId: uuid("zone_id").references(() => zones.id, { onDelete: "set null" }),
   metadata: jsonb("metadata").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()

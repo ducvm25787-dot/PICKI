@@ -25,3 +25,7 @@ export const patchMeSchema = z.object({
   displayName: z.string().min(1).max(120).nullable().optional(),
   activeZoneId: z.string().uuid().nullable().optional(),
 });
+
+export const avatarUploadSchema = z.object({
+  dataUrl: z.string().min(32).max(450_000),
+});

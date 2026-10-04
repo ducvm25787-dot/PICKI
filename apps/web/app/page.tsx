@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type TransitionEvent } from "react";
 import { api } from "../lib/api";
+import { getCurrentPositionOnce } from "../lib/geolocation";
 import {
   browseHrefForDiscoveryBlock,
   homeCategoriesPrimary,
@@ -21,12 +22,14 @@ import {
   type ExperienceCityRef,
 } from "../lib/experiences";
 import { liveStatusClass, liveStatusLabel, type ProviderListing } from "../lib/providers";
+import { marketTierBadge } from "@picki/shared";
 import { BrandMark } from "./components/brand-mark";
+import { HomeDishRail, type TodaySpecial } from "./components/home-dish-rail";
 import { NotificationBell } from "./components/notification-bell";
 import { ProviderList } from "./components/provider-list";
 import { IconSearch } from "./components/nav-icons";
 
-type Me = { id: string; displayName: string | null };
+type Me = { id: string; displayName: string | null; draftBeerAllowed?: boolean };
 
 type DiscoveryBlock = {
   id: string;
@@ -73,9 +76,11 @@ type SpotlightCard = {
   sponsored: boolean;
 };
 
-type ExploreChipId = "new" | "open" | "near" | "popular";
+type ExploreChipId = "new" | "open" | "near" | "popular" | "bia-hoi";
 
 type MyZone = { zoneId: string; slug: string; displayName: string };
+
+type NearbyZone = { id: string; slug: string; displayName: string };
 
 const KVL_SLUG = "kim-van-kim-lu";
 
@@ -84,15 +89,135 @@ const EXPLORE_CHIPS: { id: ExploreChipId; label: string }[] = [
   { id: "new", label: "Mới" },
   { id: "near", label: "Gần tôi" },
   { id: "popular", label: "Phổ biến" },
+  { id: "bia-hoi", label: "Bia hơi" },
 ];
+
+function HomeHeroPhoto({ urls }: { urls: string[] }) {
+  const [index, setIndex] = useState(0);
+  const urlsRef = useRef(urls);
+  urlsRef.current = urls;
+  const signature = urls.join("|");
+  useEffect(() => {
+    const list = urlsRef.current;
+    if (list.length < 2 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setIndex(0);
+      return;
+    }
+    const started = Date.now();
+    const tick = () => {
+      const current = urlsRef.current;
+      if (current.length < 2) return;
+      setIndex(Math.floor((Date.now() - started) / 6_000) % current.length);
+    };
+    const id = window.setInterval(tick, 1_000);
+    return () => window.clearInterval(id);
+  }, [signature]);
+  const src = urls[index] ?? urls[0];
+  if (!src) return null;
+  return <img className="home-hero-photo" src={src} alt="" />;
+}
+
+function ExperienceHomeReel({
+  copy,
+  when,
+  citySlug,
+  cityLabel,
+  experiences,
+}: {
+  copy: string;
+  when: string;
+  citySlug: string;
+  cityLabel: string;
+  experiences: ExperienceCard[];
+}) {
+  const count = experiences.length;
+  const visible = Math.min(3, count);
+  const [step, setStep] = useState(0);
+  const [gliding, setGliding] = useState(false);
+  const holdTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (count <= 1) return;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (media.matches) {
+      const id = window.setInterval(() => setStep((value) => value + 1), 7_500);
+      return () => window.clearInterval(id);
+    }
+    let cancelled = false;
+    const frame = window.requestAnimationFrame(() => {
+      if (!cancelled) setGliding(true);
+    });
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+      if (holdTimer.current != null) window.clearTimeout(holdTimer.current);
+    };
+  }, [count]);
+
+  function onGlideEnd(event: TransitionEvent<HTMLDivElement>) {
+    if (event.propertyName !== "transform" || event.target !== event.currentTarget) return;
+    setGliding(false);
+    setStep((value) => value + 1);
+    if (holdTimer.current != null) window.clearTimeout(holdTimer.current);
+    holdTimer.current = window.setTimeout(() => setGliding(true), 6_000);
+  }
+
+  if (count === 0) return null;
+  const reel =
+    count <= 1
+      ? experiences
+      : Array.from(
+          { length: visible + 1 },
+          (_, index) => experiences[(step + index) % count]!,
+        );
+
+  return (
+    <section className="card home-experience" aria-label={copy}>
+      <p className="section-title" style={{ marginBottom: 8 }}>
+        {copy}
+      </p>
+      <div className="home-experience-viewport" style={{ ["--rows" as string]: visible }}>
+        <div
+          className={`home-experience-track${gliding ? " is-gliding" : ""}`}
+          onTransitionEnd={onGlideEnd}
+        >
+          {reel.map((item, index) => (
+            <Link
+              key={`slot-${index}`}
+              href={experienceHref(citySlug, `/${item.id}`)}
+              className="home-experience-row"
+              onClick={() => track("weekend_card_open", { properties: { experienceId: item.id } })}
+            >
+              <strong>{item.title}</strong>
+              <span className="stat">
+                {item.occurrences[0] ? formatOccurrence(item.occurrences[0].startAt) : item.venue.name}
+                {" · "}
+                {priceLabel(item)}
+              </span>
+            </Link>
+          ))}
+        </div>
+      </div>
+      <Link href={`${experienceHref(citySlug)}?when=${when}`} className="stat">
+        Xem trải nghiệm {cityLabel}
+      </Link>
+    </section>
+  );
+}
 
 export default function HomePage() {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [myZones, setMyZones] = useState<MyZone[]>([]);
+  const [nearbyZone, setNearbyZone] = useState<NearbyZone | null>(null);
+  const [gpsNote, setGpsNote] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<DiscoveryBlock[]>([]);
   const [familiar, setFamiliar] = useState<FamiliarCard[]>([]);
   const [nowAround, setNowAround] = useState<NowAroundCard[]>([]);
+  const [todaySpecials, setTodaySpecials] = useState<TodaySpecial[]>([]);
+  const [snackDesserts, setSnackDesserts] = useState<TodaySpecial[]>([]);
+  const [marketToday, setMarketToday] = useState<TodaySpecial[]>([]);
+  const [heroByContext, setHeroByContext] = useState<Record<string, string[]>>({});
   const [spotlight, setSpotlight] = useState<SpotlightCard | null>(null);
   const [experienceHome, setExperienceHome] = useState<{
     copy: string;
@@ -104,6 +229,9 @@ export default function HomePage() {
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [exploreChip, setExploreChip] = useState<ExploreChipId>("open");
+  const [ageName, setAgeName] = useState("");
+  const [ageDob, setAgeDob] = useState("");
+  const [ageError, setAgeError] = useState<string | null>(null);
   const [exploreProviders, setExploreProviders] = useState<ProviderListing[]>([]);
   const [exploreLoading, setExploreLoading] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -161,12 +289,34 @@ export default function HomePage() {
         setExperienceHome(experienceRes.card);
 
         const joined = mine.zones.some((z) => z.slug === KVL_SLUG);
+        if (!joined) {
+          const geo = await getCurrentPositionOnce({ timeoutMs: 10_000 });
+          if (geo.source !== "gps") {
+            setNearbyZone(null);
+            setGpsNote(geo.error ?? "Bật vị trí khi đứng trong Zone để tham gia.");
+          } else {
+            const found = await api<{ zones: NearbyZone[] }>("/zones/discover", {
+              method: "POST",
+              body: JSON.stringify(geo.position),
+            }).catch(() => ({ zones: [] as NearbyZone[] }));
+            setNearbyZone(found.zones[0] ?? null);
+            setGpsNote(
+              found.zones[0]
+                ? null
+                : "Bạn đang ở ngoài Zone. Vào trong khu và bật vị trí để tham gia.",
+            );
+          }
+        }
         if (joined) {
           const home = await api<{
             zoneId?: string;
             blocks: DiscoveryBlock[];
             familiar?: FamiliarCard[];
             nowAround?: NowAroundCard[];
+            todaySpecials?: TodaySpecial[];
+            snackDesserts?: TodaySpecial[];
+            marketToday?: TodaySpecial[];
+            heroImages?: Record<string, string[]>;
             today?: NowAroundCard[];
             spotlight?: SpotlightCard | null;
           }>(`/zones/${KVL_SLUG}/home`).catch(async () => {
@@ -177,12 +327,18 @@ export default function HomePage() {
               ...discovery,
               familiar: [] as FamiliarCard[],
               nowAround: [] as NowAroundCard[],
+              todaySpecials: [] as TodaySpecial[],
+              heroImages: {} as Record<string, string[]>,
               spotlight: null as SpotlightCard | null,
             };
           });
           setBlocks(home.blocks);
           setFamiliar(home.familiar ?? []);
           setNowAround(home.nowAround ?? []);
+          setTodaySpecials("todaySpecials" in home ? (home.todaySpecials ?? []) : []);
+          setSnackDesserts("snackDesserts" in home ? (home.snackDesserts ?? []) : []);
+          setMarketToday("marketToday" in home ? (home.marketToday ?? []) : []);
+          setHeroByContext("heroImages" in home ? (home.heroImages ?? {}) : {});
           setSpotlight("spotlight" in home ? (home.spotlight ?? null) : null);
           if (home.zoneId) setZoneId(home.zoneId);
           await loadFavorites();
@@ -243,6 +399,19 @@ export default function HomePage() {
     }
   }
 
+  async function declareAge() {
+    setAgeError(null);
+    try {
+      const user = await api<Me>("/me/age-declaration", {
+        method: "POST",
+        body: JSON.stringify({ fullName: ageName, dateOfBirth: ageDob }),
+      });
+      setMe(user);
+    } catch (e) {
+      setAgeError(e instanceof Error ? e.message : "Không khai được tuổi");
+    }
+  }
+
   async function selectExploreChip(chip: ExploreChipId) {
     setExploreChip(chip);
     await loadExplore(chip);
@@ -281,35 +450,15 @@ export default function HomePage() {
       ].includes(b.id),
   );
 
-  const experienceBlock =
-    experienceHome && experienceHome.experiences.length > 0 ? (
-      <section className="card home-experience" aria-label={experienceHome.copy}>
-        <p className="section-title" style={{ marginBottom: 8 }}>
-          {experienceHome.copy}
-        </p>
-        {experienceHome.experiences.map((item) => (
-          <Link
-            key={item.id}
-            href={experienceHref(experienceHome.city?.slug ?? "hanoi", `/${item.id}`)}
-            className="home-experience-row"
-            onClick={() => track("weekend_card_open", { properties: { experienceId: item.id } })}
-          >
-            <strong>{item.title}</strong>
-            <span className="stat">
-              {item.occurrences[0] ? formatOccurrence(item.occurrences[0].startAt) : item.venue.name}
-              {" · "}
-              {priceLabel(item)}
-            </span>
-          </Link>
-        ))}
-        <Link
-          href={`${experienceHref(experienceHome.city?.slug ?? "hanoi")}?when=${experienceHome.when}`}
-          className="stat"
-        >
-          Xem trải nghiệm {experienceHome.city?.label ?? "Hà Nội"}
-        </Link>
-      </section>
-    ) : null;
+  const experienceBlock = experienceHome ? (
+    <ExperienceHomeReel
+      copy={experienceHome.copy}
+      when={experienceHome.when}
+      citySlug={experienceHome.city?.slug ?? "hanoi"}
+      cityLabel={experienceHome.city?.label ?? "Hà Nội"}
+      experiences={experienceHome.experiences}
+    />
+  ) : null;
 
   const utilitiesBlock = (
     <section className="home-utilities" aria-label="Tiện ích quanh tôi">
@@ -375,16 +524,27 @@ export default function HomePage() {
       {!joinedKvl ? (
         <>
         <div className="card" style={{ marginBottom: 16 }}>
-          <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>Kim Văn – Kim Lũ</h2>
-          <p className="stat">Tham gia Zone để xem quanh nhà.</p>
-          <button
-            type="button"
-            className="btn"
-            style={{ marginTop: 12 }}
-            onClick={() => router.push(`/zones/${KVL_SLUG}`)}
-          >
-            Tham gia Zone
-          </button>
+          {nearbyZone ? (
+            <>
+              <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>{nearbyZone.displayName}</h2>
+              <p className="stat">GPS đang nằm trong Zone này. Tham gia để dùng dịch vụ quanh nhà.</p>
+              <button
+                type="button"
+                className="btn"
+                style={{ marginTop: 12 }}
+                onClick={() => router.push(`/zones/${nearbyZone.slug}`)}
+              >
+                Tham gia Zone
+              </button>
+            </>
+          ) : (
+            <>
+              <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>Chưa ở trong Zone</h2>
+              <p className="stat">
+                {gpsNote ?? "Đang đọc vị trí… Chỉ hiện Zone khi GPS nằm trong khu."}
+              </p>
+            </>
+          )}
         </div>
         {experienceBlock}
         </>
@@ -411,12 +571,58 @@ export default function HomePage() {
             📍 Nhà · Kim Văn – Kim Lũ
           </p>
 
-          <Link href={contextNow.href} className={`home-hero home-hero--${contextNow.tone}`}>
-            <p className="home-hero-kicker">{contextNow.kicker}</p>
-            <h2 className="home-hero-title">{contextNow.title}</h2>
-            <p className="home-hero-copy">{contextNow.copy}</p>
-            <span className="home-hero-cta">{contextNow.cta}</span>
+          <Link
+            href={contextNow.href}
+            className={`home-hero home-hero--${contextNow.tone}${(heroByContext[contextNow.id]?.length ?? 0) > 0 ? " home-hero--has-photo" : ""}`}
+          >
+            <span className="home-hero-text">
+              <p className="home-hero-kicker">{contextNow.kicker}</p>
+              <h2 className="home-hero-title">{contextNow.title}</h2>
+              <p className="home-hero-copy">{contextNow.copy}</p>
+              <span className="home-hero-cta">{contextNow.cta}</span>
+            </span>
+            <HomeHeroPhoto urls={heroByContext[contextNow.id] ?? []} />
           </Link>
+
+          <HomeDishRail
+            label="Đặc biệt hôm nay"
+            allHref="/pushes/special"
+            items={todaySpecials}
+            badgeFor={(item) =>
+              item.listAmountVnd && item.amountVnd && item.listAmountVnd > item.amountVnd
+                ? "Ưu đãi giảm giá"
+                : "Đặc biệt"
+            }
+            zoneId={zoneId}
+            trackSource="today_special"
+          />
+          <HomeDishRail
+            label="Ăn vặt & Tráng miệng"
+            hint="Thèm gì gọi nấy quanh nhà"
+            allHref="/pushes/snacks"
+            items={snackDesserts}
+            badgeFor={(item) => item.categoryName ?? "Ăn vặt"}
+            empty="Chưa có món được đẩy hôm nay."
+            zoneId={zoneId}
+            trackSource="snack_dessert"
+          />
+          <HomeDishRail
+            label="Đi chợ"
+            allHref="/pushes/market"
+            items={marketToday}
+            badgeFor={(item) => item.providerClass ?? marketTierBadge(item.providerType) ?? "Đi chợ"}
+            empty="Chưa có hàng được đẩy hôm nay."
+            zoneId={zoneId}
+            trackSource="market_today"
+          />
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <Link href={`/zones/${KVL_SLUG}/browse/market`} className="familiar-cta" style={{ marginBottom: 0 }}>
+              Đi chợ ngay
+            </Link>
+            <Link href={`/zones/${KVL_SLUG}/browse/market?when=morning`} className="familiar-cta" style={{ marginBottom: 0 }}>
+              Sáng mai giao
+            </Link>
+          </div>
 
           {spotlight ? (
             <Link href={spotlight.href} className="card spotlight-card">
@@ -535,8 +741,40 @@ export default function HomePage() {
             <p className="section-title" style={{ margin: "8px 0 12px" }}>
               Khám phá quanh tôi
             </p>
+            {me?.draftBeerAllowed ? null : (
+              <form
+                className="card"
+                style={{ marginBottom: 12 }}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void declareAge();
+                }}
+              >
+                <strong>Bia hơi</strong>
+                <p className="stat" style={{ margin: "4px 0 8px" }}>
+                  Khai họ tên và ngày sinh đủ 18 tuổi để xem quán rót bia hơi.
+                </p>
+                <label className="field">
+                  Họ tên
+                  <input value={ageName} onChange={(event) => setAgeName(event.target.value)} required />
+                </label>
+                <label className="field">
+                  Ngày sinh
+                  <input
+                    type="date"
+                    value={ageDob}
+                    onChange={(event) => setAgeDob(event.target.value)}
+                    required
+                  />
+                </label>
+                {ageError ? <p style={{ color: "#b91c1c" }}>{ageError}</p> : null}
+                <button className="btn" type="submit">
+                  Xác nhận đủ 18 tuổi
+                </button>
+              </form>
+            )}
             <div className="filter-chip-row" aria-label="Bộ lọc khám phá">
-              {EXPLORE_CHIPS.map((c) => (
+              {EXPLORE_CHIPS.filter((c) => c.id !== "bia-hoi" || me?.draftBeerAllowed).map((c) => (
                 <button
                   key={c.id}
                   type="button"

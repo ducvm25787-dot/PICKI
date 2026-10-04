@@ -29,6 +29,7 @@ export default function ZonePage() {
   const [providers, setProviders] = useState<ProviderListing[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [gpsHint, setGpsHint] = useState<string | null>(null);
+  const [insideZone, setInsideZone] = useState<boolean | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -56,17 +57,53 @@ export default function ZonePage() {
     void load();
   }, [params.slug, router]);
 
+  useEffect(() => {
+    if (!zone || joined) return;
+    let cancel = false;
+    void (async () => {
+      const geo = await getCurrentPositionOnce();
+      if (cancel) return;
+      if (geo.source !== "gps") {
+        setInsideZone(false);
+        setGpsHint(geo.error ?? "Không lấy được GPS. Chỉ tham gia khi đứng trong Zone.");
+        return;
+      }
+      try {
+        const found = await api<{ zones: { id: string }[] }>("/zones/discover", {
+          method: "POST",
+          body: JSON.stringify(geo.position),
+        });
+        if (cancel) return;
+        const ok = found.zones.some((z) => z.id === zone.id);
+        setInsideZone(ok);
+        setGpsHint(
+          ok
+            ? "GPS đang nằm trong Zone — có thể tham gia"
+            : "GPS đang ở ngoài Zone này. Vào trong khu rồi thử lại.",
+        );
+      } catch {
+        if (!cancel) {
+          setInsideZone(false);
+          setGpsHint("Không kiểm tra được vị trí.");
+        }
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [zone, joined]);
+
   async function join() {
     if (!zone) return;
     setSubmitting(true);
     setError(null);
     try {
       const geo = await getCurrentPositionOnce();
-      setGpsHint(
-        geo.source === "gps"
-          ? "Đã dùng vị trí GPS (một lần) để join Zone"
-          : `Dùng vị trí Zone — ${geo.error ?? ""}`,
-      );
+      if (geo.source !== "gps") {
+        setError(geo.error ?? "Không lấy được GPS. Chỉ tham gia khi đứng trong Zone.");
+        return;
+      }
+      setGpsHint("Đã dùng vị trí GPS (một lần) để join Zone");
       await api(`/zones/${zone.id}/join`, {
         method: "POST",
         body: JSON.stringify({
@@ -138,7 +175,7 @@ export default function ZonePage() {
             {building}-{apartment} · Menu & đặt món sprint tiếp theo
           </p>
         </div>
-      ) : (
+      ) : insideZone ? (
         <div className="card">
           <h2 style={{ marginTop: 0, fontSize: 18 }}>Tham gia Zone</h2>
           <div className="field">
@@ -160,6 +197,16 @@ export default function ZonePage() {
           </button>
           <p className="stat" style={{ marginTop: 8 }}>
             Pickee chỉ lấy vị trí lúc join — không theo dõi liên tục.
+          </p>
+        </div>
+      ) : (
+        <div className="card">
+          <h2 style={{ marginTop: 0, fontSize: 18 }}>Chưa ở trong Zone</h2>
+          <p className="stat">
+            {gpsHint ?? "Đang đọc vị trí… Chỉ tham gia được khi GPS nằm trong khu."}
+          </p>
+          <p className="stat">
+            Tài khoản đã tham gia vẫn dùng được dịch vụ khi ra ngoài. Đơn mới giao về địa chỉ nhà, không giao tại chỗ đang đứng.
           </p>
         </div>
       )}

@@ -6,11 +6,13 @@ export function ProviderList({
   favoriteIds,
   onToggleFavorite,
   emptyLabel = "Chưa có provider phù hợp khung giờ này.",
+  hrefQuery,
 }: {
   providers: ProviderListing[];
   favoriteIds?: Set<string>;
   onToggleFavorite?: (locationId: string) => void;
   emptyLabel?: string;
+  hrefQuery?: string;
 }) {
   if (providers.length === 0) {
     return <p className="stat">{emptyLabel}</p>;
@@ -24,6 +26,7 @@ export function ProviderList({
           provider={p}
           favorite={favoriteIds?.has(p.locationId)}
           onToggleFavorite={onToggleFavorite}
+          hrefQuery={hrefQuery}
         />
       ))}
     </div>

@@ -15,6 +15,7 @@ export type ProviderLocation = {
   locationName: string;
   role: string;
   sellNowEnabled?: boolean;
+  locationStatus?: string;
 };
 
 type ProviderLocationContextValue = {
@@ -153,6 +154,11 @@ export function ProviderPageShell({
         </div>
         <NotificationBell audience="provider" />
       </div>
+      {activeLocation?.locationStatus === "PAUSED" ? (
+        <p className="card" style={{ marginBottom: 12, borderColor: "#b91c1c" }}>
+          Quán đang tạm dừng. Khách không thấy và không đặt được cho đến khi Admin mở lại.
+        </p>
+      ) : null}
       {children}
     </div>
   );

@@ -48,9 +48,15 @@ export function orderStatusLabel(status: string): string {
     case "COMPLETED":
       return "Hoàn tất";
     case "PROVIDER_REJECTED":
-      return "Quán từ chối";
+      return "Đơn hàng bị từ chối";
     case "CUSTOMER_CANCELLED":
-      return "Đã hủy";
+      return "Khách hủy";
+    case "SYSTEM_CANCELLED":
+      return "Hệ thống hủy";
+    case "PAYMENT_FAILED":
+      return "Thanh toán lỗi";
+    case "REFUNDED":
+      return "Đã hoàn tiền";
     default:
       return status;
   }

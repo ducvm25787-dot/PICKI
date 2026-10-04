@@ -17,13 +17,20 @@ export type RunnerOrder = {
   deliveryFeeVnd?: number;
   runnerPayableVnd?: number;
   totalVnd: number;
+  containsAlcohol?: boolean;
   assignedToMe: boolean;
   estimatedReadyAt: string | null;
   providerHandoffAt: string | null;
   runnerSoughtAt: string | null;
   routeId: string | null;
   deliveryWindow?: { startsAt: string; endsAt: string; label: string } | null;
-  delivery: { building: string | null; apartment: string | null };
+  delivery: {
+    building: string | null;
+    apartment: string | null;
+    accessNote?: string | null;
+    runnerWaitMinutes?: number;
+    runnerWaitFeeVnd?: number;
+  };
   contacts?: {
     customer: { phone: string | null; displayName?: string | null };
     provider: { phone: string | null; label?: string };

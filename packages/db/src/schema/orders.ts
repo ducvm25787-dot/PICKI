@@ -1,4 +1,4 @@
-import { doublePrecision, integer, jsonb, pgTable, text, timestamp, uuid, date } from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, integer, jsonb, pgTable, text, timestamp, uuid, date } from "drizzle-orm/pg-core";
 import { createdAt, updatedAt } from "./helpers.js";
 import { addresses } from "./addresses.js";
 import { offerings } from "./catalog.js";
@@ -7,6 +7,7 @@ import {
   breakfastPreorderMenuItems,
 } from "./breakfast-preorder.js";
 import { familyDinnerDeliveryWindows, familyDinnerMenuItems } from "./family-dinner.js";
+import { scheduledDeliveryWindows } from "./scheduled-fulfillment.js";
 import { users } from "./identity.js";
 import { providerLocations } from "./providers.js";
 import { zones } from "./zones.js";
@@ -38,10 +39,21 @@ export const orders = pgTable("orders", {
     () => breakfastPreorderDeliveryWindows.id,
     { onDelete: "set null" },
   ),
+  /** Generic slot. V1 MARKET_MORNING. Not a breakfast or dinner window. */
+  scheduledDeliveryWindowId: uuid("scheduled_delivery_window_id").references(
+    () => scheduledDeliveryWindows.id,
+    { onDelete: "set null" },
+  ),
   lateDinnerOfferId: uuid("late_dinner_offer_id"),
   productionLockedAt: timestamp("production_locked_at", { withTimezone: true, mode: "date" }),
   laundryPickupMode: text("laundry_pickup_mode"),
   paymentMode: text("payment_mode").notNull().default("COD"),
+  /** Snapshot at create time. Later edits to the offering do not clear this. */
+  containsAlcohol: boolean("contains_alcohol").notNull().default(false),
+  recipientName: text("recipient_name"),
+  recipientAgeConfirmed: boolean("recipient_age_confirmed").notNull().default(false),
+  /** Text in the database. Services must validate with parseOrderCancelReason. */
+  cancelReason: text("cancel_reason"),
   subtotalVnd: integer("subtotal_vnd").notNull(),
   /** Compatibility mirror of customer_delivery_fee. Not runner payout. */
   deliveryFeeVnd: integer("delivery_fee_vnd").notNull().default(0),
@@ -72,6 +84,9 @@ export const orders = pgTable("orders", {
   deliveryFloor: text("delivery_floor"),
   deliveryApartment: text("delivery_apartment"),
   deliveryNote: text("delivery_note"),
+  runnerWaitMinutes: integer("runner_wait_minutes").notNull().default(0),
+  runnerWaitFeeVnd: integer("runner_wait_fee_vnd").notNull().default(0),
+  deliveryAccessNote: text("delivery_access_note"),
   /** Message from the customer to the shop. Separate from the address delivery note. */
   customerNote: text("customer_note"),
   deliveryLat: doublePrecision("delivery_lat"),

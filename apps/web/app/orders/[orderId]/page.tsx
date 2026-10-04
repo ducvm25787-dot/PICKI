@@ -20,6 +20,7 @@ type OrderDetail = {
   orderNumber: string;
   providerBrandName?: string | null;
   status: string;
+  cancelReason?: string | null;
   serviceVertical?: string;
   orderKind?: string;
   serviceDate?: string | null;
@@ -276,6 +277,11 @@ export default function OrderDetailPage() {
               laundryPickupMode: order.laundryPickupMode,
             })}
           </p>
+          {order.status === "PROVIDER_REJECTED" && order.cancelReason ? (
+            <p className="stat" style={{ margin: "6px 0 0" }}>
+              {order.cancelReason}
+            </p>
+          ) : null}
           <OrderStatusSteps
             status={order.status}
             runnerSoughtAt={order.runnerSoughtAt}

@@ -1,4 +1,4 @@
-import { pgTable, text, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { createdAt, updatedAt } from "./helpers.js";
 import { users } from "./identity.js";
 import { zones } from "./zones.js";
@@ -13,6 +13,16 @@ export const runners = pgTable("runners", {
     .notNull()
     .references(() => zones.id, { onDelete: "restrict" }),
   status: text("status").notNull().default("ACTIVE"),
+  cccdNumber: text("cccd_number"),
+  cccdFullName: text("cccd_full_name"),
+  cccdFrontFile: text("cccd_front_file"),
+  cccdBackFile: text("cccd_back_file"),
+  vehiclePlate: text("vehicle_plate"),
+  vehicleDocFile: text("vehicle_doc_file"),
+  payoutBankName: text("payout_bank_name"),
+  payoutAccountNumber: text("payout_account_number"),
+  payoutAccountHolder: text("payout_account_holder"),
+  credentialsUpdatedAt: timestamp("credentials_updated_at", { withTimezone: true, mode: "date" }),
   createdAt: createdAt(),
 });
 

@@ -225,6 +225,9 @@ function RunnerOrderCard({
           Phí giao (quán trả): {formatVnd(order.runnerPayableVnd ?? 0)}
         </p>
       ) : null}
+      {order.containsAlcohol ? (
+        <p style={{ margin: "4px 0", fontWeight: 700 }}>18+ · Có đồ uống có cồn</p>
+      ) : null}
       <p className="stat">
         {orderStatusRich(order.status, {
           estimatedReadyAt: order.estimatedReadyAt,
@@ -241,6 +244,7 @@ function RunnerOrderCard({
       />
       {order.deliveryWindow?.label || order.serviceDate ? (
         <p className="stat" style={{ margin: "4px 0" }}>
+          {order.orderKind === "STANDARD" && order.serviceDate ? "Sáng mai giao · " : null}
           {order.deliveryWindow?.label
             ? `Khung giao: ${order.deliveryWindow.label}`
             : null}
@@ -251,6 +255,14 @@ function RunnerOrderCard({
       <p className="stat">
         {order.delivery.building}-{order.delivery.apartment}
       </p>
+      {order.delivery.accessNote ? (
+        <p className="stat" style={{ margin: "4px 0 8px", fontSize: 13 }}>
+          {order.delivery.accessNote}
+          {(order.delivery.runnerWaitFeeVnd ?? 0) > 0
+            ? ` · Phí chờ ${formatVnd(order.delivery.runnerWaitFeeVnd ?? 0)} đã cộng vào phí giao`
+            : ""}
+        </p>
+      ) : null}
       {order.contacts ? (
         <OrderPhoneLinks contacts={order.contacts} hideRole="runner" compact />
       ) : null}

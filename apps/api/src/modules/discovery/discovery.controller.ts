@@ -59,9 +59,9 @@ export class DiscoveryController {
     @CurrentUserId() userId: string,
     @Query("chip") chipRaw?: string,
   ) {
-    const chip = (chipRaw ?? "open") as "new" | "open" | "near" | "popular";
-    if (!["new", "open", "near", "popular"].includes(chip)) {
-      throw new PickiError("VALIDATION_ERROR", "chip must be new|open|near|popular");
+    const chip = (chipRaw ?? "open") as "new" | "open" | "near" | "popular" | "bia-hoi";
+    if (!["new", "open", "near", "popular", "bia-hoi"].includes(chip)) {
+      throw new PickiError("VALIDATION_ERROR", "chip must be new|open|near|popular|bia-hoi");
     }
     return this.discovery.exploreZone(slugOrId, chip, userId);
   }

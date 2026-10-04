@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commerceServiceDate, groupStockLines, resolveTodayOffer } from "./stock.js";
+import { commerceServiceDate, groupStockLines, resolveScheduledOffer, resolveTodayOffer } from "./stock.js";
 
 describe("commerce stock helpers", () => {
   it("groups lines onto one offering", () => {
@@ -41,6 +41,39 @@ describe("commerce stock helpers", () => {
       priceOverrideVnd: null,
     });
     expect(open).toMatchObject({ visible: true, todayStatus: "UNSET", amountVnd: 45000, remaining: null });
+  });
+
+  it("refuses a morning line that was not opened for that date", () => {
+    expect(
+      resolveScheduledOffer({
+        basePriceVnd: 7000,
+        dayStatus: null,
+        availableQty: null,
+        reservedQty: null,
+        soldQty: null,
+        priceOverrideVnd: null,
+      }),
+    ).toEqual({ ok: false, reason: "closed" });
+    expect(
+      resolveScheduledOffer({
+        basePriceVnd: 7000,
+        dayStatus: "AVAILABLE",
+        availableQty: null,
+        reservedQty: 0,
+        soldQty: 0,
+        priceOverrideVnd: null,
+      }),
+    ).toEqual({ ok: false, reason: "closed" });
+    expect(
+      resolveScheduledOffer({
+        basePriceVnd: 7000,
+        dayStatus: "AVAILABLE",
+        availableQty: 15,
+        reservedQty: 2,
+        soldQty: 1,
+        priceOverrideVnd: null,
+      }),
+    ).toMatchObject({ ok: true, remaining: 12, amountVnd: 7000 });
   });
 
   it("uses the given service date, otherwise Hà Nội today", () => {

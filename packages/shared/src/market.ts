@@ -26,7 +26,8 @@ export type MarketUnit = (typeof MARKET_UNITS)[number];
 
 export function marketTierBadge(providerType: string | null | undefined): string | null {
   if (providerType === "MARKET_VENDOR") return "Tiểu thương";
-  if (providerType === "MINIMART" || providerType === "RETAIL_STORE") return "Tạp hóa";
+  if (providerType === "MINIMART") return "Tạp hóa";
+  if (providerType === "RETAIL_STORE") return "Cửa hàng chuyên";
   if (providerType === "SUPERMARKET") return "Siêu thị";
   return null;
 }

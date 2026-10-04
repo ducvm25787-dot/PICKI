@@ -7,6 +7,7 @@ export type CartLine = {
   estimatedDays?: number | null;
   pricingKind?: string | null;
   optionIds?: string[];
+  alcoholRestricted?: boolean;
 };
 
 export type Cart = {
@@ -14,6 +15,10 @@ export type Cart = {
   zoneId: string;
   brandName: string;
   providerType?: string;
+  /** Set for Sáng mai giao. Same-shop carts do not mix dates or slots. */
+  serviceDate?: string | null;
+  scheduledDeliveryWindowId?: string | null;
+  scheduledWindowLabel?: string | null;
   items: CartLine[];
 };
 
@@ -38,9 +43,10 @@ export function writeCart(cart: Cart | null) {
   if (typeof window === "undefined") return;
   if (!cart || cart.items.length === 0) {
     sessionStorage.removeItem(CART_KEY);
-    return;
+  } else {
+    sessionStorage.setItem(CART_KEY, JSON.stringify(cart));
   }
-  sessionStorage.setItem(CART_KEY, JSON.stringify(cart));
+  window.dispatchEvent(new Event("picki-cart"));
 }
 
 export function cartItemCount(cart: Cart | null): number {
@@ -57,10 +63,11 @@ export function addToCart(
   quantity = 1,
 ): Cart {
   const existing = readCart();
-  const cart: Cart =
-    existing?.providerLocationId === base.providerLocationId
-      ? existing
-      : { ...base, items: [] };
+  const sameShop = existing?.providerLocationId === base.providerLocationId;
+  const sameSchedule =
+    (existing?.serviceDate ?? null) === (base.serviceDate ?? null) &&
+    (existing?.scheduledDeliveryWindowId ?? null) === (base.scheduledDeliveryWindowId ?? null);
+  const cart: Cart = sameShop && sameSchedule ? existing! : { ...base, items: [] };
 
   const incomingMode = line.fulfillmentMode ?? "PICKUP_AND_RETURN";
   const existingMode = cart.items[0]?.fulfillmentMode ?? "PICKUP_AND_RETURN";
@@ -81,4 +88,22 @@ export function addToCart(
 
   writeCart(cart);
   return cart;
+}
+
+export function setCartLineQuantity(
+  offeringId: string,
+  optionIds: string[] | undefined,
+  quantity: number,
+): Cart | null {
+  const existing = readCart();
+  if (!existing) return null;
+  const key = optionKey(offeringId, optionIds);
+  const items = existing.items.flatMap((line) => {
+    if (optionKey(line.offeringId, line.optionIds) !== key) return [line];
+    if (quantity < 1) return [];
+    return [{ ...line, quantity }];
+  });
+  const next = items.length > 0 ? { ...existing, items } : null;
+  writeCart(next);
+  return next;
 }

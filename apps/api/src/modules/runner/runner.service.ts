@@ -1,9 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, notInArray, or } from "drizzle-orm";
 import {
+  auditLogs,
   hasPendingOffer,
   isCookFirstFoodOrder,
   loadOrderDeliveryWindow,
+  scheduledPrepareState,
   markOfferAccepted,
   orderItems,
   orders,
@@ -21,7 +23,14 @@ import { PICKI_DB } from "../../shared/tokens.js";
 import { FulfillmentService } from "../fulfillment/fulfillment.service.js";
 import { OrderTransitionService } from "../orders/order-transition.service.js";
 import type { z } from "zod";
-import type { runnerOrderActionSchema, updatePresenceSchema } from "./dto.js";
+import type { runnerCredentialsSchema, runnerOrderActionSchema, updatePresenceSchema } from "./dto.js";
+import {
+  isRunnerDocKind,
+  readRunnerDocument,
+  removeRunnerDocument,
+  saveRunnerDocument,
+  type RunnerDocKind,
+} from "./documents.js";
 
 @Injectable()
 export class RunnerService {
@@ -45,6 +54,131 @@ export class RunnerService {
       runnerId: row[0].id,
       zoneId: row[0].zoneId,
       presence: presence[0]?.status ?? "OFFLINE",
+    };
+  }
+
+  async getCredentials(userId: string) {
+    const runner = await this.requireRunner(userId);
+    return this.credentialsView(runner);
+  }
+
+  async updateCredentials(userId: string, input: z.infer<typeof runnerCredentialsSchema>) {
+    const runner = await this.requireRunner(userId);
+    if (input.section === "cccd") {
+      const [taken] = await this.db
+        .select({ id: runners.id })
+        .from(runners)
+        .where(and(eq(runners.cccdNumber, input.cccdNumber), ne(runners.id, runner.id)))
+        .limit(1);
+      if (taken) throw new PickiError("CONFLICT", "CCCD này đã gắn với tài xế khác");
+      const front = input.cccdFrontDataUrl
+        ? await saveRunnerDocument(input.cccdFrontDataUrl)
+        : runner.cccdFrontFile;
+      const back = input.cccdBackDataUrl
+        ? await saveRunnerDocument(input.cccdBackDataUrl)
+        : runner.cccdBackFile;
+      if (!front || !back) {
+        throw new PickiError("VALIDATION_ERROR", "Cần ảnh mặt trước và mặt sau CCCD");
+      }
+      await this.db
+        .update(runners)
+        .set({
+          cccdNumber: input.cccdNumber,
+          cccdFullName: input.cccdFullName,
+          cccdFrontFile: front,
+          cccdBackFile: back,
+          credentialsUpdatedAt: new Date(),
+        })
+        .where(eq(runners.id, runner.id));
+      if (input.cccdFrontDataUrl) await removeRunnerDocument(runner.cccdFrontFile);
+      if (input.cccdBackDataUrl) await removeRunnerDocument(runner.cccdBackFile);
+    } else if (input.section === "vehicle") {
+      const doc = input.vehicleDocDataUrl
+        ? await saveRunnerDocument(input.vehicleDocDataUrl)
+        : runner.vehicleDocFile;
+      if (!doc) throw new PickiError("VALIDATION_ERROR", "Cần ảnh giấy đăng ký xe");
+      await this.db
+        .update(runners)
+        .set({
+          vehiclePlate: input.vehiclePlate.toUpperCase(),
+          vehicleDocFile: doc,
+          credentialsUpdatedAt: new Date(),
+        })
+        .where(eq(runners.id, runner.id));
+      if (input.vehicleDocDataUrl) await removeRunnerDocument(runner.vehicleDocFile);
+    } else {
+      await this.db
+        .update(runners)
+        .set({
+          payoutBankName: input.payoutBankName,
+          payoutAccountNumber: input.payoutAccountNumber,
+          payoutAccountHolder: input.payoutAccountHolder,
+          credentialsUpdatedAt: new Date(),
+        })
+        .where(eq(runners.id, runner.id));
+    }
+    await this.db.insert(auditLogs).values({
+      actorUserId: userId,
+      action: "RUNNER_CREDENTIALS_UPDATE",
+      entityType: "runner",
+      entityId: runner.id,
+      metadata: { section: input.section },
+    });
+    const [updated] = await this.db.select().from(runners).where(eq(runners.id, runner.id)).limit(1);
+    if (!updated) throw new PickiError("NOT_FOUND", "Không thấy tài xế");
+    return this.credentialsView(updated);
+  }
+
+  async readOwnDocument(userId: string, kind: string) {
+    if (!isRunnerDocKind(kind)) throw new PickiError("NOT_FOUND", "Không thấy ảnh");
+    const runner = await this.requireRunner(userId);
+    const file = this.documentFile(runner, kind);
+    if (!file) throw new PickiError("NOT_FOUND", "Chưa có ảnh");
+    return { dataUrl: await readRunnerDocument(file) };
+  }
+
+  private async requireRunner(userId: string) {
+    const [runner] = await this.db.select().from(runners).where(eq(runners.userId, userId)).limit(1);
+    if (!runner) throw new PickiError("FORBIDDEN", "Runner profile not found");
+    return runner;
+  }
+
+  private documentFile(
+    runner: {
+      cccdFrontFile: string | null;
+      cccdBackFile: string | null;
+      vehicleDocFile: string | null;
+    },
+    kind: RunnerDocKind,
+  ) {
+    if (kind === "cccd-front") return runner.cccdFrontFile;
+    if (kind === "cccd-back") return runner.cccdBackFile;
+    return runner.vehicleDocFile;
+  }
+
+  private credentialsView(runner: {
+    cccdNumber: string | null;
+    cccdFullName: string | null;
+    cccdFrontFile: string | null;
+    cccdBackFile: string | null;
+    vehiclePlate: string | null;
+    vehicleDocFile: string | null;
+    payoutBankName: string | null;
+    payoutAccountNumber: string | null;
+    payoutAccountHolder: string | null;
+    credentialsUpdatedAt: Date | null;
+  }) {
+    return {
+      cccdNumber: runner.cccdNumber,
+      cccdFullName: runner.cccdFullName,
+      hasCccdFront: Boolean(runner.cccdFrontFile),
+      hasCccdBack: Boolean(runner.cccdBackFile),
+      vehiclePlate: runner.vehiclePlate,
+      hasVehicleDoc: Boolean(runner.vehicleDocFile),
+      payoutBankName: runner.payoutBankName,
+      payoutAccountNumber: runner.payoutAccountNumber,
+      payoutAccountHolder: runner.payoutAccountHolder,
+      credentialsUpdatedAt: runner.credentialsUpdatedAt?.toISOString() ?? null,
     };
   }
 
@@ -149,6 +283,7 @@ export class RunnerService {
         runnerPayableVnd: o.runnerPayable,
         totalVnd: o.totalVnd,
         assignedToMe: o.runnerUserId === userId,
+        containsAlcohol: o.containsAlcohol,
         estimatedReadyAt: o.estimatedReadyAt?.toISOString() ?? null,
         providerHandoffAt: o.providerHandoffAt?.toISOString() ?? null,
         runnerSoughtAt: o.runnerSoughtAt?.toISOString() ?? null,
@@ -157,6 +292,9 @@ export class RunnerService {
         delivery: {
           building: o.deliveryBuilding,
           apartment: o.deliveryApartment,
+          accessNote: o.deliveryAccessNote,
+          runnerWaitMinutes: o.runnerWaitMinutes,
+          runnerWaitFeeVnd: o.runnerWaitFeeVnd,
         },
         items: await this.db.select().from(orderItems).where(eq(orderItems.orderId, o.id)),
         contacts: await loadOrderContacts(this.db, o),
@@ -239,6 +377,13 @@ export class RunnerService {
     }
 
     let toStatus = runnerActionToStatus(input.action);
+
+    if (input.action === "accept" || input.action === "picked_up") {
+      const gate = await scheduledPrepareState(this.db, order[0]);
+      if (gate.scheduled && !gate.open) {
+        throw new PickiError("FORBIDDEN", gate.message || "Chưa tới giờ lấy hàng");
+      }
+    }
 
     if (input.action === "accept") {
       const isReturn =

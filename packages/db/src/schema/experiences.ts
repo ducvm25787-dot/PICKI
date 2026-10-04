@@ -59,6 +59,7 @@ export const EXPERIENCE_AUDIENCES = ["FAMILY", "COUPLE", "KIDS", "FRIENDS", "SOL
 export type ExperienceAudience = (typeof EXPERIENCE_AUDIENCES)[number];
 
 export const experienceCities = pgTable("experience_cities", {
+  id: uuid("id").notNull().unique().defaultRandom(),
   code: text("code").primaryKey(),
   label: text("label").notNull(),
   slug: text("slug").notNull().unique(),

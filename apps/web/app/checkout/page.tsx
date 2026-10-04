@@ -13,7 +13,8 @@ import {
   type SavedAddress,
 } from "../../lib/addresses";
 import { AddressActionsMenu } from "../components/address-actions-menu";
-import { cartTotalVnd, readCart, writeCart, type Cart } from "../../lib/cart";
+import { HomeDeliveryConfirm, useOrderPresence } from "../components/order-presence";
+import { cartTotalVnd, readCart, setCartLineQuantity, writeCart, type Cart } from "../../lib/cart";
 import { getCurrentPositionOnce } from "../../lib/geolocation";
 import { mapsDirectionsUrl } from "../../lib/maps";
 import { formatVnd } from "../../lib/money";
@@ -31,6 +32,26 @@ type OrderQuote = {
   deliveryFeeVnd: number;
   totalVnd: number;
 };
+
+type ZonePlace = {
+  code: string;
+  displayName: string;
+  elevatorNote: string | null;
+  accessCardRequired: boolean;
+  securityNote: string | null;
+  callUpRequired: boolean;
+  doorDeliveryAllowed: boolean;
+  lobbyWaitMinutes: number;
+  doorWaitMinutes: number;
+  runnerFeePerMinuteVnd: number;
+  notes: string | null;
+};
+
+function matchPlace(places: ZonePlace[], building: string | null | undefined): ZonePlace | null {
+  if (!building) return null;
+  const code = building.trim().replace(/\s+/g, "").toUpperCase();
+  return places.find((place) => place.code === code) ?? null;
+}
 
 function addressDisplayLabel(addr: SavedAddress, index: number): string {
   if (index === 0 && addr.label === "HOME") return "Nhà";
@@ -59,12 +80,17 @@ export default function CheckoutPage() {
   const [confirmingAddress, setConfirmingAddress] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [paymentMode, setPaymentMode] = useState<"COD" | "PAY_ON_PICKI">("COD");
+  const [recipientAgeConfirmed, setRecipientAgeConfirmed] = useState(false);
+  const hasDraftBeer = cart?.items.some((item) => item.alcoholRestricted) === true;
   const [laundryPickupMode, setLaundryPickupMode] = useState<"HOME_PICKUP" | "SHOP_DROP_OFF">(
     "HOME_PICKUP",
   );
   const [addressMenuId, setAddressMenuId] = useState<string | null>(null);
   const [quote, setQuote] = useState<OrderQuote | null>(null);
   const [pinUpdatingId, setPinUpdatingId] = useState<string | null>(null);
+  const [places, setPlaces] = useState<ZonePlace[]>([]);
+  const [confirmHome, setConfirmHome] = useState(false);
+  const presence = useOrderPresence(cart?.zoneId);
 
   useEffect(() => {
     if (!addressMenuId) return;
@@ -96,6 +122,12 @@ export default function CheckoutPage() {
           setSelectedAddressId(res.addresses[0].id);
         } else {
           setShowNewAddress(true);
+        }
+        try {
+          const placeRes = await api<{ places: ZonePlace[] }>(`/zones/${c.zoneId}/places`);
+          setPlaces(placeRes.places);
+        } catch {
+          setPlaces([]);
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Không tải được địa chỉ");
@@ -135,6 +167,14 @@ export default function CheckoutPage() {
     })();
   }, [cart, addresses, selectedAddressId, handoffMode]);
 
+  useEffect(() => {
+    const selected = addresses.find((a) => a.id === selectedAddressId);
+    const place = matchPlace(places, selected?.building);
+    if (place && !place.doorDeliveryAllowed && handoffMode === "DOOR_DELIVERY") {
+      setHandoffMode("LOBBY_PICKUP");
+    }
+  }, [addresses, selectedAddressId, places, handoffMode]);
+
   function resetAddressForm() {
     setNewBuilding("");
     setNewFloor("");
@@ -163,6 +203,14 @@ export default function CheckoutPage() {
       const geo = await getCurrentPositionOnce({ timeoutMs: 10000 });
       if (geo.source !== "gps") {
         setError(geo.error ?? "Không lấy được GPS — bật vị trí và thử lại");
+        return;
+      }
+      const found = await api<{ zones: { id: string }[] }>("/zones/discover", {
+        method: "POST",
+        body: JSON.stringify(geo.position),
+      });
+      if (!found.zones.some((z) => z.id === cart.zoneId)) {
+        setError("Bạn đang ở ngoài Zone. Không ghi vị trí hiện tại lên địa chỉ nhà.");
         return;
       }
       const updated = await api<{ id: string; lat: number; lng: number; hasPin: boolean }>(
@@ -314,6 +362,22 @@ export default function CheckoutPage() {
       setError("Chọn địa chỉ nhận hàng hoặc bấm Xác nhận sau khi nhập địa chỉ khác");
       return;
     }
+    if (presence.status === "checking") {
+      setError("Đang đọc vị trí…");
+      return;
+    }
+    if (presence.needsHomeConfirm && !confirmHome) {
+      setError(
+        presence.status === "outside"
+          ? "Bạn đang ở ngoài Zone. Xác nhận giao về địa chỉ nhà, không giao tại vị trí hiện tại."
+          : "Chưa đọc được vị trí. Xác nhận giao về địa chỉ nhà đã lưu, không giao tại vị trí hiện tại.",
+      );
+      return;
+    }
+    if (hasDraftBeer && !recipientAgeConfirmed) {
+      setError("Xác nhận người nhận đủ 18 tuổi");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -326,8 +390,22 @@ export default function CheckoutPage() {
           addressId: selectedAddressId,
           deliveryHandoffMode: effectiveHandoff,
           ...(isLaundry && !cartHasOnSite ? { laundryPickupMode } : {}),
-          paymentMode: isLaundry ? "PAY_ON_COMPLETION" : paymentMode,
+          paymentMode: isLaundry
+            ? "PAY_ON_COMPLETION"
+            : hasDraftBeer
+              ? "PAY_ON_PICKI"
+              : cart.scheduledDeliveryWindowId
+                ? "COD"
+                : paymentMode,
+          ...(cart.scheduledDeliveryWindowId
+            ? {
+                scheduledDeliveryWindowId: cart.scheduledDeliveryWindowId,
+                serviceDate: cart.serviceDate,
+              }
+            : {}),
+          ...(hasDraftBeer ? { recipientAgeConfirmed: true } : {}),
           idempotencyKey,
+          ...presence.orderPresenceBody(confirmHome),
           items: cart.items.map((i) => ({
             offeringId: i.offeringId,
             quantity: i.quantity,
@@ -337,12 +415,25 @@ export default function CheckoutPage() {
       });
       writeCart(null);
       router.replace(
-        `/orders/${order.id}?new=1${paymentMode === "PAY_ON_PICKI" ? "&pay=1" : ""}`,
+        `/orders/${order.id}?new=1${hasDraftBeer || paymentMode === "PAY_ON_PICKI" ? "&pay=1" : ""}`,
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Không đặt được");
       setSubmitting(false);
     }
+  }
+
+  function changeLine(item: Cart["items"][number], quantity: number) {
+    const shop = cart
+      ? `/locations/${cart.providerLocationId}${cart.scheduledDeliveryWindowId ? "?when=morning" : ""}`
+      : "/";
+    const next = setCartLineQuantity(item.offeringId, item.optionIds, quantity);
+    setError(null);
+    if (!next) {
+      router.replace(shop);
+      return;
+    }
+    setCart(next);
   }
 
   if (loading || !cart) {
@@ -357,7 +448,21 @@ export default function CheckoutPage() {
   const isLaundry = isLaundryVertical(cart.providerType);
   const cartHasOnSite = cart.items.some((i) => i.fulfillmentMode === "ON_SITE");
   const selectedIsApartment = selected ? isApartmentAddress(selected) : true;
-  const effectiveHandoff = isLaundry ? "DOOR_DELIVERY" : selectedIsApartment ? handoffMode : "DOOR_DELIVERY";
+  const place = selected ? matchPlace(places, selected.building) : null;
+  const doorAllowed = place ? place.doorDeliveryAllowed : true;
+  const effectiveHandoff = isLaundry
+    ? "DOOR_DELIVERY"
+    : selectedIsApartment
+      ? doorAllowed
+        ? handoffMode
+        : "LOBBY_PICKUP"
+      : "DOOR_DELIVERY";
+  const placeWaitMinutes = place
+    ? effectiveHandoff === "DOOR_DELIVERY"
+      ? place.doorWaitMinutes
+      : place.lobbyWaitMinutes
+    : 0;
+  const placeWaitFee = placeWaitMinutes * (place?.runnerFeePerMinuteVnd ?? 0);
   const subtotal = cartTotalVnd(cart);
   const deliveryFee = !isLaundry && quote ? quote.deliveryFeeVnd : 0;
   const total = !isLaundry && quote ? quote.totalVnd : subtotal;
@@ -625,16 +730,32 @@ export default function CheckoutPage() {
       ) : selectedIsApartment ? (
         <div className="card" style={{ marginBottom: 16 }}>
           <p className="section-title">Hình thức giao (chung cư)</p>
+          {place ? (
+            <p className="stat" style={{ margin: "0 0 10px", fontSize: 13 }}>
+              {place.displayName}
+              {place.elevatorNote ? ` · ${place.elevatorNote}` : ""}
+              {place.accessCardRequired ? " · Cần thẻ thang máy" : ""}
+              {place.securityNote ? ` · ${place.securityNote}` : ""}
+              {place.callUpRequired ? " · Bảo vệ gọi lên căn trước khi lên" : ""}
+              {placeWaitMinutes > 0 ? ` · Chờ khoảng ${String(placeWaitMinutes)} phút` : ""}
+              {placeWaitFee > 0
+                ? ` · Phí runner thêm ${formatVnd(placeWaitFee)} (quán trả, không cộng vào tiền khách)`
+                : ""}
+            </p>
+          ) : null}
           <label className="field" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
             <input
               type="radio"
-              checked={handoffMode === "DOOR_DELIVERY"}
+              checked={effectiveHandoff === "DOOR_DELIVERY"}
+              disabled={!doorAllowed}
               onChange={() => setHandoffMode("DOOR_DELIVERY")}
             />
             <span>
               <strong>{handoffModeLabel("DOOR_DELIVERY")}</strong>
               <span className="stat" style={{ display: "block", fontSize: 13 }}>
-                Runner giao đến cửa {selected ? formatAddressLine(selected) : "căn hộ"}
+                {doorAllowed
+                  ? `Runner giao đến cửa ${selected ? formatAddressLine(selected) : "căn hộ"}`
+                  : `${place?.displayName ?? "Tòa này"} chỉ nhận tại sảnh`}
               </span>
             </span>
           </label>
@@ -663,26 +784,63 @@ export default function CheckoutPage() {
       )}
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <p className="section-title">Chi tiết</p>
+        <div className="board-row" style={{ alignItems: "baseline", justifyContent: "space-between" }}>
+          <p className="section-title" style={{ margin: 0 }}>
+            Chi tiết
+          </p>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ width: "auto", padding: "6px 10px" }}
+            onClick={() =>
+              router.push(
+                `/locations/${cart.providerLocationId}${cart.scheduledDeliveryWindowId ? "?when=morning" : ""}`,
+              )
+            }
+          >
+            Thêm món
+          </button>
+        </div>
         {cart.items.map((item) => (
           <div
-            key={item.offeringId}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginBottom: 10,
-              fontSize: 15,
-            }}
+            key={`${item.offeringId}:${(item.optionIds ?? []).join(",")}`}
+            style={{ marginTop: 12, fontSize: 15 }}
           >
-            <span>
-              {item.name} × {item.quantity}
-              {isLaundry && item.estimatedDays ? (
-                <span className="stat" style={{ display: "block", fontSize: 13 }}>
-                  Dự kiến ~{String(item.estimatedDays)} ngày
-                </span>
+            <div>{item.name}</div>
+            {isLaundry && item.estimatedDays ? (
+              <span className="stat" style={{ display: "block", fontSize: 13 }}>
+                Dự kiến ~{String(item.estimatedDays)} ngày
+              </span>
+            ) : null}
+            <div className="board-row" style={{ alignItems: "center", marginTop: 6 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                aria-label={`Giảm ${item.name}`}
+                onClick={() => changeLine(item, item.quantity - 1)}
+              >
+                −
+              </button>
+              <strong>{item.quantity}</strong>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                aria-label={`Tăng ${item.name}`}
+                onClick={() => changeLine(item, item.quantity + 1)}
+              >
+                +
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => changeLine(item, 0)}
+              >
+                Bỏ
+              </button>
+              {!isLaundry ? (
+                <span style={{ marginLeft: "auto" }}>{formatVnd(item.amountVnd * item.quantity)}</span>
               ) : null}
-            </span>
-            {!isLaundry ? <span>{formatVnd(item.amountVnd * item.quantity)}</span> : null}
+            </div>
           </div>
         ))}
         <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "12px 0" }} />
@@ -695,22 +853,42 @@ export default function CheckoutPage() {
             <p className="section-title" style={{ marginTop: 16 }}>
               Thanh toán
             </p>
+            {cart.scheduledDeliveryWindowId ? (
+              <p className="stat" style={{ marginTop: 0 }}>
+                Sáng mai giao
+                {cart.serviceDate ? ` · ${cart.serviceDate}` : ""}
+                {cart.scheduledWindowLabel ? ` · ${cart.scheduledWindowLabel}` : ""}. Trả khi nhận hàng.
+              </p>
+            ) : null}
+            {hasDraftBeer ? (
+              <label className="field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={recipientAgeConfirmed}
+                  onChange={(event) => setRecipientAgeConfirmed(event.target.checked)}
+                />
+                Người nhận đủ 18 tuổi
+              </label>
+            ) : (
+              <label className="field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <input
+                  type="radio"
+                  checked={paymentMode === "COD"}
+                  onChange={() => setPaymentMode("COD")}
+                />
+                COD — trả tổng đơn khi nhận{deliveryFee > 0 ? " (hàng + phí giao)" : ""}
+              </label>
+            )}
+            {cart.scheduledDeliveryWindowId ? null : (
             <label className="field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               <input
                 type="radio"
-                checked={paymentMode === "COD"}
-                onChange={() => setPaymentMode("COD")}
-              />
-              COD — trả tổng đơn khi nhận{deliveryFee > 0 ? " (hàng + phí giao)" : ""}
-            </label>
-            <label className="field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <input
-                type="radio"
-                checked={paymentMode === "PAY_ON_PICKI"}
+                checked={hasDraftBeer || paymentMode === "PAY_ON_PICKI"}
                 onChange={() => setPaymentMode("PAY_ON_PICKI")}
               />
               Thanh toán online (demo stub)
             </label>
+            )}
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
               <span>Tiền hàng</span>
               <span>{formatVnd(subtotal)}</span>
@@ -743,7 +921,14 @@ export default function CheckoutPage() {
 
       {error && <p style={{ color: "crimson" }}>{error}</p>}
 
-      <button type="button" className="btn" disabled={submitting} onClick={() => void placeOrder()}>
+      <HomeDeliveryConfirm status={presence.status} checked={confirmHome} onChange={setConfirmHome} />
+
+      <button
+        type="button"
+        className="btn"
+        disabled={submitting || presence.status === "checking" || (presence.needsHomeConfirm && !confirmHome)}
+        onClick={() => void placeOrder()}
+      >
         {submitting ? "Đang đặt…" : orderButtonLabel(cart.providerType)}
       </button>
     </div>

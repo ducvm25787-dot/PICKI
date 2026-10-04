@@ -1,10 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, or, type SQL } from "drizzle-orm";
+import { and, eq, or, type SQL } from "drizzle-orm";
 import {
   countActiveProvidersInZone,
   countZoneMembers,
   discoverZonesAtPoint,
   listActiveProvidersInZone,
+  userZoneMemberships,
+  zonePlaces,
   type PickiDb,
   type PickiSql,
   zones,
@@ -84,6 +86,44 @@ export class ZonesService {
         etaMinutes: r.eta_minutes,
         lat: r.lat,
         lng: r.lng,
+      })),
+    };
+  }
+
+  async listPlaces(userId: string, zoneId: string) {
+    const member = await this.db
+      .select({ id: userZoneMemberships.id })
+      .from(userZoneMemberships)
+      .where(
+        and(
+          eq(userZoneMemberships.userId, userId),
+          eq(userZoneMemberships.zoneId, zoneId),
+          eq(userZoneMemberships.status, "JOINED"),
+        ),
+      )
+      .limit(1);
+    if (!member[0]) throw new PickiError("FORBIDDEN", "Chưa tham gia Zone này");
+
+    const rows = await this.db
+      .select()
+      .from(zonePlaces)
+      .where(and(eq(zonePlaces.zoneId, zoneId), eq(zonePlaces.status, "ACTIVE")))
+      .orderBy(zonePlaces.code);
+    return {
+      places: rows.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        code: row.code,
+        displayName: row.displayName,
+        elevatorNote: row.elevatorNote,
+        accessCardRequired: row.accessCardRequired,
+        securityNote: row.securityNote,
+        callUpRequired: row.callUpRequired,
+        doorDeliveryAllowed: row.doorDeliveryAllowed,
+        lobbyWaitMinutes: row.lobbyWaitMinutes,
+        doorWaitMinutes: row.doorWaitMinutes,
+        runnerFeePerMinuteVnd: row.runnerFeePerMinuteVnd,
+        notes: row.notes,
       })),
     };
   }

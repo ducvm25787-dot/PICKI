@@ -28,7 +28,9 @@ export type FoodProduct = {
   prepTimeMinutes: number | null;
   categoryId: string | null;
   categoryName: string | null;
+  alcoholRestricted?: boolean;
   active: boolean;
+  reviewStatus?: string;
   priceVnd: number;
   onBreakfastMenu: boolean;
   optionGroups?: FoodOptionGroup[];

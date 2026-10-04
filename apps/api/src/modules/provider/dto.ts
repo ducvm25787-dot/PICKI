@@ -20,16 +20,7 @@ export const providerOrderActionSchema = z
       "customer_pickup",
       "complete",
     ]),
-    rejectReason: z.string().min(1).max(500).optional(),
-  })
-  .superRefine((val, ctx) => {
-    if (val.action === "reject" && !val.rejectReason?.trim()) {
-      ctx.addIssue({
-        code: "custom",
-        message: "rejectReason is required when rejecting",
-        path: ["rejectReason"],
-      });
-    }
+    rejectReason: z.string().trim().max(500).optional(),
   });
 
 export const updateLiveStatusSchema = z.object({

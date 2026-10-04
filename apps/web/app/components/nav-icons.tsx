@@ -136,7 +136,7 @@ export function IconSettings(props: IconProps) {
   return (
     <svg {...svgProps} className={props.className}>
       <circle cx="12" cy="12" r="3" />
-      <path d="M12 3.5v2.2M12 18.3v2.2M3.5 12h2.2M18.3 12h2.2M5.8 5.8l1.6 1.6M16.6 16.6l1.6 1.6M18.2 5.8l-1.6 1.6M7.4 16.6l-1.6 1.6" />
+      <path d="M19.4 13.5a7.6 7.6 0 0 0 .05-1.5 7.6 7.6 0 0 0-.05-1.5l2.05-1.6-2-3.46-2.48.7a7.8 7.8 0 0 0-2.6-1.5L13.9 2h-3.8l-.47 2.64a7.8 7.8 0 0 0-2.6 1.5l-2.48-.7-2 3.46 2.05 1.6a7.6 7.6 0 0 0 0 3l-2.05 1.6 2 3.46 2.48-.7a7.8 7.8 0 0 0 2.6 1.5L10.1 22h3.8l.47-2.64a7.8 7.8 0 0 0 2.6-1.5l2.48.7 2-3.46-2.05-1.6Z" />
     </svg>
   );
 }
@@ -199,6 +199,19 @@ export function IconServices(props: IconProps) {
       <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
       <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
       <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
+    </svg>
+  );
+}
+
+export function IconCart(props: IconProps) {
+  return (
+    <svg {...svgProps} className={props.className}>
+      <path d="M3 5.5h3.2" />
+      <path d="M6.2 5.5v3" />
+      <path d="M6.2 8.5h13.2l-1.6 7.2H8.1L6.2 8.5Z" />
+      <path d="M9.2 8.8v6.6M12.4 8.8v6.6M15.6 8.8v6.6M7.4 12h10.4" />
+      <circle cx="9.6" cy="18.8" r="1.35" />
+      <circle cx="15.6" cy="18.8" r="1.35" />
     </svg>
   );
 }

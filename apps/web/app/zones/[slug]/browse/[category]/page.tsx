@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../../../../lib/api";
 import { getHomeCategory } from "../../../../../lib/categories";
@@ -14,6 +14,7 @@ export default function CategoryBrowsePage() {
   const slug = params.slug;
   const categoryId = params.category;
   const category = getHomeCategory(categoryId);
+  const morning = useSearchParams().get("when") === "morning";
 
   const [providers, setProviders] = useState<ProviderListing[]>([]);
   const [shelf, setShelf] = useState<{ local: ProviderListing[]; supermarkets: ProviderListing[] } | null>(null);
@@ -128,6 +129,17 @@ export default function CategoryBrowsePage() {
         </Link>
       </p>
 
+      {category.id === "market" ? (
+        <div className="location-tabs" role="tablist" aria-label="Cách đặt" style={{ marginBottom: 16 }}>
+          <Link href={`/zones/${slug}/browse/market`} className="location-tab" aria-selected={!morning}>
+            Đi chợ ngay
+          </Link>
+          <Link href={`/zones/${slug}/browse/market?when=morning`} className="location-tab" aria-selected={morning}>
+            Sáng mai giao
+          </Link>
+        </div>
+      ) : null}
+
       {category.id === "market" && goodsCategories.length > 0 ? (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }} aria-label="Nhóm hàng">
           <button
@@ -179,6 +191,7 @@ export default function CategoryBrowsePage() {
               favoriteIds={favoriteIds}
               onToggleFavorite={(id) => void toggleFavorite(id)}
               emptyLabel="Chưa có cửa hàng trong nhóm này."
+              hrefQuery={morning ? "?when=morning" : undefined}
             />
             {shelf.supermarkets.length > 0 ? (
               <>
@@ -189,6 +202,7 @@ export default function CategoryBrowsePage() {
                   providers={shelf.supermarkets}
                   favoriteIds={favoriteIds}
                   onToggleFavorite={(id) => void toggleFavorite(id)}
+                  hrefQuery={morning ? "?when=morning" : undefined}
                 />
               </>
             ) : null}

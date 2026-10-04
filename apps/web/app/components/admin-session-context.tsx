@@ -5,9 +5,38 @@ import { useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 
+export type AdminZoneAccess = {
+  id: string;
+  slug: string;
+  displayName: string;
+  status: string;
+  access: "admin" | "operator" | "support";
+};
+
+export type AdminCityAccess = {
+  id: string;
+  code: string;
+  slug: string;
+  label: string;
+  access: "admin" | "support";
+};
+
+export type AdminSessionInfo = {
+  superAdmin: boolean;
+  supportReadOnlyGlobal: boolean;
+  financeGlobal: boolean;
+  zones: AdminZoneAccess[];
+  cities: AdminCityAccess[];
+};
+
+export function canSeeCityContent(session: AdminSessionInfo): boolean {
+  return session.superAdmin || session.supportReadOnlyGlobal || session.cities.length > 0;
+}
+
 type AdminSessionContextValue = {
   loading: boolean;
   accessError: string | null;
+  session: AdminSessionInfo | null;
   verifyAccess: () => Promise<void>;
 };
 
@@ -17,10 +46,12 @@ export function AdminSessionProvider({ children }: { children: React.ReactNode }
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [accessError, setAccessError] = useState<string | null>(null);
+  const [session, setSession] = useState<AdminSessionInfo | null>(null);
 
   const verifyAccess = useCallback(async () => {
     await api("/me");
-    await api("/admin/dashboard");
+    const next = await api<AdminSessionInfo>("/admin/session");
+    setSession(next);
     setAccessError(null);
   }, []);
 
@@ -38,8 +69,8 @@ export function AdminSessionProvider({ children }: { children: React.ReactNode }
   }, [verifyAccess, router]);
 
   const value = useMemo(
-    () => ({ loading, accessError, verifyAccess }),
-    [loading, accessError, verifyAccess],
+    () => ({ loading, accessError, session, verifyAccess }),
+    [loading, accessError, session, verifyAccess],
   );
 
   return <AdminSessionContext.Provider value={value}>{children}</AdminSessionContext.Provider>;
@@ -97,7 +128,7 @@ export function AdminPageShell({
             </span>
             <span className="admin-workspace-title">{title}</span>
           </div>
-          <span className="badge admin-badge">Admin · Desktop</span>
+          <span className="badge admin-badge">Quản trị</span>
         </header>
         <div className="admin-workspace-body">{children}</div>
       </div>
@@ -111,7 +142,7 @@ export function AdminPageShell({
           <div className="logo admin-logo">Pickee Ops</div>
           <div className="tagline">{title}</div>
         </div>
-        <span className="badge admin-badge">Admin</span>
+        <span className="badge admin-badge">Quản trị</span>
       </div>
       {children}
     </div>

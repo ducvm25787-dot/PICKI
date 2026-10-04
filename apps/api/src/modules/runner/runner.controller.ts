@@ -3,7 +3,7 @@ import { PickiError } from "@picki/shared";
 import { z } from "zod";
 import { CurrentUserId } from "../auth/current-user.decorator.js";
 import { SessionAuthGuard } from "../auth/session-auth.guard.js";
-import { runnerOrderActionSchema, updatePresenceSchema } from "./dto.js";
+import { runnerCredentialsSchema, runnerOrderActionSchema, updatePresenceSchema } from "./dto.js";
 import { RunnerService } from "./runner.service.js";
 
 @Controller("runner")
@@ -14,6 +14,29 @@ export class RunnerController {
   @Get("profile")
   async profile(@CurrentUserId() userId: string) {
     return this.runnerService.getProfile(userId);
+  }
+
+  @Get("credentials")
+  async credentials(@CurrentUserId() userId: string) {
+    return this.runnerService.getCredentials(userId);
+  }
+
+  @Patch("credentials")
+  async updateCredentials(@CurrentUserId() userId: string, @Body() body: unknown) {
+    const parsed = runnerCredentialsSchema.safeParse(body);
+    if (!parsed.success) {
+      const message = parsed.error.issues[0]?.message;
+      throw new PickiError(
+        "VALIDATION_ERROR",
+        message && !message.startsWith("Invalid") ? message : "Hồ sơ chưa đủ",
+      );
+    }
+    return this.runnerService.updateCredentials(userId, parsed.data);
+  }
+
+  @Get("documents/:kind")
+  async document(@CurrentUserId() userId: string, @Param("kind") kind: string) {
+    return this.runnerService.readOwnDocument(userId, kind);
   }
 
   @Patch("presence")

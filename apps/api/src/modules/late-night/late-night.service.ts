@@ -5,7 +5,7 @@ import {
   lateNightProviderSettings,
   listLateNightProvidersEnabled,
   providerLocations,
-  providerMembers,
+  userCoversLocation,
   vnNowHhMm,
   type PickiDb,
   type PickiSql,
@@ -129,16 +129,8 @@ export class LateNightService {
       .limit(1);
     if (!loc[0]) throw new PickiError("NOT_FOUND", "Location not found");
 
-    const member = await this.db
-      .select()
-      .from(providerMembers)
-      .where(
-        and(
-          eq(providerMembers.providerId, loc[0].providerId),
-          eq(providerMembers.userId, userId),
-        ),
-      )
-      .limit(1);
-    if (!member[0]) throw new PickiError("FORBIDDEN", "Not a provider staff");
+    if (!(await userCoversLocation(this.db, userId, locationId))) {
+      throw new PickiError("FORBIDDEN", "Not a provider staff");
+    }
   }
 }

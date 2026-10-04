@@ -15,5 +15,8 @@ export const providerMembers = pgTable("provider_members", {
     onDelete: "cascade",
   }),
   role: text("role").notNull().default("STAFF"),
+  /** PROVIDER | CITY | ZONE | LOCATION. Independent of Pickee user_roles. */
+  scopeType: text("scope_type").notNull().default("PROVIDER"),
+  scopeId: uuid("scope_id").notNull(),
   createdAt: createdAt(),
 });

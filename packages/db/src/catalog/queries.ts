@@ -12,6 +12,7 @@ export type LocationMenuRow = {
   education_subject: string | null;
   education_grade: string | null;
   payment_policy: string | null;
+  alcohol_restricted: boolean;
   estimated_days: number | null;
   image_url: string | null;
   unit: string | null;
@@ -86,6 +87,7 @@ export async function getLocationHeader(
 export async function listLocationMenu(
   sql: PickiSql,
   locationId: string,
+  serviceDate?: string | null,
 ): Promise<LocationMenuRow[]> {
   return sql<LocationMenuRow[]>`
     SELECT
@@ -100,6 +102,7 @@ export async function listLocationMenu(
       o.education_subject,
       o.education_grade,
       o.payment_policy,
+      o.alcohol_restricted,
       o.estimated_days,
       o.image_url,
       o.unit,
@@ -122,7 +125,8 @@ export async function listLocationMenu(
     LEFT JOIN product_categories cat ON cat.id = o.category_id
     LEFT JOIN product_daily_availability day
       ON day.offering_id = o.id
-      AND day.service_date = (timezone('Asia/Ho_Chi_Minh', now()))::date
+      AND day.provider_location_id = pl.id
+      AND day.service_date = COALESCE(${serviceDate ?? null}::date, (timezone('Asia/Ho_Chi_Minh', now()))::date)
     WHERE pl.id = ${locationId}::uuid
       AND o.status = 'ACTIVE'
       AND (loc_price.id IS NOT NULL OR master_price.id IS NOT NULL)

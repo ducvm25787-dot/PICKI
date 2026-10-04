@@ -2,6 +2,7 @@
 
 import { LocationContactActions } from "./location-contact-actions";
 import { PickeeMap } from "./pickee-map";
+import { SaveFamiliarButton } from "./save-familiar-button";
 
 type Props = {
   brandName: string;
@@ -16,6 +17,9 @@ type Props = {
   providerPhone?: string | null;
   averageRating?: number | null;
   reviewCount?: number;
+  saveLocationId?: string | null;
+  liveLabel?: string | null;
+  liveClassName?: string | null;
 };
 
 export function LocationIntroPanel({
@@ -31,6 +35,9 @@ export function LocationIntroPanel({
   providerPhone,
   averageRating,
   reviewCount = 0,
+  saveLocationId,
+  liveLabel,
+  liveClassName,
 }: Props) {
   return (
     <div className="location-intro">
@@ -52,10 +59,14 @@ export function LocationIntroPanel({
             </div>
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>{brandName}</h2>
+            <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>
+              {brandName}
+              {liveLabel ? <span className={`live-pill ${liveClassName ?? ""}`}>{liveLabel}</span> : null}
+            </h2>
             <p className="stat" style={{ margin: 0 }}>
               {displayName}
             </p>
+            {saveLocationId ? <SaveFamiliarButton locationId={saveLocationId} /> : null}
             {tagline ? (
               <p style={{ margin: "8px 0 0", fontSize: 14 }}>{tagline}</p>
             ) : null}

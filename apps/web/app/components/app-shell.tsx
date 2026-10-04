@@ -44,7 +44,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (showProviderChrome) mainClass += " provider-app";
   if (showRunnerChrome) mainClass += " runner-app";
   if (showAdminChrome) mainClass += " admin-app";
-  if (pathname.match(/^\/admin\/zones\/[^/]+$/)) mainClass += " admin-workspace-route";
+  if (pathname.match(/^\/admin\/zones\/[^/]+\/map$/)) mainClass += " admin-workspace-route";
   if (pathname === "/navigate") mainClass += " navigate-route";
 
   const enablePush =

@@ -17,6 +17,7 @@ import {
   homeContext,
   normalizePastedCaption,
   occurrenceInWindow,
+  occurrenceStillListed,
   parseExperienceImport,
   priceErrors,
   renderExperienceBody,
@@ -27,7 +28,7 @@ import {
   type PickiDb,
   type WhenFilter,
 } from "@picki/db";
-import { PickiError } from "@picki/shared";
+import { PickiError, canReadCity, canWriteCity, type AdminAccess } from "@picki/shared";
 import { normalizePhone } from "../../shared/crypto.js";
 import { PICKI_DB } from "../../shared/tokens.js";
 import { AnalyticsService } from "../analytics/analytics.service.js";
@@ -69,10 +70,17 @@ export class ExperiencesService {
     @Inject(AnalyticsService) private readonly analytics: AnalyticsService,
   ) {}
 
-  async preview(userId: string, items: unknown[]) {
+  async preview(access: AdminAccess, userId: string, items: unknown[]) {
     const open = await this.openCityCodes();
     const catalogs = await this.catalogByCity();
+    const writable = await this.writableCityCodes(access);
     const candidates = items.map((item, index) => this.inspect(item, catalogs, open, index));
+    for (const candidate of candidates) {
+      const code = candidate.experience?.city;
+      if (code && writable && !writable.includes(code)) {
+        candidate.errors.push({ path: "city", message: "Không có quyền sửa trải nghiệm của thành phố này" });
+      }
+    }
     this.analytics.trackFireAndForget(
       userId,
       items.length === 1 ? "experience_import_single" : "experience_import_batch",
@@ -92,6 +100,7 @@ export class ExperiencesService {
   }
 
   async commit(
+    access: AdminAccess,
     userId: string,
     items: {
       decision: "skip" | "import" | "import_anyway" | "attach_source";
@@ -116,6 +125,10 @@ export class ExperiencesService {
           index,
           message: parsed.errors[0]?.message ?? "Dữ liệu không hợp lệ",
         });
+        continue;
+      }
+      if (!(await this.canWriteCityCode(access, parsed.value.city))) {
+        errors.push({ index, message: "Không có quyền sửa trải nghiệm của thành phố này" });
         continue;
       }
       const duplicate = findPossibleDuplicate(
@@ -165,11 +178,20 @@ export class ExperiencesService {
     return { created, attached, skipped, errors };
   }
 
-  async listAdmin(status?: string) {
+  async listAdmin(access: AdminAccess, status?: string) {
+    const codes = await this.readableCityCodes(access);
     const rows = await this.db.select().from(experiences).orderBy(experiences.createdAt);
-    const filtered = status ? rows.filter((row) => row.status === status) : rows;
+    const filtered = rows.filter(
+      (row) => (codes == null || codes.includes(row.city)) && (!status || row.status === status),
+    );
     const cards = await this.hydrate(filtered.map((row) => row.id));
     return { experiences: cards };
+  }
+
+  async getAdminScoped(access: AdminAccess, id: string) {
+    const row = await this.requireExperience(id);
+    await this.assertCity(access, row.city, false);
+    return this.getAdmin(id);
   }
 
   async getAdmin(id: string) {
@@ -178,8 +200,9 @@ export class ExperiencesService {
     return card;
   }
 
-  async update(userId: string, id: string, patch: Patch) {
+  async update(access: AdminAccess, userId: string, id: string, patch: Patch) {
     const current = await this.requireExperience(id);
+    await this.assertCity(access, current.city, true);
     const priceMode = patch.priceMode ?? current.priceMode;
     const priceFrom = patch.priceFrom !== undefined ? patch.priceFrom : current.priceFromVnd;
     const priceTo = patch.priceTo !== undefined ? patch.priceTo : current.priceToVnd;
@@ -316,8 +339,9 @@ export class ExperiencesService {
     return this.getAdmin(id);
   }
 
-  async publish(userId: string, id: string) {
+  async publish(access: AdminAccess, userId: string, id: string) {
     const current = await this.requireExperience(id);
+    await this.assertCity(access, current.city, true);
     if (current.status !== "DRAFT" && current.status !== "PENDING") {
       throw new PickiError("STATE_TRANSITION_INVALID", "Chỉ draft hoặc pending mới được xuất bản");
     }
@@ -338,13 +362,14 @@ export class ExperiencesService {
     return this.getAdmin(id);
   }
 
-  async attachOrganizerMember(actorId: string, organizerId: string, phone: string) {
+  async attachOrganizerMember(access: AdminAccess, actorId: string, organizerId: string, phone: string) {
     const organizer = await this.db
-      .select({ id: experienceOrganizers.id })
+      .select({ id: experienceOrganizers.id, city: experienceOrganizers.city })
       .from(experienceOrganizers)
       .where(eq(experienceOrganizers.id, organizerId))
       .limit(1);
     if (!organizer[0]) throw new PickiError("NOT_FOUND", "Không thấy đơn vị tổ chức");
+    await this.assertCity(access, organizer[0].city, true);
     const normalized = normalizePhone(phone);
     const identity = await this.db
       .select({ userId: userIdentities.userId })
@@ -368,8 +393,9 @@ export class ExperiencesService {
     return { members: await this.organizerPhones(organizerId) };
   }
 
-  async reject(userId: string, id: string) {
+  async reject(access: AdminAccess, userId: string, id: string) {
     const current = await this.requireExperience(id);
+    await this.assertCity(access, current.city, true);
     if (current.status === "REJECTED") return this.getAdmin(id);
     await this.db
       .update(experiences)
@@ -380,6 +406,33 @@ export class ExperiencesService {
       properties: { experienceId: id },
     });
     return this.getAdmin(id);
+  }
+
+  async removeRejected(access: AdminAccess, userId: string, id: string) {
+    const current = await this.requireExperience(id);
+    await this.assertCity(access, current.city, true);
+    if (current.status !== "REJECTED") {
+      throw new PickiError("STATE_TRANSITION_INVALID", "Chỉ xóa được bài đã từ chối");
+    }
+    await this.audit(userId, "EXPERIENCE_DELETE", id, {
+      title: current.title,
+      status: current.status,
+    });
+    await this.db.delete(experiences).where(eq(experiences.id, id));
+    return { ok: true };
+  }
+
+  async removeOwnRejected(userId: string, city: OpenCity, id: string) {
+    const current = await this.requireExperience(id);
+    if (current.createdBy !== userId || current.city !== city.code) {
+      throw new PickiError("NOT_FOUND", "Không thấy trải nghiệm của bạn");
+    }
+    if (current.status !== "REJECTED") {
+      throw new PickiError("STATE_TRANSITION_INVALID", "Chỉ xóa được bài bị từ chối");
+    }
+    await this.audit(userId, "EXPERIENCE_DELETE_OWN", id, { title: current.title });
+    await this.db.delete(experiences).where(eq(experiences.id, id));
+    return { ok: true };
   }
 
   async requireOpenCity(slug: string): Promise<OpenCity> {
@@ -409,6 +462,16 @@ export class ExperiencesService {
     const now = new Date();
     const cards = await this.publishedCards(city.code);
     let rows = cards.filter((card) => card.occurrences.length > 0);
+    if (!query.saved && !query.interested) {
+      rows = rows
+        .map((card) => ({
+          ...card,
+          occurrences: card.occurrences.filter((item) =>
+            occurrenceStillListed(new Date(item.startAt), now),
+          ),
+        }))
+        .filter((card) => card.occurrences.length > 0);
+    }
     if (query.when) {
       const window = filterWindow(query.when, now);
       rows = rows.filter((card) =>
@@ -485,12 +548,21 @@ export class ExperiencesService {
     const cards = await this.publishedCards(city.code);
     const fitting = cards
       .map((card) => {
-        const starts = card.occurrences
-          .map((item) => new Date(item.startAt))
-          .filter((start) => occurrenceInWindow(start, context.window, now))
-          .sort((a, b) => a.getTime() - b.getTime());
-        if (starts.length === 0) return null;
-        return { card, startAt: starts[0]! };
+        const occurrences = card.occurrences
+          .filter((item) => {
+            const start = new Date(item.startAt);
+            return (
+              occurrenceStillListed(start, now) &&
+              occurrenceInWindow(start, context.window, now)
+            );
+          })
+          .sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
+        const next = occurrences[0];
+        if (!next) return null;
+        return {
+          card: { ...card, occurrences },
+          startAt: new Date(next.startAt),
+        };
       })
       .filter((item): item is { card: AdminCard; startAt: Date } => item != null);
 
@@ -501,7 +573,7 @@ export class ExperiencesService {
         startAt: item.startAt,
         card: item.card,
       })),
-      3,
+      now,
     );
     if (selected.source === "empty") return { card: null };
     return {
@@ -1083,6 +1155,57 @@ export class ExperiencesService {
       )
       .where(eq(experienceOrganizerMembers.organizerId, organizerId));
     return rows.map((row) => ({ userId: row.userId, phone: row.phone }));
+  }
+
+  private async readableCityCodes(access: AdminAccess): Promise<string[] | null> {
+    if (access.superAdmin || access.supportReadOnlyGlobal) return null;
+    const ids = Object.keys(access.cities);
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .select({ code: experienceCities.code })
+      .from(experienceCities)
+      .where(inArray(experienceCities.id, ids));
+    return rows.map((row) => row.code);
+  }
+
+  private async writableCityCodes(access: AdminAccess): Promise<string[] | null> {
+    if (access.superAdmin) return null;
+    const ids = Object.entries(access.cities)
+      .filter(([, grant]) => grant === "admin")
+      .map(([id]) => id);
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .select({ code: experienceCities.code })
+      .from(experienceCities)
+      .where(inArray(experienceCities.id, ids));
+    return rows.map((row) => row.code);
+  }
+
+  private async canWriteCityCode(access: AdminAccess, cityCode: string) {
+    const rows = await this.db
+      .select({ id: experienceCities.id })
+      .from(experienceCities)
+      .where(eq(experienceCities.code, cityCode))
+      .limit(1);
+    const city = rows[0];
+    return city != null && canWriteCity(access, city.id);
+  }
+
+  private async assertCity(access: AdminAccess, cityCode: string, write: boolean) {
+    const rows = await this.db
+      .select({ id: experienceCities.id })
+      .from(experienceCities)
+      .where(eq(experienceCities.code, cityCode))
+      .limit(1);
+    const city = rows[0];
+    if (!city) throw new PickiError("NOT_FOUND", "Không thấy thành phố");
+    const allowed = write ? canWriteCity(access, city.id) : canReadCity(access, city.id);
+    if (!allowed) {
+      throw new PickiError(
+        write && canReadCity(access, city.id) ? "FORBIDDEN" : "NOT_FOUND",
+        write ? "Không có quyền sửa nội dung thành phố này" : "Không thấy trải nghiệm",
+      );
+    }
   }
 
   private async requireExperience(id: string) {

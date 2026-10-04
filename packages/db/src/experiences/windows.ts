@@ -57,6 +57,16 @@ export function occurrenceInWindow(startAt: Date, window: TimeWindow, now: Date)
   return startAt.getTime() >= window.start.getTime() && startAt.getTime() < window.end.getTime();
 }
 
+function ictDateKey(instant: Date): number {
+  const parts = ictParts(instant);
+  return parts.year * 10_000 + parts.month * 100 + parts.day;
+}
+
+/** A show stays up through the end of its calendar day in Vietnam, then comes down. */
+export function occurrenceStillListed(startAt: Date, now: Date): boolean {
+  return ictDateKey(startAt) >= ictDateKey(now);
+}
+
 export type HomeContext = {
   copy: string;
   when: "weekend" | "next_week";

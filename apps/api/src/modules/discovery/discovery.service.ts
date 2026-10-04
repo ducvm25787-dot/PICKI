@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   classifiedListings,
   discoveryBlocksForNow,
@@ -26,10 +26,13 @@ import {
   locationReviews,
   listFamiliarProvidersInZone,
   listNowAroundInZone,
+  listApprovedHomeSurface,
+  type HomeSurfaceRow,
   listLateDinnerNowInZone,
   HOME_FOOD_PROVIDER_TYPES,
   listFamilyDinnerProvidersEnabled,
   listExploreProviders,
+  listDraftBeerProviders,
   listLiveDealInZone,
   listOrganicFreshInZone,
   listPresenceForLocations,
@@ -42,12 +45,14 @@ import {
   getZoneBoundaryGeoJson,
   userFavorites,
   openingReminders,
+  homeHeroImages,
   vnNowHhMm,
   type PickiDb,
   type PickiSql,
   type MapProviderFilters,
 } from "@picki/db";
-import { PickiError } from "@picki/shared";
+import { marketTierBadge, PickiError, rankMarketHero } from "@picki/shared";
+import { viewerCanSeeDraftBeer } from "../draft-beer/access.js";
 import { PICKI_DB, PICKI_SQL } from "../../shared/tokens.js";
 import { AnalyticsService } from "../analytics/analytics.service.js";
 import {
@@ -382,6 +387,7 @@ export class DiscoveryService {
       zoneId: zone.id,
       query,
       familiarLocationIds: familiarIds,
+      includeDraftBeer: await viewerCanSeeDraftBeer(this.db, userId),
     });
     const presence = await listPresenceForLocations(
       this.sql,
@@ -582,6 +588,11 @@ export class DiscoveryService {
     const familiarRows = await listFamiliarProvidersInZone(this.sql, userId, zone.id, 5);
     const familiarIds = new Set(familiarRows.map((r) => r.location_id));
     const nowRows = await listNowAroundInZone(this.sql, zone.id, 5);
+    const [specialRows, snackRows, marketRows] = await Promise.all([
+      listApprovedHomeSurface(this.sql, zone.id, "SPECIAL_TODAY", 24),
+      listApprovedHomeSurface(this.sql, zone.id, "SNACK_DESSERT", 24),
+      listApprovedHomeSurface(this.sql, zone.id, "MARKET_TODAY", 24),
+    ]);
     const dinnerServiceDate = defaultDinnerServiceDate();
     const dinnerByLocation = await familyDinnerHomeStatus(
       this.sql,
@@ -697,6 +708,18 @@ export class DiscoveryService {
     }
     const mergedNow = [...lateCards, ...injected, ...nowAround.filter((n) => !lateCards.some((c) => c.locationId === n.locationId))].slice(0, 5);
 
+    const heroRows = await this.db
+      .select()
+      .from(homeHeroImages)
+      .where(eq(homeHeroImages.city, "Hanoi"))
+      .orderBy(asc(homeHeroImages.sortOrder));
+    const heroImages: Record<string, string[]> = {};
+    for (const row of heroRows) {
+      const list = heroImages[row.contextId] ?? [];
+      if (list.length < 5) list.push(row.imageUrl);
+      heroImages[row.contextId] = list;
+    }
+
     const discoverBlocks = (
       discovery.blocks as { id: string; providers: { locationId: string }[] }[]
     ).map((block) => ({
@@ -724,6 +747,18 @@ export class DiscoveryService {
             sponsored: true,
           }
         : null,
+      heroImages,
+      todaySpecials: takeOnePerLocation(specialRows, 24).map(mapHomeSurface),
+      snackDesserts: takePerProvider(snackRows, 24, 2).map(mapHomeSurface),
+      marketToday: rankMarketHero(
+        marketRows.map((row) => ({
+          ...mapHomeSurface(row),
+          providerId: row.provider_id,
+          providerClass: marketTierBadge(row.provider_type) ?? "Đi chợ",
+        })),
+        24,
+        3,
+      ),
       /** @deprecated use nowAround */
       today: mergedNow.map((n) => ({
         id: n.updateId ?? n.locationId,
@@ -745,6 +780,9 @@ export class DiscoveryService {
         { id: "new", label: "Mới" },
         { id: "near", label: "Gần tôi" },
         { id: "popular", label: "Được dùng nhiều" },
+        ...((await viewerCanSeeDraftBeer(this.db, userId))
+          ? [{ id: "bia-hoi", label: "Bia hơi" }]
+          : []),
       ],
     };
   }
@@ -763,10 +801,15 @@ export class DiscoveryService {
       exclude = familiar.map((f) => f.location_id);
     }
 
-    const rows = await listExploreProviders(this.sql, zone.id, chip, {
-      excludeLocationIds: exclude,
-      limit: 8,
-    });
+    const rows =
+      chip === "bia-hoi"
+        ? (await viewerCanSeeDraftBeer(this.db, userId))
+          ? await listDraftBeerProviders(this.sql, zone.id, { limit: 8 })
+          : []
+        : await listExploreProviders(this.sql, zone.id, chip, {
+            excludeLocationIds: exclude,
+            limit: 8,
+          });
     const providers = rows.map(mapProvider);
     const presence = await listPresenceForLocations(
       this.sql,
@@ -823,6 +866,47 @@ export class DiscoveryService {
       })),
     };
   }
+}
+
+function mapHomeSurface(row: HomeSurfaceRow) {
+  return {
+    id: row.id,
+    locationId: row.location_id,
+    brandName: row.brand_name,
+    title: row.title,
+    imageUrl: row.image_url,
+    liveStatus: row.live_status,
+    amountVnd: row.amount_vnd,
+    listAmountVnd: row.list_amount_vnd,
+    categoryName: row.category_name,
+    providerType: row.provider_type,
+    href: `/locations/${row.location_id}?offer=${row.offering_id}`,
+  };
+}
+
+function takeOnePerLocation(rows: HomeSurfaceRow[], limit: number) {
+  const seen = new Set<string>();
+  const picked: HomeSurfaceRow[] = [];
+  for (const row of rows) {
+    if (seen.has(row.location_id)) continue;
+    seen.add(row.location_id);
+    picked.push(row);
+    if (picked.length >= limit) break;
+  }
+  return picked;
+}
+
+function takePerProvider(rows: HomeSurfaceRow[], limit: number, cap: number) {
+  const counts = new Map<string, number>();
+  const picked: HomeSurfaceRow[] = [];
+  for (const row of rows) {
+    const used = counts.get(row.provider_id) ?? 0;
+    if (used >= cap) continue;
+    counts.set(row.provider_id, used + 1);
+    picked.push(row);
+    if (picked.length >= limit) break;
+  }
+  return picked;
 }
 
 function mapProvider(r: {

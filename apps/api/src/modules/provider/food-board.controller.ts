@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Put, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { PickiError } from "@picki/shared";
 import { CurrentUserId } from "../auth/current-user.decorator.js";
@@ -8,7 +8,7 @@ import { FoodBoardService } from "./food-board.service.js";
 const stockSchema = z.object({
   offeringId: z.string().uuid(),
   serviceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  action: z.enum(["add", "sold_out", "hide", "show", "price", "feature", "unfeature"]),
+  action: z.enum(["add", "set", "sold_out", "hide", "show", "price", "feature", "unfeature"]),
   quantity: z.number().int().positive().max(500).optional(),
   priceVnd: z.number().int().min(0).max(50_000_000).nullable().optional(),
 });
@@ -32,6 +32,18 @@ const optionGroupSchema = z.object({
     )
     .min(1)
     .max(12),
+});
+
+const draftBeerSchema = z.object({
+  prices: z.object({
+    "500ml": z.number().int().positive(),
+    "1L": z.number().int().positive(),
+    "2L": z.number().int().positive(),
+    "5L": z.number().int().positive(),
+    "10L": z.number().int().positive(),
+  }),
+  description: z.string().trim().max(400).nullable().optional(),
+  active: z.boolean().optional(),
 });
 
 const productSchema = z.object({
@@ -84,6 +96,37 @@ export class FoodBoardController {
     return this.board.board(userId, locationId);
   }
 
+  @Post("locations/:locationId/board/morning")
+  morning(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = z
+      .object({
+        enabled: z.boolean(),
+        cutoffTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+        prepareLeadMinutes: z.number().int().min(0).max(240),
+        slots: z
+          .array(
+            z.object({
+              startsAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+              endsAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+            }),
+          )
+          .min(1)
+          .max(16),
+      })
+      .safeParse(body);
+    if (!parsed.success) throw new PickiError("VALIDATION_ERROR", "Giờ chốt hoặc khung giao chưa đúng");
+    for (const slot of parsed.data.slots) {
+      if (slot.startsAt >= slot.endsAt) {
+        throw new PickiError("VALIDATION_ERROR", "Khung giờ phải kết thúc sau giờ bắt đầu");
+      }
+    }
+    return this.board.saveMorningSettings(userId, locationId, parsed.data);
+  }
+
   @Post("locations/:locationId/board/stock")
   stock(
     @CurrentUserId() userId: string,
@@ -111,9 +154,52 @@ export class FoodBoardController {
     return this.board.copyPrevious(userId, locationId);
   }
 
+  @Post("locations/:locationId/board/spotlights")
+  submitSpotlight(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = z
+      .object({
+        offeringId: z.string().uuid(),
+        title: z.string().trim().min(1).max(120),
+        description: z.string().trim().max(1000).optional(),
+        promoPriceVnd: z.number().int().positive().optional(),
+      })
+      .safeParse(body);
+    if (!parsed.success) throw new PickiError("VALIDATION_ERROR", "Chưa chọn món để đẩy");
+    return this.board.submitSpotlight(userId, locationId, parsed.data);
+  }
+
+  @Post("locations/:locationId/board/spotlights/:updateId/withdraw")
+  withdrawSpotlight(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Param("updateId") updateId: string,
+  ) {
+    return this.board.withdrawSpotlight(userId, locationId, updateId);
+  }
+
   @Get("locations/:locationId/product-categories")
   categories(@CurrentUserId() userId: string, @Param("locationId") locationId: string) {
     return this.board.listCategories(userId, locationId);
+  }
+
+  @Get("locations/:locationId/draft-beer")
+  draftBeer(@CurrentUserId() userId: string, @Param("locationId") locationId: string) {
+    return this.board.draftBeer(userId, locationId);
+  }
+
+  @Put("locations/:locationId/draft-beer")
+  saveDraftBeer(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = draftBeerSchema.safeParse(body);
+    if (!parsed.success) throw new PickiError("VALIDATION_ERROR", "Nhập đủ 5 mức giá bia hơi");
+    return this.board.upsertDraftBeer(userId, locationId, parsed.data);
   }
 
   @Get("locations/:locationId/products")
@@ -151,6 +237,34 @@ export class FoodBoardController {
     const parsed = productPatchSchema.safeParse(body);
     if (!parsed.success) throw new PickiError("VALIDATION_ERROR", "Món không hợp lệ");
     return this.board.updateProduct(userId, locationId, offeringId, parsed.data);
+  }
+
+  @Delete("locations/:locationId/products/:offeringId")
+  removeProduct(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Param("offeringId") offeringId: string,
+  ) {
+    return this.board.deleteProduct(userId, locationId, offeringId);
+  }
+
+  @Post("locations/:locationId/products/:offeringId/restore")
+  restoreProduct(
+    @CurrentUserId() userId: string,
+    @Param("locationId") locationId: string,
+    @Param("offeringId") offeringId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = z
+      .object({ status: z.enum(["ACTIVE", "ARCHIVED"]).optional() })
+      .safeParse(body ?? {});
+    if (!parsed.success) throw new PickiError("VALIDATION_ERROR", "Không hoàn tác được");
+    return this.board.restoreProduct(
+      userId,
+      locationId,
+      offeringId,
+      parsed.data.status ?? "ACTIVE",
+    );
   }
 
   @Get("locations/:locationId/selling")

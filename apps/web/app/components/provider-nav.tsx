@@ -196,14 +196,14 @@ export function ProviderNav() {
         { href: "/provider", label: "Đơn", Icon: IconClipboard, exact: true },
         { href: "/provider/products", label: "Sản phẩm", Icon: IconOrders, exact: false },
         { href: "/provider/selling", label: "Cách bán", Icon: IconDinner, exact: false },
-        { href: "/provider/settings", label: "Gian hàng", Icon: IconSettings, exact: false },
+        { href: "/provider/settings", label: "Cài đặt gian hàng", Icon: IconSettings, exact: false },
       ]
     : marketShop
       ? [
           { href: "/provider/board", label: "Hôm nay", Icon: IconLive, exact: false },
           { href: "/provider", label: "Đơn", Icon: IconClipboard, exact: true },
           { href: "/provider/products", label: "Sản phẩm", Icon: IconOrders, exact: false },
-          { href: "/provider/settings", label: "Gian hàng", Icon: IconSettings, exact: false },
+          { href: "/provider/settings", label: "Cài đặt gian hàng", Icon: IconSettings, exact: false },
         ]
     : tabs.filter((tab) => {
     if (isSupermarket(providerType)) {

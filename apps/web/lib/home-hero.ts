@@ -73,7 +73,7 @@ const DEFAULT_RULES: WindowRule[] = [
     content: {
       kicker: "Sáng mai ăn gì?",
       title: "Sáng mai ăn gì?",
-      copy: "Đặt tối nay · giao sáng sớm quanh nhà.",
+      copy: "Đặt tối nay - giao sáng mai.",
       cta: "Xem quán nhận đơn →",
       href: "/breakfast",
       tone: "breakfast",
@@ -139,7 +139,7 @@ export const HOME_HERO = {
     href: "/breakfast",
     kicker: "Sáng mai ăn gì?",
     title: "Sáng mai ăn gì?",
-    copy: "Đặt tối nay · giao sáng sớm quanh nhà.",
+    copy: "Đặt tối nay - giao sáng mai.",
     cta: "Xem quán nhận đơn →",
     tone: "breakfast" as const,
   },

@@ -27,6 +27,7 @@ export type TodayOfferView =
   | {
       visible: true;
       amountVnd: number;
+      listAmountVnd: number;
       todayStatus: "UNSET" | "AVAILABLE" | "SOLD_OUT";
       remaining: number | null;
     };
@@ -41,21 +42,47 @@ export function resolveTodayOffer(input: {
   priceOverrideVnd: number | null;
 }): TodayOfferView {
   const amountVnd = input.priceOverrideVnd ?? input.basePriceVnd;
+  const priced = { amountVnd, listAmountVnd: input.basePriceVnd };
   if (!input.dayStatus) {
-    return { visible: true, amountVnd: input.basePriceVnd, todayStatus: "UNSET", remaining: null };
+    return { visible: true, amountVnd: input.basePriceVnd, listAmountVnd: input.basePriceVnd, todayStatus: "UNSET", remaining: null };
   }
   if (input.dayStatus === "HIDDEN") return { visible: false, reason: "HIDDEN" };
   if (input.dayStatus === "SOLD_OUT") {
-    return { visible: true, amountVnd, todayStatus: "SOLD_OUT", remaining: 0 };
+    return { visible: true, ...priced, todayStatus: "SOLD_OUT", remaining: 0 };
   }
   if (input.availableQty == null) {
-    return { visible: true, amountVnd, todayStatus: "UNSET", remaining: null };
+    return { visible: true, ...priced, todayStatus: "UNSET", remaining: null };
   }
   const remaining = input.availableQty - (input.reservedQty ?? 0) - (input.soldQty ?? 0);
   if (remaining <= 0 || input.dayStatus === "SOLD_OUT") {
-    return { visible: true, amountVnd, todayStatus: "SOLD_OUT", remaining: 0 };
+    return { visible: true, ...priced, todayStatus: "SOLD_OUT", remaining: 0 };
   }
-  return { visible: true, amountVnd, todayStatus: "AVAILABLE", remaining };
+  return { visible: true, ...priced, todayStatus: "AVAILABLE", remaining };
+}
+
+/**
+ * Morning market may sell only a row the shop opened for that date.
+ * A missing row or a null quantity is closed, not unlimited.
+ */
+export function resolveScheduledOffer(input: {
+  basePriceVnd: number;
+  dayStatus: string | null;
+  availableQty: number | null;
+  reservedQty: number | null;
+  soldQty: number | null;
+  priceOverrideVnd: number | null;
+}):
+  | { ok: false; reason: "closed" | "sold_out" }
+  | { ok: true; amountVnd: number; listAmountVnd: number; remaining: number } {
+  if (!input.dayStatus || input.dayStatus === "HIDDEN" || input.availableQty == null) {
+    return { ok: false, reason: "closed" };
+  }
+  const amountVnd = input.priceOverrideVnd ?? input.basePriceVnd;
+  const remaining = input.availableQty - (input.reservedQty ?? 0) - (input.soldQty ?? 0);
+  if (input.dayStatus === "SOLD_OUT" || remaining <= 0 || amountVnd < 1) {
+    return { ok: false, reason: "sold_out" };
+  }
+  return { ok: true, amountVnd, listAmountVnd: input.basePriceVnd, remaining };
 }
 
 export function commerceServiceDate(explicit?: string | null, now = new Date()): string {
@@ -86,8 +113,11 @@ export async function reserveOfferingStock(
   tx: StockTx,
   input: {
     orderId: string;
+    providerLocationId: string;
     serviceDate: string;
     lines: { offeringId: string | null; quantity: number; name?: string | null }[];
+    /** Scheduled orders must have an opened quantity. Sell-now keeps the unlimited fallback. */
+    requirePublished?: boolean;
   },
 ) {
   const serviceDate = commerceServiceDate(input.serviceDate);
@@ -105,6 +135,7 @@ export async function reserveOfferingStock(
       })
       .where(
         and(
+          eq(productDailyAvailability.providerLocationId, input.providerLocationId),
           eq(productDailyAvailability.offeringId, offeringId),
           eq(productDailyAvailability.serviceDate, serviceDate),
           eq(productDailyAvailability.status, "AVAILABLE"),
@@ -119,6 +150,7 @@ export async function reserveOfferingStock(
         .insert(offeringStockReservations)
         .values({
           orderId: input.orderId,
+          providerLocationId: input.providerLocationId,
           offeringId,
           serviceDate,
           quantity: line.quantity,
@@ -149,12 +181,19 @@ export async function reserveOfferingStock(
       .from(productDailyAvailability)
       .where(
         and(
+          eq(productDailyAvailability.providerLocationId, input.providerLocationId),
           eq(productDailyAvailability.offeringId, offeringId),
           eq(productDailyAvailability.serviceDate, serviceDate),
         ),
       )
       .limit(1);
 
+    if (input.requirePublished) {
+      if (!existing || existing.availableQty == null || existing.status === "HIDDEN") {
+        throw new StockConflictError(`Chưa mở bán ngày này: ${line.name}`);
+      }
+      throw new StockConflictError(`Hết ngày này: ${line.name}`);
+    }
     if (!existing) continue;
     if (existing.status === "HIDDEN") {
       throw new StockConflictError(`Hôm nay không bán: ${line.name}`);
@@ -173,6 +212,7 @@ export async function confirmOfferingStock(tx: StockTx, orderId: string) {
     FROM offering_stock_reservations AS r
     WHERE r.order_id = ${orderId}::uuid
       AND r.status = 'RESERVED'
+      AND a.provider_location_id = r.provider_location_id
       AND a.offering_id = r.offering_id
       AND a.service_date = r.service_date
   `);
@@ -214,6 +254,7 @@ export async function releaseOfferingStock(tx: StockTx, orderId: string) {
     FROM offering_stock_reservations AS r
     WHERE r.order_id = ${orderId}::uuid
       AND r.status IN ('RESERVED', 'CONFIRMED')
+      AND a.provider_location_id = r.provider_location_id
       AND a.offering_id = r.offering_id
       AND a.service_date = r.service_date
   `);
@@ -228,10 +269,48 @@ export async function releaseOfferingStock(tx: StockTx, orderId: string) {
     );
 }
 
+/** Opening quantity for today. The number is what can still be sold, on top of anything already reserved or sold. */
+export async function setDailySellableQty(
+  tx: StockTx,
+  input: { providerLocationId: string; offeringId: string; serviceDate: string; quantity: number },
+) {
+  if (input.quantity < 1) {
+    throw new Error("quantity must be positive");
+  }
+  const serviceDate = commerceServiceDate(input.serviceDate);
+  const [offering] = await tx
+    .select({ providerId: offerings.providerId })
+    .from(offerings)
+    .where(eq(offerings.id, input.offeringId))
+    .limit(1);
+  if (!offering) throw new Error("offering missing");
+
+  await tx.execute(sql`
+    INSERT INTO product_daily_availability (
+      provider_id, provider_location_id, offering_id, service_date, status, available_qty, reserved_qty, sold_qty
+    ) VALUES (
+      ${offering.providerId}::uuid,
+      ${input.providerLocationId}::uuid,
+      ${input.offeringId}::uuid,
+      ${serviceDate}::date,
+      'AVAILABLE',
+      ${input.quantity},
+      0,
+      0
+    )
+    ON CONFLICT (provider_location_id, offering_id, service_date) DO UPDATE
+    SET available_qty = product_daily_availability.reserved_qty
+          + product_daily_availability.sold_qty
+          + ${input.quantity},
+        status = 'AVAILABLE',
+        updated_at = now()
+  `);
+}
+
 /** SOLD_OUT with remaining qty becomes AVAILABLE. A hidden row stays hidden until the shop shows it again. */
 export async function addDailySellableQty(
   tx: StockTx,
-  input: { offeringId: string; serviceDate: string; quantity: number },
+  input: { providerLocationId: string; offeringId: string; serviceDate: string; quantity: number },
 ) {
   if (input.quantity < 1) {
     throw new Error("quantity must be positive");
@@ -248,9 +327,10 @@ export async function addDailySellableQty(
 
   await tx.execute(sql`
     INSERT INTO product_daily_availability (
-      provider_id, offering_id, service_date, status, available_qty, reserved_qty, sold_qty
+      provider_id, provider_location_id, offering_id, service_date, status, available_qty, reserved_qty, sold_qty
     ) VALUES (
       ${offering.providerId}::uuid,
+      ${input.providerLocationId}::uuid,
       ${input.offeringId}::uuid,
       ${serviceDate}::date,
       'AVAILABLE',
@@ -258,7 +338,7 @@ export async function addDailySellableQty(
       0,
       0
     )
-    ON CONFLICT (offering_id, service_date) DO UPDATE
+    ON CONFLICT (provider_location_id, offering_id, service_date) DO UPDATE
     SET available_qty = COALESCE(product_daily_availability.available_qty, 0) + ${input.quantity},
         status = CASE
           WHEN product_daily_availability.status = 'HIDDEN' THEN 'HIDDEN'
@@ -275,6 +355,7 @@ export async function addDailySellableQty(
 export async function applyDailyStockAction(
   tx: StockTx,
   input: {
+    providerLocationId: string;
     offeringId: string;
     serviceDate: string;
     action: "add" | "sold_out" | "hide" | "show";
@@ -288,12 +369,14 @@ export async function applyDailyStockAction(
       .from(productDailyAvailability)
       .where(
         and(
+          eq(productDailyAvailability.providerLocationId, input.providerLocationId),
           eq(productDailyAvailability.offeringId, input.offeringId),
           eq(productDailyAvailability.serviceDate, serviceDate),
         ),
       )
       .limit(1);
     await addDailySellableQty(tx, {
+      providerLocationId: input.providerLocationId,
       offeringId: input.offeringId,
       serviceDate,
       quantity: input.quantity ?? 1,
@@ -316,6 +399,7 @@ export async function applyDailyStockAction(
     .from(productDailyAvailability)
     .where(
       and(
+        eq(productDailyAvailability.providerLocationId, input.providerLocationId),
         eq(productDailyAvailability.offeringId, input.offeringId),
         eq(productDailyAvailability.serviceDate, serviceDate),
       ),
@@ -328,6 +412,7 @@ export async function applyDailyStockAction(
     if (!row) {
       await tx.insert(productDailyAvailability).values({
         providerId: offering.providerId,
+        providerLocationId: input.providerLocationId,
         offeringId: input.offeringId,
         serviceDate,
         status: "SOLD_OUT",
@@ -346,6 +431,7 @@ export async function applyDailyStockAction(
     if (!row) {
       await tx.insert(productDailyAvailability).values({
         providerId: offering.providerId,
+        providerLocationId: input.providerLocationId,
         offeringId: input.offeringId,
         serviceDate,
         status: "HIDDEN",
@@ -375,7 +461,8 @@ export async function applyDailyStockAction(
 /** Copy the latest earlier day onto today. Existing rows for today are left as the shop set them. */
 export async function copyPreviousDailyAvailability(
   tx: StockTx,
-  providerId: string,
+  _providerId: string,
+  providerLocationId: string,
   today: string,
 ) {
   const serviceDate = commerceServiceDate(today);
@@ -384,7 +471,7 @@ export async function copyPreviousDailyAvailability(
     .from(productDailyAvailability)
     .where(
       and(
-        eq(productDailyAvailability.providerId, providerId),
+        eq(productDailyAvailability.providerLocationId, providerLocationId),
         sql`${productDailyAvailability.serviceDate} < ${serviceDate}::date`,
       ),
     )
@@ -397,17 +484,18 @@ export async function copyPreviousDailyAvailability(
     .from(productDailyAvailability)
     .where(
       and(
-        eq(productDailyAvailability.providerId, providerId),
+        eq(productDailyAvailability.providerLocationId, providerLocationId),
         eq(productDailyAvailability.serviceDate, serviceDate),
       ),
     );
   await tx.execute(sql`
     INSERT INTO product_daily_availability (
-      provider_id, offering_id, service_date, status, available_qty,
+      provider_id, provider_location_id, offering_id, service_date, status, available_qty,
       reserved_qty, sold_qty, price_override_vnd, available_from, available_until
     )
     SELECT
       provider_id,
+      provider_location_id,
       offering_id,
       ${serviceDate}::date,
       CASE
@@ -422,16 +510,16 @@ export async function copyPreviousDailyAvailability(
       available_from,
       available_until
     FROM product_daily_availability
-    WHERE provider_id = ${providerId}::uuid
+    WHERE provider_location_id = ${providerLocationId}::uuid
       AND service_date = ${source.serviceDate}::date
-    ON CONFLICT (offering_id, service_date) DO NOTHING
+    ON CONFLICT (provider_location_id, offering_id, service_date) DO NOTHING
   `);
   const [after] = await tx
     .select({ n: sql<number>`count(*)::int` })
     .from(productDailyAvailability)
     .where(
       and(
-        eq(productDailyAvailability.providerId, providerId),
+        eq(productDailyAvailability.providerLocationId, providerLocationId),
         eq(productDailyAvailability.serviceDate, serviceDate),
       ),
     );
@@ -444,7 +532,7 @@ export async function copyPreviousDailyAvailability(
 /** Today's price only. Does not create a quantity limit and does not unhide the dish. */
 export async function setDailyPrice(
   tx: StockTx,
-  input: { offeringId: string; serviceDate: string; priceVnd: number | null },
+  input: { providerLocationId: string; offeringId: string; serviceDate: string; priceVnd: number | null },
 ) {
   const serviceDate = commerceServiceDate(input.serviceDate);
   const [offering] = await tx
@@ -459,6 +547,7 @@ export async function setDailyPrice(
     .from(productDailyAvailability)
     .where(
       and(
+        eq(productDailyAvailability.providerLocationId, input.providerLocationId),
         eq(productDailyAvailability.offeringId, input.offeringId),
         eq(productDailyAvailability.serviceDate, serviceDate),
       ),
@@ -469,6 +558,7 @@ export async function setDailyPrice(
     if (input.priceVnd == null) return;
     await tx.insert(productDailyAvailability).values({
       providerId: offering.providerId,
+      providerLocationId: input.providerLocationId,
       offeringId: input.offeringId,
       serviceDate,
       status: "AVAILABLE",

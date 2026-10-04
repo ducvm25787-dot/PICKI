@@ -309,7 +309,7 @@ function orderStatusShort(status: string, orderKind: string, vertical: string): 
     case "COMPLETED":
       return "Hoàn tất";
     case "PROVIDER_REJECTED":
-      return "Quán từ chối";
+      return "Đơn hàng bị từ chối";
     case "CUSTOMER_CANCELLED":
     case "SYSTEM_CANCELLED":
       return "Đã hủy";
