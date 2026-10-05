@@ -14,6 +14,8 @@ export type ProviderListing = {
   lng?: number | null;
   averageRating?: number | null;
   reviewCount?: number;
+  distanceMeters?: number | null;
+  openAllDay?: boolean;
   sampleOffering?: string | null;
   logoUrl?: string | null;
   freshnessLabel?: string | null;

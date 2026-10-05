@@ -109,6 +109,17 @@ export function ProviderCardCompact({
               {status}
             </p>
             {offer ? <p className="provider-card-compact-offer">{offer}</p> : null}
+            {p.distanceMeters != null ? (
+              <p className="stat" style={{ margin: "4px 0 0" }}>
+                ~{p.distanceMeters >= 1000 ? `${(p.distanceMeters / 1000).toFixed(1)} km` : `${p.distanceMeters} m`} từ tâm Zone
+              </p>
+            ) : null}
+            {p.openAllDay ? <p className="stat" style={{ margin: "2px 0 0" }}>24/7</p> : null}
+            {p.reviewCount ? (
+              <p className="stat" style={{ margin: "2px 0 0" }}>
+                ★ {p.averageRating} · {p.reviewCount} đánh giá
+              </p>
+            ) : null}
           </div>
         </Link>
         <div className="provider-card-compact-actions">

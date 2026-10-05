@@ -3,6 +3,7 @@
 export type HomeCategoryId =
   | "food"
   | "market"
+  | "convenience"
   | "beauty"
   | "cleaning"
   | "repair"
@@ -50,9 +51,9 @@ export const HOME_CATEGORIES: HomeCategory[] = [
   },
   {
     id: "market",
-    emoji: "🛒",
-    label: "Đi chợ & Mua sắm",
     shortLabel: "Đi chợ",
+    emoji: "🥬",
+    label: "Đi chợ",
     subs: [
       "Rau củ",
       "Trái cây",
@@ -67,6 +68,14 @@ export const HOME_CATEGORIES: HomeCategory[] = [
       "Hàng thiết yếu",
     ],
     providerTypes: ["MINIMART", "MARKET_VENDOR", "RETAIL_STORE", "SUPERMARKET"],
+  },
+  {
+    id: "convenience",
+    emoji: "🏪",
+    label: "Minimart & Tiện lợi",
+    shortLabel: "Minimart",
+    subs: ["Minimart", "Tiện lợi"],
+    providerTypes: ["MINIMART", "CONVENIENCE_STORE"],
   },
   {
     id: "beauty",
@@ -158,6 +167,7 @@ export function getHomeCategory(id: string): HomeCategory | undefined {
 export const HOME_CATEGORY_PRIMARY_IDS: HomeCategoryId[] = [
   "food",
   "market",
+  "convenience",
   "beauty",
   "repair",
   "cleaning",
@@ -202,7 +212,7 @@ export function browseHrefForDiscoveryBlock(
       return `/zones/${zoneSlug}/browse/health`;
     case "market":
     case "di-cho":
-      return `/zones/${zoneSlug}/browse/market`;
+      return `/zones/${zoneSlug}/market`;
     case "sports":
       return `/zones/${zoneSlug}/browse/sports`;
     case "transport":

@@ -81,7 +81,12 @@ export async function searchZoneUniversal(
         NULL::text AS item_name,
         pp.tagline AS item_subtitle,
         NULL::integer AS amount_vnd,
-        ('/locations/' || pl.id::text) AS href_hint,
+        ('/locations/' || pl.id::text || CASE
+          WHEN p.provider_type = 'SPECIALTY_STORE' THEN '?context=direct'
+          WHEN p.provider_type = 'MARKET_VENDOR' AND mc.slug IS NOT NULL
+            THEN '?context=market_trip&cluster=' || mc.slug
+          ELSE ''
+        END) AS href_hint,
         pl.lat,
         pl.lng,
         (pl.id = ANY(${familiarIds}::uuid[])) AS familiar
@@ -90,6 +95,7 @@ export async function searchZoneUniversal(
       INNER JOIN providers p ON p.id = pl.provider_id
       LEFT JOIN provider_profiles pp ON pp.provider_id = p.id
       LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
+      LEFT JOIN market_clusters mc ON mc.id = pl.market_cluster_id
       WHERE pzm.zone_id = ${opts.zoneId}::uuid
         AND pzm.status = 'ACTIVE' AND pl.status = 'ACTIVE' AND p.status = 'ACTIVE'
         AND EXISTS (
@@ -115,7 +121,12 @@ export async function searchZoneUniversal(
         o.name AS item_name,
         o.description AS item_subtitle,
         COALESCE(op.amount_vnd, opm.amount_vnd) AS amount_vnd,
-        ('/locations/' || pl.id::text) AS href_hint,
+        ('/locations/' || pl.id::text || CASE
+          WHEN p.provider_type = 'SPECIALTY_STORE' THEN '?context=direct'
+          WHEN p.provider_type = 'MARKET_VENDOR' AND mc.slug IS NOT NULL
+            THEN '?context=market_trip&cluster=' || mc.slug
+          ELSE ''
+        END) AS href_hint,
         pl.lat,
         pl.lng,
         (pl.id = ANY(${familiarIds}::uuid[])) AS familiar
@@ -124,6 +135,7 @@ export async function searchZoneUniversal(
       INNER JOIN provider_locations pl ON pl.provider_id = p.id
       INNER JOIN provider_zone_memberships pzm ON pzm.provider_location_id = pl.id
       LEFT JOIN provider_live_status pls ON pls.provider_location_id = pl.id
+      LEFT JOIN market_clusters mc ON mc.id = pl.market_cluster_id
       LEFT JOIN offering_prices op ON op.offering_id = o.id AND op.provider_location_id = pl.id
       LEFT JOIN offering_prices opm ON opm.offering_id = o.id AND opm.provider_location_id IS NULL
       WHERE pzm.zone_id = ${opts.zoneId}::uuid
@@ -231,7 +243,8 @@ export async function searchZoneUniversal(
 
 const CATEGORY_INDEX: { id: string; label: string; keywords: string[]; href: string }[] = [
   { id: "food", label: "Ăn uống", keywords: ["an uong", "food", "com", "pho", "bun", "an"], href: "/zones/kim-van-kim-lu/browse/food" },
-  { id: "market", label: "Đi chợ", keywords: ["di cho", "cho", "tap hoa", "market"], href: "/zones/kim-van-kim-lu/browse/market" },
+  { id: "market", label: "Đi chợ", keywords: ["di cho", "cua hang", "market"], href: "/zones/kim-van-kim-lu/market" },
+  { id: "convenience", label: "Minimart & Tiện lợi", keywords: ["tap hoa", "minimart", "tien loi", "circle k", "winmart"], href: "/zones/kim-van-kim-lu/browse/convenience" },
   { id: "beauty", label: "Làm đẹp", keywords: ["lam dep", "toc", "cat toc", "nail", "beauty"], href: "/zones/kim-van-kim-lu/browse/beauty" },
   { id: "cleaning", label: "Giặt / dọn", keywords: ["giat", "don nha", "laundry", "giup viec"], href: "/zones/kim-van-kim-lu/browse/cleaning" },
   { id: "repair", label: "Sửa chữa", keywords: ["sua", "dien", "nuoc", "dieu hoa", "sua lanh"], href: "/zones/kim-van-kim-lu/browse/repair" },
@@ -242,8 +255,11 @@ const CATEGORY_INDEX: { id: string; label: string; keywords: string[]; href: str
 
 function matchCategories(terms: string[]): UniversalSearchRow[] {
   const norms = terms.map((t) => normalizeSearchQuery(t));
+  // "chợ" and "chó" both fold to "cho". The phrase "đi chợ" is the fresh-market door.
+  const marketPhrase = norms.some((n) => /(^|\s)di cho(\s|$)/.test(n));
   const hits: UniversalSearchRow[] = [];
   for (const cat of CATEGORY_INDEX) {
+    if (marketPhrase && cat.id === "pet") continue;
     const matched = norms.some((n) => cat.keywords.some((k) => n.includes(k) || k.includes(n)));
     if (!matched) continue;
     hits.push({

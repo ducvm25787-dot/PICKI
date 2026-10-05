@@ -26,11 +26,11 @@ const RAILS = {
     badge: (item: TodaySpecial) => item.categoryName ?? "Ăn vặt",
   },
   market: {
-    label: "Đi chợ",
-    hint: "Hàng được đẩy cho Đi chợ ngay.",
+    label: "Hôm nay có",
+    hint: "Bài đã được Zone duyệt.",
     source: "market_today",
     pick: (home: HomePayload) => home.marketToday ?? [],
-    badge: (item: TodaySpecial) => item.providerClass ?? marketTierBadge(item.providerType) ?? "Đi chợ",
+    badge: (item: TodaySpecial) => item.providerClass ?? marketTierBadge(item.providerType) ?? "Hôm nay có",
   },
 } as const;
 

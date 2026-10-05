@@ -28,4 +28,5 @@ export * from "./family-dinner.js";
 export * from "./breakfast-preorder.js";
 export * from "./scheduled-fulfillment.js";
 export * from "./late-night.js";
+export * from "./market.js";
 export * from "./zones.js";

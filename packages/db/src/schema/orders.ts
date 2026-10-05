@@ -1,4 +1,5 @@
-import { boolean, doublePrecision, integer, jsonb, pgTable, text, timestamp, uuid, date } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean, doublePrecision, index, integer, jsonb, pgTable, text, timestamp, uuid, date } from "drizzle-orm/pg-core";
 import { createdAt, updatedAt } from "./helpers.js";
 import { addresses } from "./addresses.js";
 import { offerings } from "./catalog.js";
@@ -9,6 +10,7 @@ import {
 import { familyDinnerDeliveryWindows, familyDinnerMenuItems } from "./family-dinner.js";
 import { scheduledDeliveryWindows } from "./scheduled-fulfillment.js";
 import { users } from "./identity.js";
+import { marketBaskets } from "./market.js";
 import { providerLocations } from "./providers.js";
 import { zones } from "./zones.js";
 
@@ -100,9 +102,18 @@ export const orders = pgTable("orders", {
   providerHandoffAt: timestamp("provider_handoff_at", { withTimezone: true, mode: "date" }),
   runnerSoughtAt: timestamp("runner_sought_at", { withTimezone: true, mode: "date" }),
   runnerOfferWave: integer("runner_offer_wave").notNull().default(0),
+  /** UNSPECIFIED = legacy checkout. DIRECT and MARKET_TRIP are written by the entry, never inferred. */
+  commerceContext: text("commerce_context").notNull().default("UNSPECIFIED"),
+  marketBasketId: uuid("market_basket_id").references(() => marketBaskets.id, { onDelete: "restrict" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+},
+(t) => [
+  index("orders_market_basket_idx")
+    .on(t.marketBasketId)
+    .where(sql`${t.marketBasketId} IS NOT NULL`),
+],
+);
 
 export const orderItems = pgTable("order_items", {
   id: uuid("id").primaryKey().defaultRandom(),

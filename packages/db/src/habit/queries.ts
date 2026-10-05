@@ -152,7 +152,9 @@ export type HomeSurfaceRow = {
 
 /**
  * Approved merchandising only. featured is ignored.
- * Food surfaces require FOOD_SERVICE. MARKET_TODAY requires market commerce.
+ * Food surfaces require FOOD_SERVICE.
+ * MARKET_TODAY (Hôm nay có) requires an approved post plus SPECIALTY_STORE or a cluster stall.
+ * Minimart, convenience, supermarket, and unclassified RETAIL_STORE stay off this rail.
  */
 export async function listApprovedHomeSurface(
   sql: postgres.Sql,
@@ -207,7 +209,11 @@ export async function listApprovedHomeSurface(
       AND tgt.review_status = 'APPROVED'
       AND tgt.approved_surface = ${surface}
       AND (
-        (${market} AND p.commerce_model IN ('FRESH_MARKET', 'RETAIL_STORE'))
+        (
+          ${market}
+          AND p.provider_type NOT IN ('MINIMART', 'CONVENIENCE_STORE', 'SUPERMARKET', 'RETAIL_STORE')
+          AND (p.provider_type = 'SPECIALTY_STORE' OR pl.market_cluster_id IS NOT NULL)
+        )
         OR (NOT ${market} AND p.commerce_model = 'FOOD_SERVICE')
       )
       AND (day.id IS NULL OR day.status IS DISTINCT FROM 'HIDDEN')

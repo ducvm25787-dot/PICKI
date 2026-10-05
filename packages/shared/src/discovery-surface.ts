@@ -6,7 +6,7 @@ export type DiscoverySurface = (typeof DISCOVERY_SURFACES)[number];
 export const DISCOVERY_SURFACE_LABEL: Record<DiscoverySurface, string> = {
   SPECIAL_TODAY: "Đặc biệt hôm nay",
   SNACK_DESSERT: "Ăn vặt & Tráng miệng",
-  MARKET_TODAY: "Đi chợ ngay",
+  MARKET_TODAY: "Hôm nay có",
 };
 
 /** FOOD categories that route a push to Ăn vặt & Tráng miệng. Meal-side Tráng miệng / Đồ uống stay SPECIAL_TODAY. */

@@ -469,7 +469,13 @@ export default function HomePage() {
         {primaryCats.map((cat) => (
           <Link
             key={cat.id}
-            href={`/zones/${KVL_SLUG}/browse/${cat.id}`}
+            href={
+              cat.id === "market"
+                ? `/zones/${KVL_SLUG}/market`
+                : cat.id === "convenience"
+                  ? `/zones/${KVL_SLUG}/browse/convenience`
+                  : `/zones/${KVL_SLUG}/browse/${cat.id}`
+            }
             className="utility-tile"
           >
             <span className="utility-tile-emoji" aria-hidden>
@@ -495,7 +501,13 @@ export default function HomePage() {
           {secondaryCats.map((cat) => (
             <Link
               key={cat.id}
-              href={`/zones/${KVL_SLUG}/browse/${cat.id}`}
+              href={
+                cat.id === "market"
+                  ? `/zones/${KVL_SLUG}/market`
+                  : cat.id === "convenience"
+                    ? `/zones/${KVL_SLUG}/browse/convenience`
+                    : `/zones/${KVL_SLUG}/browse/${cat.id}`
+              }
               className="utility-tile"
             >
               <span className="utility-tile-emoji" aria-hidden>
@@ -609,20 +621,17 @@ export default function HomePage() {
             trackSource="snack_dessert"
           />
           <HomeDishRail
-            label="Đi chợ"
+            label="Hôm nay có"
             allHref="/pushes/market"
             items={marketToday}
-            badgeFor={(item) => item.providerClass ?? marketTierBadge(item.providerType) ?? "Đi chợ"}
-            empty="Chưa có hàng được đẩy hôm nay."
+            badgeFor={(item) => item.providerClass ?? marketTierBadge(item.providerType) ?? "Hôm nay có"}
+            empty="Chưa có bài được duyệt hôm nay."
             zoneId={zoneId}
             trackSource="market_today"
           />
-          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-            <Link href={`/zones/${KVL_SLUG}/browse/market`} className="familiar-cta" style={{ marginBottom: 0 }}>
-              Đi chợ ngay
-            </Link>
-            <Link href={`/zones/${KVL_SLUG}/browse/market?when=morning`} className="familiar-cta" style={{ marginBottom: 0 }}>
-              Sáng mai giao
+          <div style={{ marginBottom: 16 }}>
+            <Link href={`/zones/${KVL_SLUG}/market`} className="familiar-cta" style={{ marginBottom: 0 }}>
+              Vào Đi chợ
             </Link>
           </div>
 

@@ -780,7 +780,8 @@ export async function listMarketProviders(
       AND pzm.status = 'ACTIVE'
       AND pl.status = 'ACTIVE'
       AND p.status = 'ACTIVE'
-      AND p.provider_type IN ('MINIMART', 'MARKET_VENDOR', 'RETAIL_STORE')
+      AND p.provider_type IN ('MARKET_VENDOR', 'SPECIALTY_STORE')
+      AND (pl.market_cluster_id IS NOT NULL OR p.provider_type = 'SPECIALTY_STORE')
     ORDER BY
       CASE COALESCE(pls.status, 'OFFLINE')
         WHEN 'OPEN' THEN 0

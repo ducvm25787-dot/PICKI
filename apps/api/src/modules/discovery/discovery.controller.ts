@@ -66,6 +66,26 @@ export class DiscoveryController {
     return this.discovery.exploreZone(slugOrId, chip, userId);
   }
 
+  @Get("zones/:slugOrId/market/clusters/:clusterSlug")
+  marketCluster(@Param("slugOrId") slugOrId: string, @Param("clusterSlug") clusterSlug: string) {
+    return this.discovery.marketCluster(slugOrId, clusterSlug);
+  }
+
+  @Get("zones/:slugOrId/market/clusters")
+  marketClusters(@Param("slugOrId") slugOrId: string) {
+    return this.discovery.marketHome(slugOrId);
+  }
+
+  @Get("zones/:slugOrId/market/stores")
+  marketStores(@Param("slugOrId") slugOrId: string) {
+    return this.discovery.marketStores(slugOrId);
+  }
+
+  @Get("zones/:slugOrId/market")
+  marketHome(@Param("slugOrId") slugOrId: string) {
+    return this.discovery.marketHome(slugOrId);
+  }
+
   @Get("zones/:slugOrId/discovery")
   async zoneDiscovery(@Param("slugOrId") slugOrId: string) {
     return this.discovery.getDiscovery(slugOrId);

@@ -1,6 +1,8 @@
-import { boolean, doublePrecision, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean, doublePrecision, index, integer, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { createdAt, updatedAt } from "./helpers.js";
 import { users } from "./identity.js";
+import { marketClusters } from "./market.js";
 import { zones } from "./zones.js";
 
 export const providers = pgTable("providers", {
@@ -55,9 +57,24 @@ export const providerLocations = pgTable("provider_locations", {
   /** Opaque sticker token. Null until Ops issues one. Unique. Never logged. */
   verifiedQrToken: text("verified_qr_token").unique(),
   verifiedQrIssuedAt: timestamp("verified_qr_issued_at", { withTimezone: true, mode: "date" }),
+  /** At most one cluster. Null means the location is not a stall in a Chợ. */
+  marketClusterId: uuid("market_cluster_id").references(() => marketClusters.id, { onDelete: "restrict" }),
+  stallCode: text("stall_code"),
+  sellerPortraitUrl: text("seller_portrait_url"),
+  stallImageUrl: text("stall_image_url"),
+  onDemandMarketEnabled: boolean("on_demand_market_enabled").notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+},
+(t) => [
+  index("provider_locations_market_cluster_idx")
+    .on(t.marketClusterId)
+    .where(sql`${t.marketClusterId} IS NOT NULL`),
+  uniqueIndex("provider_locations_cluster_stall_uidx")
+    .on(t.marketClusterId, t.stallCode)
+    .where(sql`${t.marketClusterId} IS NOT NULL AND ${t.stallCode} IS NOT NULL`),
+],
+);
 
 export const providerZoneMemberships = pgTable("provider_zone_memberships", {
   id: uuid("id").primaryKey().defaultRandom(),

@@ -14,6 +14,10 @@ import {
   listHealthProviders,
   listPharmacyProviders,
   listMarketProviders,
+  listConvenienceStores,
+  listSpecialtyStores,
+  listActiveMarketClusters,
+  listClusterStalls,
   listMarketShelf,
   listMarketGoodsCategories,
   listTransportProviders,
@@ -53,7 +57,8 @@ import {
   type PickiSql,
   type MapProviderFilters,
 } from "@picki/db";
-import { marketTierBadge, PickiError, rankMarketHero } from "@picki/shared";
+import type { FreshStallRow } from "@picki/db";
+import { marketTierBadge, PickiError, rankMarketHero, CLUSTER_STALL_GROUPS, STORE_GROUPS, groupForCategory, type MarketGroup } from "@picki/shared";
 import { viewerCanSeeDraftBeer } from "../draft-beer/access.js";
 import { PICKI_DB, PICKI_SQL } from "../../shared/tokens.js";
 import { AnalyticsService } from "../analytics/analytics.service.js";
@@ -234,7 +239,7 @@ export class DiscoveryService {
       enriched.push({
         id: "market",
         title: "ĐI CHỢ",
-        subtitle: "Tiểu thương và tạp hóa quanh nhà — chọn nhóm hàng để xem",
+        subtitle: "Chợ và cửa hàng đồ tươi quanh nhà",
         foodMoments: [],
         providers: markets.map(mapProvider),
       });
@@ -276,6 +281,20 @@ export class DiscoveryService {
   ) {
     const zone = await this.zones.findZone(slugOrId);
     if (!zone) throw new PickiError("NOT_FOUND", "Zone not found");
+    if (categoryId === "convenience") {
+      const rows = await listConvenienceStores(this.sql, zone.id);
+      const providers = rows.map((row) => mapFreshStall(row, STORE_GROUPS));
+      return {
+        zoneId: zone.id,
+        slug: zone.slug,
+        categoryId,
+        providers,
+        lanes: {
+          minimart: providers.filter((row) => row.providerType === "MINIMART"),
+          convenience: providers.filter((row) => row.providerType === "CONVENIENCE_STORE"),
+        },
+      };
+    }
     if (categoryId === "market") {
       const [rows, goodsCategories] = await Promise.all([
         listMarketShelf(this.sql, zone.id, goodsCategoryId),
@@ -300,6 +319,48 @@ export class DiscoveryService {
       slug: zone.slug,
       categoryId,
       providers: rows.map(mapProvider),
+    };
+  }
+
+  async marketHome(slugOrId: string) {
+    const zone = await this.zones.findZone(slugOrId);
+    if (!zone) throw new PickiError("NOT_FOUND", "Zone not found");
+    const clusters = await listActiveMarketClusters(this.sql, zone.id);
+    return {
+      zoneId: zone.id,
+      slug: zone.slug,
+      clusters: clusters.map(mapClusterCard),
+    };
+  }
+
+  async marketCluster(slugOrId: string, clusterSlug: string) {
+    const zone = await this.zones.findZone(slugOrId);
+    if (!zone) throw new PickiError("NOT_FOUND", "Zone not found");
+    const clusters = await listActiveMarketClusters(this.sql, zone.id);
+    const cluster = clusters.find((row) => row.slug === clusterSlug);
+    if (!cluster) throw new PickiError("NOT_FOUND", "Chợ không có trong Zone này");
+    const stalls = (await listClusterStalls(this.sql, zone.id, clusterSlug)).map((row) =>
+      mapFreshStall(row, CLUSTER_STALL_GROUPS),
+    );
+    return {
+      zoneId: zone.id,
+      slug: zone.slug,
+      cluster: mapClusterCard(cluster),
+      groups: groupedStalls(CLUSTER_STALL_GROUPS, stalls),
+    };
+  }
+
+  async marketStores(slugOrId: string) {
+    const zone = await this.zones.findZone(slugOrId);
+    if (!zone) throw new PickiError("NOT_FOUND", "Zone not found");
+    const stores = (await listSpecialtyStores(this.sql, zone.id)).map((row) =>
+      mapFreshStall(row, STORE_GROUPS),
+    );
+    return {
+      zoneId: zone.id,
+      slug: zone.slug,
+      groups: groupedStalls(STORE_GROUPS, stores),
+      stores,
     };
   }
 
@@ -760,8 +821,9 @@ export class DiscoveryService {
       marketToday: rankMarketHero(
         mergeHomeCandidates(marketRows, marketCampaigns).map((row) => ({
           ...mapHomeSurface(row),
+          href: `/locations/${row.location_id}?offer=${row.offering_id}&context=DIRECT`,
           providerId: row.provider_id,
-          providerClass: marketTierBadge(row.provider_type) ?? "Đi chợ",
+          providerClass: marketTierBadge(row.provider_type) ?? "Hôm nay có",
         })),
         24,
         3,
@@ -915,6 +977,64 @@ function takePerProvider(rows: HomeSurfaceRow[], limit: number, cap: number) {
     if (picked.length >= limit) break;
   }
   return picked;
+}
+
+function mapFreshStall(row: FreshStallRow, groups: readonly MarketGroup[]) {
+  const group = groupForCategory(groups, row.primary_category_id);
+  return {
+    locationId: row.location_id,
+    providerId: row.provider_id,
+    brandName: row.brand_name,
+    displayName: row.display_name,
+    providerType: row.provider_type,
+    stallCode: row.stall_code,
+    sellerPortraitUrl: row.seller_portrait_url,
+    logoUrl: row.logo_url,
+    tagline: row.tagline,
+    groupId: group.id,
+    groupLabel: group.label,
+    clusterName: row.cluster_name,
+    clusterSlug: row.cluster_slug,
+    liveStatus: row.live_status,
+    addressLine: row.address_line,
+    lat: row.lat,
+    lng: row.lng,
+    averageRating: row.avg_rating ? Number(row.avg_rating) : null,
+    reviewCount: Number(row.review_count),
+    distanceMeters: row.distance_meters,
+    openAllDay: row.open_all_day,
+  };
+}
+
+function mapClusterCard(row: {
+  id: string;
+  name: string;
+  slug: string;
+  stall_count: string;
+  category_ids: string[] | null;
+}) {
+  const ids = row.category_ids ?? [];
+  const groups = CLUSTER_STALL_GROUPS.filter((group) =>
+    ids.some((id) => groupForCategory(CLUSTER_STALL_GROUPS, id).id === group.id),
+  ).map((group) => group.label);
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    stallCount: Number(row.stall_count),
+    groups,
+    imageUrl: null as string | null,
+  };
+}
+
+function groupedStalls<T extends { groupId: string }>(groups: readonly MarketGroup[], stalls: T[]) {
+  return groups
+    .map((group) => ({
+      id: group.id,
+      label: group.label,
+      stalls: stalls.filter((stall) => stall.groupId === group.id),
+    }))
+    .filter((group) => group.stalls.length > 0);
 }
 
 function mapProvider(r: {

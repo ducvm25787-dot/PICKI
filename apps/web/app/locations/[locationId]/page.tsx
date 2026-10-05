@@ -12,6 +12,8 @@ import {
   readCart,
   type Cart,
 } from "../../../lib/cart";
+import { addToP6Cart } from "../../../lib/p6-cart";
+import { marketEntryFromQuery } from "@picki/shared";
 import { LocationContactActions } from "../../components/location-contact-actions";
 import { SaveFamiliarButton } from "../../components/save-familiar-button";
 import { OpeningInterest } from "../../components/opening-interest";
@@ -165,6 +167,7 @@ export default function LocationMenuPage() {
   const params = useParams<{ locationId: string }>();
   const router = useRouter();
   const search = useSearchParams();
+  const marketEntry = marketEntryFromQuery(search.get("context"));
   const wantRepeat = search.get("repeat") === "1";
   const offerId = search.get("offer");
   const [menu, setMenu] = useState<MenuResponse | null>(null);
@@ -345,6 +348,23 @@ export default function LocationMenuPage() {
   }
 
   function handleAdd(item: MenuResponse["items"][0], optionIds?: string[], quantity = 1) {
+    if (marketEntry) {
+      if (!menu || !zoneId) {
+        setToast("Tham gia Zone trước khi thêm vào giỏ");
+        return;
+      }
+      addToP6Cart({
+        entry: marketEntry,
+        clusterSlug: search.get("cluster"),
+        zoneId,
+        locationId: menu.location.id,
+        brandName: menu.location.brandName,
+        line: { offeringId: item.id, name: item.name, amountVnd: item.amountVnd },
+        quantity,
+      });
+      setToast(marketEntry === "CLUSTER" ? "Đã thêm vào giỏ chợ" : "Đã thêm vào giỏ cửa hàng");
+      return;
+    }
     if (search.get("when") === "morning") {
       if (!morning?.orderingOpen) {
         setToast(morning?.cutoffTime ? `Đã qua giờ chốt ${morning.cutoffTime}` : "Quán chưa mở Sáng mai giao");
@@ -742,7 +762,17 @@ export default function LocationMenuPage() {
       </div>
       ) : null}
 
-      {isMarket ? (
+      {marketEntry === "CLUSTER" ? (
+        <p className="stat" style={{ marginBottom: 12 }}>
+          Đang mua trong chợ. Thêm món vào giỏ chợ — giỏ cửa hàng giữ nguyên.
+        </p>
+      ) : marketEntry === "STORE" ? (
+        <p className="stat" style={{ marginBottom: 12 }}>
+          Đang mua trực tiếp cửa hàng này. Giỏ chợ giữ nguyên.
+        </p>
+      ) : null}
+
+      {isMarket && !marketEntry ? (
         <div className="location-tabs" role="tablist" aria-label="Cách đặt">
           <button
             type="button"
@@ -1101,7 +1131,11 @@ export default function LocationMenuPage() {
               {otherGoods.map((item) => (
                 <Link
                   key={item.id}
-                  href={`/locations/${location.id}?offer=${item.id}${morningMode ? "&when=morning" : ""}`}
+                  href={`/locations/${location.id}?offer=${item.id}${morningMode ? "&when=morning" : ""}${
+                    marketEntry
+                      ? `&context=${search.get("context")}${search.get("cluster") ? `&cluster=${search.get("cluster")}` : ""}`
+                      : ""
+                  }`}
                   className="today-hero-card"
                 >
                   <span className="today-hero-media">

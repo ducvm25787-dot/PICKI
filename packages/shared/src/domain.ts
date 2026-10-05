@@ -28,6 +28,7 @@ export const userRoles = [
   "SUPPORT",
   "FINANCE",
   "ZONE_ADMIN",
+  "CITY_ADMIN",
   "SUPER_ADMIN",
 ] as const;
 export type UserRole = (typeof userRoles)[number];
@@ -87,6 +88,8 @@ export const providerTypes = [
   "SUPERMARKET",
   "MINIMART",
   "MARKET_VENDOR",
+  "SPECIALTY_STORE",
+  "CONVENIENCE_STORE",
   "RETAIL_STORE",
   "LAUNDRY",
   "HOME_SERVICE",

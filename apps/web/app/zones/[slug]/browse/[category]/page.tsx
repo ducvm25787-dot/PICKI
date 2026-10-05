@@ -18,6 +18,7 @@ export default function CategoryBrowsePage() {
 
   const [providers, setProviders] = useState<ProviderListing[]>([]);
   const [shelf, setShelf] = useState<{ local: ProviderListing[]; supermarkets: ProviderListing[] } | null>(null);
+  const [lanes, setLanes] = useState<{ minimart: ProviderListing[]; convenience: ProviderListing[] } | null>(null);
   const [goodsCategories, setGoodsCategories] = useState<{ id: string; name: string }[]>([]);
   const [goodsId, setGoodsId] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
@@ -46,9 +47,11 @@ export default function CategoryBrowsePage() {
           providers: ProviderListing[];
           shelf?: { local: ProviderListing[]; supermarkets: ProviderListing[] };
           goodsCategories?: { id: string; name: string }[];
+          lanes?: { minimart: ProviderListing[]; convenience: ProviderListing[] };
         }>(`/zones/${slug}/browse/${category.id}?types=${types}${goods}`);
         setProviders(res.providers);
         setShelf(res.shelf ?? null);
+        setLanes(res.lanes ?? null);
         setGoodsCategories(res.goodsCategories ?? []);
         await loadFavorites();
       } catch (e) {
@@ -183,7 +186,26 @@ export default function CategoryBrowsePage() {
           <p style={{ color: "#b91c1c", margin: 0 }}>{error}</p>
         </div>
       ) : (
-        category.id === "market" && shelf ? (
+        category.id === "convenience" && lanes ? (
+          <>
+            <h2 className="section-title">Minimart</h2>
+            <ProviderList
+              providers={lanes.minimart}
+              favoriteIds={favoriteIds}
+              onToggleFavorite={(id) => void toggleFavorite(id)}
+              emptyLabel="Chưa có minimart trong Zone."
+            />
+            <h2 className="section-title" style={{ marginTop: 20 }}>
+              Tiện lợi
+            </h2>
+            <ProviderList
+              providers={lanes.convenience}
+              favoriteIds={favoriteIds}
+              onToggleFavorite={(id) => void toggleFavorite(id)}
+              emptyLabel="Chưa có cửa tiện lợi trong Zone."
+            />
+          </>
+        ) : category.id === "market" && shelf ? (
           <>
             <h2 className="section-title">Quanh bạn</h2>
             <ProviderList

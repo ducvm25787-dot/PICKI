@@ -14,6 +14,7 @@ export * from "./client.js";
 export * from "./geo/index.js";
 export * from "./geometry.js";
 export * from "./migrator.js";
+export * from "./market/customer.js";
 export * from "./providers/index.js";
 export * from "./relationships/index.js";
 export * from "./habit/index.js";
