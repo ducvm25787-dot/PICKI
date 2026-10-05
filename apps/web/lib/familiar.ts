@@ -1,4 +1,4 @@
-/** Capability-aware CTA for familiar / home cards. */
+/** Capability-aware CTA for familiar places. The label names the next action. */
 
 export type FamiliarCta = {
   label: string;
@@ -6,50 +6,63 @@ export type FamiliarCta = {
   kind: "reorder" | "view_today" | "contact" | "open";
 };
 
+const CONTACT_TYPES = new Set([
+  "BEAUTY",
+  "SALON",
+  "SPA",
+  "NAIL",
+  "AUTO_SERVICE",
+  "SPORTS_FACILITY",
+  "HOME_SERVICE",
+  "CLEANER",
+  "TECHNICIAN",
+  "EDUCATION_PROVIDER",
+  "TUTOR",
+  "PET_SERVICE",
+  "HEALTH_PROVIDER",
+  "PHARMACY",
+  "TRANSPORT_PROVIDER",
+]);
+
+const SHOP_TYPES = new Set([
+  "MINIMART",
+  "CONVENIENCE_STORE",
+  "MARKET_VENDOR",
+  "SPECIALTY_STORE",
+  "RETAIL_STORE",
+  "SUPERMARKET",
+]);
+
 export function familiarPrimaryCta(input: {
   locationId: string;
   providerType: string;
   zoneSlug: string;
 }): FamiliarCta {
-  const { locationId, providerType, zoneSlug } = input;
+  const { locationId, providerType } = input;
   const t = providerType.toUpperCase();
 
-  if (t.includes("FOOD") || t === "RESTAURANT" || t === "CAFE" || t === "FOOD_STALL") {
+  if (t === "HOME_COOK") {
     return {
-      label: "Đặt lại",
-      href: `/locations/${locationId}?repeat=1`,
-      kind: "reorder",
-    };
-  }
-  if (t.includes("FAMILY") || t === "HOME_COOK") {
-    return {
-      label: "Tối nay",
+      label: "Bữa tối",
       href: `/family-dinner/${locationId}`,
       kind: "view_today",
     };
   }
-  // Family dinner demo kitchen often FOOD_STALL / similar — brand path via location menu
-  if (t === "LAUNDRY") {
-    return { label: "Đặt lại", href: `/locations/${locationId}`, kind: "reorder" };
+  if (t === "LAUNDRY" || t.includes("FOOD") || t === "RESTAURANT" || t === "CAFE" || t === "FOOD_STALL") {
+    return {
+      label: "Đặt lại",
+      href: t === "LAUNDRY" ? `/locations/${locationId}` : `/locations/${locationId}?repeat=1`,
+      kind: "reorder",
+    };
   }
-  if (t === "BEAUTY" || t === "AUTO_SERVICE" || t === "SPORTS") {
+  if (CONTACT_TYPES.has(t)) {
     return { label: "Liên hệ", href: `/locations/${locationId}`, kind: "contact" };
   }
-  if (
-    t === "HOME_SERVICE" ||
-    t === "EDUCATION" ||
-    t === "PET" ||
-    t === "HEALTH_PROVIDER" ||
-    t === "PHARMACY" ||
-    t === "TRANSPORT_PROVIDER"
-  ) {
-    return { label: "Liên hệ", href: `/locations/${locationId}`, kind: "contact" };
-  }
-  if (t === "MINIMART" || t === "MARKET_VENDOR" || t === "RETAIL_STORE") {
-    return { label: "Mua lại", href: `/locations/${locationId}`, kind: "contact" };
+  if (SHOP_TYPES.has(t)) {
+    return { label: "Mua lại", href: `/locations/${locationId}`, kind: "open" };
   }
   return {
-    label: "Mở quán",
+    label: "Xem",
     href: `/locations/${locationId}`,
     kind: "open",
   };

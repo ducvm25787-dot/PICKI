@@ -164,7 +164,7 @@ export default function MePage() {
           <span>Nhà &amp; địa chỉ</span>
           <span aria-hidden>→</span>
         </Link>
-        <Link href={`/zones/${KVL}/browse/food`} className="me-menu-item">
+        <Link href="/me/familiar" className="me-menu-item">
           <span>Chỗ quen / Đã lưu</span>
           <span aria-hidden>→</span>
         </Link>

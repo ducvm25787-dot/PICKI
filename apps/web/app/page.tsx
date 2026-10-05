@@ -10,7 +10,6 @@ import {
   homeCategoriesPrimary,
   homeCategoriesSecondary,
 } from "../lib/categories";
-import { familiarPrimaryCta } from "../lib/familiar";
 import { contextNowFor, type ContextNowContent } from "../lib/home-hero";
 import { track, trackMany } from "../lib/analytics";
 import {
@@ -21,7 +20,7 @@ import {
   type ExperienceCard,
   type ExperienceCityRef,
 } from "../lib/experiences";
-import { liveStatusClass, liveStatusLabel, type ProviderListing } from "../lib/providers";
+import { type ProviderListing } from "../lib/providers";
 import { marketTierBadge } from "@picki/shared";
 import { BrandMark } from "./components/brand-mark";
 import { HomeDishRail, type TodaySpecial } from "./components/home-dish-rail";
@@ -36,34 +35,6 @@ type DiscoveryBlock = {
   title: string;
   subtitle: string;
   providers: ProviderListing[];
-};
-
-type FamiliarCard = {
-  locationId: string;
-  brandName: string;
-  displayName: string;
-  providerType: string;
-  liveStatus: string;
-  estimatedWaitMinutes: number | null;
-  completedInteractions: number;
-  favorite: boolean;
-  familiarOffer?: { title: string; kindLabel: string } | null;
-};
-
-type NowAroundCard = {
-  locationId: string;
-  brandName: string;
-  displayName: string;
-  providerType: string;
-  liveStatus: string;
-  estimatedWaitMinutes: number | null;
-  headline: string;
-  detail: string | null;
-  source: string;
-  ctaLabel: string;
-  ctaHref: string;
-  badge?: string | null;
-  sponsored?: boolean;
 };
 
 type SpotlightCard = {
@@ -212,8 +183,6 @@ export default function HomePage() {
   const [nearbyZone, setNearbyZone] = useState<NearbyZone | null>(null);
   const [gpsNote, setGpsNote] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<DiscoveryBlock[]>([]);
-  const [familiar, setFamiliar] = useState<FamiliarCard[]>([]);
-  const [nowAround, setNowAround] = useState<NowAroundCard[]>([]);
   const [todaySpecials, setTodaySpecials] = useState<TodaySpecial[]>([]);
   const [snackDesserts, setSnackDesserts] = useState<TodaySpecial[]>([]);
   const [marketToday, setMarketToday] = useState<TodaySpecial[]>([]);
@@ -311,13 +280,10 @@ export default function HomePage() {
           const home = await api<{
             zoneId?: string;
             blocks: DiscoveryBlock[];
-            familiar?: FamiliarCard[];
-            nowAround?: NowAroundCard[];
             todaySpecials?: TodaySpecial[];
             snackDesserts?: TodaySpecial[];
             marketToday?: TodaySpecial[];
             heroImages?: Record<string, string[]>;
-            today?: NowAroundCard[];
             spotlight?: SpotlightCard | null;
           }>(`/zones/${KVL_SLUG}/home`).catch(async () => {
             const discovery = await api<{ blocks: DiscoveryBlock[] }>(
@@ -325,16 +291,12 @@ export default function HomePage() {
             );
             return {
               ...discovery,
-              familiar: [] as FamiliarCard[],
-              nowAround: [] as NowAroundCard[],
               todaySpecials: [] as TodaySpecial[],
               heroImages: {} as Record<string, string[]>,
               spotlight: null as SpotlightCard | null,
             };
           });
           setBlocks(home.blocks);
-          setFamiliar(home.familiar ?? []);
-          setNowAround(home.nowAround ?? []);
           setTodaySpecials("todaySpecials" in home ? (home.todaySpecials ?? []) : []);
           setSnackDesserts("snackDesserts" in home ? (home.snackDesserts ?? []) : []);
           setMarketToday("marketToday" in home ? (home.marketToday ?? []) : []);
@@ -349,22 +311,6 @@ export default function HomePage() {
               name: "home_section_impression",
               zoneId: home.zoneId,
               properties: { section: "context_now", hero: contextNowFor().id },
-            },
-            {
-              name: "home_section_impression",
-              zoneId: home.zoneId,
-              properties: {
-                section: "now_around",
-                count: (home.nowAround ?? []).length,
-              },
-            },
-            {
-              name: "home_section_impression",
-              zoneId: home.zoneId,
-              properties: {
-                section: "familiar",
-                count: (home.familiar ?? []).length,
-              },
             },
           ]);
         }
@@ -643,106 +589,6 @@ export default function HomePage() {
               {spotlight.detail ? <span className="stat">{spotlight.detail}</span> : null}
             </Link>
           ) : null}
-
-          <section className="card today-section" aria-label="Quanh bạn lúc này">
-            <p className="section-title" style={{ marginBottom: 8 }}>
-              Quanh bạn lúc này
-            </p>
-            {nowAround.length === 0 ? (
-              <p className="stat" style={{ margin: 0 }}>
-                Chưa có chỗ đang mở nổi bật — thử Khám phá bên dưới.
-              </p>
-            ) : (
-              <div className="home-scroll-row">
-                {nowAround.map((n) => (
-                  <Link
-                    key={`${n.locationId}-${n.headline}`}
-                    href={n.ctaHref}
-                    className="home-scroll-card"
-                    onClick={() =>
-                      track("today_offer_click", {
-                        zoneId: zoneId ?? undefined,
-                        properties: { locationId: n.locationId, source: n.source },
-                      })
-                    }
-                  >
-                    <strong>{n.brandName}</strong>
-                    {n.badge ? <span className="fresh-badge">{n.badge}</span> : null}
-                    <span className="stat">
-                      <span className={`live-pill ${liveStatusClass(n.liveStatus)}`}>
-                        {liveStatusLabel(n.liveStatus)}
-                      </span>
-                    </span>
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>{n.headline}</span>
-                    {n.detail ? <span className="stat">{n.detail}</span> : null}
-                    <span className="familiar-cta" style={{ alignSelf: "flex-start", marginTop: 6 }}>
-                      {n.ctaLabel}
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="card familiar-section" aria-label="Chỗ quen">
-            <div className="section-head">
-              <p className="section-title" style={{ margin: 0 }}>
-                Chỗ quen của nhà mình
-              </p>
-              {familiar.length > 5 ? (
-                <Link href={`/zones/${KVL_SLUG}/browse/food`} className="section-more">
-                  Xem thêm →
-                </Link>
-              ) : null}
-            </div>
-            {familiar.length === 0 ? (
-              <p className="stat" style={{ margin: "8px 0 0" }}>
-                Lưu ♥ hoặc hoàn thành đơn — chỗ quen sẽ hiện ở đây.
-              </p>
-            ) : (
-              <div className="home-scroll-row home-scroll-row--mini" style={{ marginTop: 10 }}>
-                {familiar.map((f) => {
-                  const cta = familiarPrimaryCta({
-                    locationId: f.locationId,
-                    providerType: f.providerType,
-                    zoneSlug: KVL_SLUG,
-                  });
-                  const waitHint =
-                    f.estimatedWaitMinutes != null && f.estimatedWaitMinutes <= 5
-                      ? "Ngay"
-                      : f.estimatedWaitMinutes != null
-                        ? `~${String(f.estimatedWaitMinutes)}p`
-                        : null;
-                  return (
-                    <div key={f.locationId} className="home-scroll-card home-scroll-card--mini">
-                      <Link href={`/locations/${f.locationId}`} className="familiar-name">
-                        {f.brandName}
-                      </Link>
-                      <span className="familiar-mini-status">
-                        <span className={`live-dot ${liveStatusClass(f.liveStatus)}`} aria-hidden />
-                        {waitHint ?? liveStatusLabel(f.liveStatus)}
-                      </span>
-                      {f.familiarOffer ? (
-                        <span className="promo-badge">{f.familiarOffer.title}</span>
-                      ) : null}
-                      <Link
-                        href={cta.href}
-                        className="familiar-cta"
-                        onClick={() =>
-                          track("familiar_provider_click", {
-                            zoneId: zoneId ?? undefined,
-                            properties: { locationId: f.locationId, cta: cta.label },
-                          })
-                        }
-                      >
-                        {cta.label}
-                      </Link>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
 
           {utilitiesBlock}
 

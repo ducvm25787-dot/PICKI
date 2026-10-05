@@ -52,6 +52,12 @@ export class DiscoveryController {
     return this.discovery.getHabitHome(slugOrId, userId);
   }
 
+  @Get("zones/:slugOrId/familiar")
+  @UseGuards(SessionAuthGuard)
+  async zoneFamiliar(@Param("slugOrId") slugOrId: string, @CurrentUserId() userId: string) {
+    return this.discovery.listZoneFamiliar(slugOrId, userId);
+  }
+
   @Get("zones/:slugOrId/explore")
   @UseGuards(SessionAuthGuard)
   async zoneExplore(

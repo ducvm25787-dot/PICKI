@@ -640,6 +640,34 @@ export class DiscoveryService {
     return { ok: true };
   }
 
+  /** Places this customer already uses in the Zone. Home no longer shows this shelf. */
+  async listZoneFamiliar(slugOrId: string, userId: string) {
+    const zone = await this.zones.findZone(slugOrId);
+    if (!zone) throw new PickiError("NOT_FOUND", "Zone not found");
+    const familiarRows = await listFamiliarProvidersInZone(this.sql, userId, zone.id, 20);
+    const familiarPresence = await listPresenceForLocations(
+      this.sql,
+      familiarRows.map((r) => r.location_id),
+    );
+    return {
+      zoneId: zone.id,
+      familiar: familiarRows.map((r) => ({
+        locationId: r.location_id,
+        brandName: r.brand_name,
+        displayName: r.display_name,
+        providerType: r.provider_type,
+        liveStatus: r.live_status,
+        estimatedWaitMinutes: r.estimated_wait_minutes,
+        completedInteractions: Number(r.completed_interactions),
+        favorite: r.favorite,
+        familiarOffer:
+          familiarPresence.get(r.location_id)?.promotion?.kind === "FAMILIAR"
+            ? familiarPresence.get(r.location_id)?.promotion
+            : null,
+      })),
+    };
+  }
+
   /**
    * Habit-First home: familiar · nowAround (live) · discover blocks (deduped).
    */

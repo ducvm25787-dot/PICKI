@@ -2072,6 +2072,10 @@ a.provider-card:hover,
   gap: 10px;
 }
 
+.familiar-list.card {
+  padding: 6px 16px;
+}
+
 .familiar-row {
   display: flex;
   align-items: center;
@@ -2079,6 +2083,28 @@ a.provider-card:hover,
   gap: 12px;
   padding: 10px 0;
   border-top: 1px solid var(--border);
+}
+
+.familiar-list .familiar-row {
+  gap: 16px;
+  min-height: 68px;
+  padding: 12px 0;
+}
+
+.familiar-list .familiar-row > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.familiar-list .familiar-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 92px;
+  min-height: 36px;
+  padding: 8px 10px;
+  text-align: center;
 }
 
 .familiar-row:first-child {
@@ -2090,6 +2116,14 @@ a.provider-card:hover,
   font-weight: 700;
   color: var(--text);
   text-decoration: none;
+}
+
+.familiar-list .familiar-name {
+  display: block;
+}
+
+.familiar-list .familiar-mini-status {
+  margin-top: 4px;
 }
 
 .today-hero {
