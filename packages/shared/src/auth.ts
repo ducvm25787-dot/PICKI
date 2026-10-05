@@ -36,7 +36,7 @@ export function pickiAppFromBrowserPath(pathname: string): PickiAppRole {
   return "customer";
 }
 
-const ADMIN_SESSION_ROLES = new Set(["ZONE_ADMIN", "SUPER_ADMIN", "SUPPORT"]);
+const ADMIN_SESSION_ROLES = new Set(["ZONE_ADMIN", "CITY_ADMIN", "SUPER_ADMIN", "SUPPORT"]);
 const PROVIDER_SESSION_ROLES = new Set([
   "PROVIDER_OWNER",
   "PROVIDER_MANAGER",

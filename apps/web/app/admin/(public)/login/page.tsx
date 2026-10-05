@@ -53,7 +53,7 @@ export default function AdminLoginPage() {
   return (
     <div className="container">
       <div className="logo admin-logo">Pickee Ops</div>
-      <p className="tagline">Đăng nhập Admin/Ops (demo: 0908888003)</p>
+      <p className="tagline">Super Admin 0908888030 · City Hà Nội 0908888031 · Khu Kim Văn 0908888003</p>
       <div className="card">
         {step === "phone" ? (
           <>
